@@ -4,7 +4,8 @@ import { OrbitControls } from '@react-three/drei';
 import { Bloom, DepthOfField, EffectComposer, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { useGame } from './store/gameStore';
-import { useSettings, Quality } from './store/settingsStore';
+import { useSettings, Quality, QUALITY_NAME } from './store/settingsStore';
+import { cameraFocus } from './three/camera/CameraRig';
 import { useProfile } from './store/profileStore';
 import { GameScene } from './three/scenes/GameScene';
 import { CreatorScene, HomeScene, LobbyScene } from './three/scenes/ShowcaseScenes';
@@ -24,23 +25,57 @@ import type { AnimName } from './store/fxStore';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
+/** 后期处理：极克制的泛光 + 暗角；极高画质下加入跟随镜头焦点的景深 */
 function PostFX({ quality, game }: { quality: Quality; game: boolean }) {
   if (quality === 'low' || quality === 'medium') return null;
   if (quality === 'ultra' && game) {
     return (
       <EffectComposer multisampling={4}>
-        <Bloom intensity={0.7} luminanceThreshold={0.85} luminanceSmoothing={0.2} mipmapBlur />
-        <DepthOfField focusDistance={0.012} focalLength={0.06} bokehScale={2.2} />
-        <Vignette eskil={false} offset={0.25} darkness={0.55} />
+        <DepthOfField target={cameraFocus} worldFocusRange={7} bokehScale={1.4} />
+        <Bloom intensity={0.22} luminanceThreshold={0.92} luminanceSmoothing={0.15} mipmapBlur />
+        <Vignette eskil={false} offset={0.3} darkness={0.5} />
       </EffectComposer>
     );
   }
   return (
     <EffectComposer multisampling={quality === 'ultra' ? 4 : 0}>
-      <Bloom intensity={0.6} luminanceThreshold={0.85} luminanceSmoothing={0.2} mipmapBlur />
-      <Vignette eskil={false} offset={0.25} darkness={0.5} />
+      <Bloom intensity={0.2} luminanceThreshold={0.92} luminanceSmoothing={0.15} mipmapBlur />
+      <Vignette eskil={false} offset={0.3} darkness={0.45} />
     </EffectComposer>
   );
+}
+
+const QUALITY_ORDER: Quality[] = ['low', 'medium', 'high', 'ultra'];
+
+/**
+ * 自动画质：持续监测帧率，若长时间低于 40 FPS 则自动降一级（只降不升，避免来回切换）。
+ * 玩家不需要面对复杂的设置。
+ */
+function AutoQuality() {
+  const acc = useRef({ frames: 0, t: performance.now(), low: 0 });
+  useFrame(() => {
+    const s = useSettings.getState();
+    if (!s.autoQuality || document.visibilityState !== 'visible') return;
+    const a = acc.current;
+    a.frames++;
+    const now = performance.now();
+    if (now - a.t < 2000) return;
+    const fps = (a.frames * 1000) / (now - a.t);
+    a.frames = 0;
+    a.t = now;
+    // 后台标签页会被限速，忽略极低的读数
+    if (fps < 8) return;
+    a.low = fps < 40 ? a.low + 1 : 0;
+    if (a.low >= 3) {
+      a.low = 0;
+      const i = QUALITY_ORDER.indexOf(s.quality);
+      if (i > 0) {
+        s.set({ quality: QUALITY_ORDER[i - 1] });
+        useGame.getState().toast(`为保持流畅，画质已自动调整为「${QUALITY_NAME[QUALITY_ORDER[i - 1]]}」`);
+      }
+    }
+  });
+  return null;
 }
 
 function FpsMeter() {
@@ -95,6 +130,7 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
       {screen === 'game' && cameraMode === 'free' && <OrbitControls target={[0, 1, 0]} maxPolarAngle={Math.PI * 0.48} minDistance={3} maxDistance={16} enableDamping makeDefault />}
       <PostFX quality={quality} game={screen === 'game'} />
       <FpsMeter />
+      <AutoQuality />
     </>
   );
 }

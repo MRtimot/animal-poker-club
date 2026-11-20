@@ -34,81 +34,173 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 }
 
 const FONT = '"PingFang SC","Microsoft YaHei","Noto Sans SC","Hiragino Sans GB",sans-serif';
-const FACE_ART: Record<number, string> = { 11: '🦊', 12: '🐱', 13: '🦁', 14: '' };
+const SERIF = 'Georgia, "Times New Roman", "Songti SC", serif';
+const CW = 300;
+const CH = 420;
 
+/** 2~10 的标准花色点位（相对牌面中央区域） */
+const PIPS: Record<number, [number, number][]> = {
+  2: [[0.5, 0.18], [0.5, 0.82]],
+  3: [[0.5, 0.18], [0.5, 0.5], [0.5, 0.82]],
+  4: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.82], [0.7, 0.82]],
+  5: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.5], [0.3, 0.82], [0.7, 0.82]],
+  6: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.5], [0.7, 0.5], [0.3, 0.82], [0.7, 0.82]],
+  7: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.34], [0.3, 0.5], [0.7, 0.5], [0.3, 0.82], [0.7, 0.82]],
+  8: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.34], [0.3, 0.5], [0.7, 0.5], [0.5, 0.66], [0.3, 0.82], [0.7, 0.82]],
+  9: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.39], [0.7, 0.39], [0.5, 0.5], [0.3, 0.61], [0.7, 0.61], [0.3, 0.82], [0.7, 0.82]],
+  10: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.29], [0.3, 0.39], [0.7, 0.39], [0.3, 0.61], [0.7, 0.61], [0.5, 0.71], [0.3, 0.82], [0.7, 0.82]],
+};
+
+function paper(g: CanvasRenderingContext2D, w: number, h: number, base: string) {
+  g.fillStyle = base;
+  roundRect(g, 0, 0, w, h, 18);
+  g.fill();
+  // 纸张纤维与极轻微的磨损
+  const img = g.getImageData(0, 0, w, h);
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i + 3] === 0) continue;
+    const n = (Math.random() - 0.5) * 7;
+    img.data[i] += n;
+    img.data[i + 1] += n;
+    img.data[i + 2] += n;
+  }
+  g.putImageData(img, 0, 0);
+  const edge = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.45, w / 2, h / 2, Math.max(w, h) * 0.62);
+  edge.addColorStop(0, 'rgba(0,0,0,0)');
+  edge.addColorStop(1, 'rgba(90,70,40,0.07)');
+  g.fillStyle = edge;
+  g.fillRect(0, 0, w, h);
+}
+
+/** 写实扑克牌牌面：衬线字体角标、标准点位、双头人头牌 */
 export function cardFaceTexture(card: Card) {
-  return canvasTex('card-' + card.id, 256, 360, (g, w, h) => {
-    g.fillStyle = '#fffdf7';
-    roundRect(g, 2, 2, w - 4, h - 4, 22);
-    g.fill();
-    g.strokeStyle = '#d9d2c3';
-    g.lineWidth = 3;
-    g.stroke();
-    const color = isRed(card) ? '#d42a3c' : '#1d1d2b';
+  return canvasTex('card-' + card.id, CW, CH, (g, w, h) => {
+    paper(g, w, h, '#fbf8f0');
+    const red = isRed(card);
+    const color = red ? '#b3132b' : '#141418';
     const sym = SUIT_SYMBOL[card.suit];
     const lab = rankLabel(card.rank);
-    g.fillStyle = color;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.font = `bold ${lab.length > 1 ? 52 : 60}px ${FONT}`;
-    g.fillText(lab, 42, 46);
-    g.font = `44px ${FONT}`;
-    g.fillText(sym, 42, 100);
-    g.save();
-    g.translate(w - 42, h - 46);
-    g.rotate(Math.PI);
-    g.font = `bold ${lab.length > 1 ? 52 : 60}px ${FONT}`;
-    g.fillText(lab, 0, 0);
-    g.font = `44px ${FONT}`;
-    g.fillText(sym, 0, -54);
-    g.restore();
-
-    const art = FACE_ART[card.rank];
-    if (art) {
-      g.fillStyle = isRed(card) ? '#fde8ea' : '#e9ecf5';
-      roundRect(g, 70, 80, w - 140, h - 160, 16);
-      g.fill();
-      g.font = `110px ${FONT}`;
-      g.fillText(art, w / 2, h / 2 - 8);
-      g.fillStyle = color;
-      g.font = `40px ${FONT}`;
-      g.fillText(sym, w / 2, h / 2 + 72);
-    } else {
-      g.font = `${card.rank === 14 ? 150 : 120}px ${FONT}`;
+    g.fillStyle = color;
+    const corner = (rot: number) => {
+      g.save();
+      g.translate(w / 2, h / 2);
+      g.rotate(rot);
+      g.translate(-w / 2, -h / 2);
+      g.font = `600 ${lab.length > 1 ? 44 : 50}px ${SERIF}`;
+      g.fillText(lab, 32, 40);
+      g.font = `34px ${SERIF}`;
+      g.fillText(sym, 32, 82);
+      g.restore();
+    };
+    corner(0);
+    corner(Math.PI);
+    const ix = 62;
+    const iy = 56;
+    const iw = w - ix * 2;
+    const ih = h - iy * 2;
+    if (card.rank >= 2 && card.rank <= 10) {
+      g.font = `${card.rank >= 9 ? 48 : 56}px ${SERIF}`;
+      for (const [px, py] of PIPS[card.rank]) {
+        g.save();
+        g.translate(ix + px * iw, iy + py * ih);
+        if (py > 0.55) g.rotate(Math.PI);
+        g.fillText(sym, 0, 0);
+        g.restore();
+      }
+    } else if (card.rank === 14) {
+      g.font = `${card.suit === 's' ? 170 : 120}px ${SERIF}`;
       g.fillText(sym, w / 2, h / 2 + 6);
+      if (card.suit === 's') {
+        g.strokeStyle = 'rgba(20,20,24,0.5)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(w / 2, h / 2, 104, 0, Math.PI * 2);
+        g.stroke();
+      }
+    } else {
+      // 人头牌：带边框的双头设计（上下对称）
+      const fx = 58;
+      const fy = 52;
+      const fw = w - fx * 2;
+      const fh = h - fy * 2;
+      g.fillStyle = red ? '#f6e3d6' : '#e3e6ee';
+      g.fillRect(fx, fy, fw, fh);
+      g.strokeStyle = color;
+      g.lineWidth = 2.5;
+      g.strokeRect(fx, fy, fw, fh);
+      g.strokeStyle = '#b8902f';
+      g.lineWidth = 1.5;
+      g.strokeRect(fx + 5, fy + 5, fw - 10, fh - 10);
+      const name = card.rank === 13 ? 'K' : card.rank === 12 ? 'Q' : 'J';
+      const crown = card.rank === 13 ? '♚' : card.rank === 12 ? '♛' : '♞';
+      for (const rot of [0, Math.PI]) {
+        g.save();
+        g.translate(w / 2, h / 2);
+        g.rotate(rot);
+        // 斜向分隔线
+        g.strokeStyle = 'rgba(184,144,47,0.7)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(-fw / 2 + 8, 6);
+        g.lineTo(fw / 2 - 8, -6);
+        g.stroke();
+        g.fillStyle = red ? '#7d1020' : '#1a2b5a';
+        g.font = `${74}px ${SERIF}`;
+        g.fillText(crown, -18, -fh / 4 + 4);
+        g.fillStyle = color;
+        g.font = `600 46px ${SERIF}`;
+        g.fillText(name, 42, -fh / 4 - 30);
+        g.font = `30px ${SERIF}`;
+        g.fillText(sym, 42, -fh / 4 + 12);
+        g.fillStyle = '#b8902f';
+        for (let i = 0; i < 5; i++) g.fillRect(-fw / 2 + 16 + i * 14, -fh / 2 + 18, 7, 3);
+        g.restore();
+      }
     }
   });
 }
 
+/** 写实牌背：白色留边 + 细密菱格纹 */
 export function cardBackTexture() {
-  return canvasTex('card-back', 256, 360, (g, w, h) => {
-    g.fillStyle = '#fffdf7';
-    roundRect(g, 2, 2, w - 4, h - 4, 22);
+  return canvasTex('card-back', CW, CH, (g, w, h) => {
+    paper(g, w, h, '#f7f3ea');
+    const m = 16;
+    g.fillStyle = '#7d1424';
+    roundRect(g, m, m, w - m * 2, h - m * 2, 10);
     g.fill();
-    const grd = g.createLinearGradient(0, 0, w, h);
-    grd.addColorStop(0, '#5b2a86');
-    grd.addColorStop(1, '#2b1250');
-    g.fillStyle = grd;
-    roundRect(g, 14, 14, w - 28, h - 28, 16);
-    g.fill();
-    g.strokeStyle = '#e8c25a';
-    g.lineWidth = 4;
-    roundRect(g, 24, 24, w - 48, h - 48, 12);
-    g.stroke();
-    g.globalAlpha = 0.18;
-    g.fillStyle = '#ffffff';
-    for (let y = 40; y < h - 30; y += 34) {
-      for (let x = 40 + ((y / 34) % 2) * 17; x < w - 30; x += 34) {
-        g.beginPath();
-        g.arc(x, y, 5, 0, Math.PI * 2);
-        g.fill();
-      }
+    g.save();
+    roundRect(g, m, m, w - m * 2, h - m * 2, 10);
+    g.clip();
+    g.strokeStyle = 'rgba(255,240,230,0.55)';
+    g.lineWidth = 1.2;
+    for (let i = -h; i < w + h; i += 11) {
+      g.beginPath();
+      g.moveTo(i, 0);
+      g.lineTo(i + h, h);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(i, h);
+      g.lineTo(i + h, 0);
+      g.stroke();
     }
-    g.globalAlpha = 1;
-    g.font = `84px ${FONT}`;
+    g.restore();
+    g.strokeStyle = 'rgba(255,240,230,0.85)';
+    g.lineWidth = 2;
+    roundRect(g, m + 7, m + 7, w - m * 2 - 14, h - m * 2 - 14, 6);
+    g.stroke();
+    g.fillStyle = '#7d1424';
+    g.beginPath();
+    g.ellipse(w / 2, h / 2, 46, 58, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(255,240,230,0.85)';
+    g.stroke();
+    g.fillStyle = 'rgba(255,240,230,0.9)';
+    g.font = `600 30px ${SERIF}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('🐾', w / 2, h / 2);
+    g.fillText('APC', w / 2, h / 2 + 2);
   });
 }
 
@@ -303,39 +395,88 @@ export function emojiTexture(emoji: string, bg = '#f6e7c8') {
   });
 }
 
+/** 筹码侧面：底色 + 白色边缘嵌片 + 粘土质感的细微颗粒 */
 export function chipSideTexture(color: string) {
   return canvasTex('chip-' + color, 256, 32, (g, w, h) => {
     g.fillStyle = color;
     g.fillRect(0, 0, w, h);
-    g.fillStyle = '#ffffff';
-    for (let i = 0; i < 8; i++) g.fillRect(i * 32 + 6, 0, 14, h);
+    const light = color === '#f4f1ea';
+    g.fillStyle = light ? '#2a4f9a' : '#f3efe6';
+    for (let i = 0; i < 6; i++) g.fillRect(i * (w / 6) + 10, 0, 22, h);
+    const img = g.getImageData(0, 0, w, h);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const n = (Math.random() - 0.5) * 14;
+      img.data[i] += n;
+      img.data[i + 1] += n;
+      img.data[i + 2] += n;
+    }
+    g.putImageData(img, 0, 0);
+    g.fillStyle = 'rgba(0,0,0,0.18)';
+    g.fillRect(0, 0, w, 2);
+    g.fillRect(0, h - 2, w, 2);
   });
 }
 
+/** 筹码正面：边缘嵌片、印刷内圈、浅色中心镶片与面值 */
 export function chipTopTexture(color: string, label: string) {
-  return canvasTex('chiptop-' + color + label, 128, 128, (g, w, h) => {
+  return canvasTex('chiptop-' + color + label, 192, 192, (g, w, h) => {
+    const light = color === '#f4f1ea';
+    const cx = w / 2;
+    const cy = h / 2;
     g.fillStyle = color;
     g.beginPath();
-    g.arc(w / 2, h / 2, w / 2, 0, Math.PI * 2);
+    g.arc(cx, cy, w / 2, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = '#ffffff';
-    for (let i = 0; i < 8; i++) {
+    // 边缘嵌片（与侧面对齐）
+    g.fillStyle = light ? '#2a4f9a' : '#f3efe6';
+    for (let i = 0; i < 6; i++) {
       g.save();
-      g.translate(w / 2, h / 2);
-      g.rotate((i / 8) * Math.PI * 2);
-      g.fillRect(-6, -w / 2, 12, 16);
+      g.translate(cx, cy);
+      g.rotate((i / 6) * Math.PI * 2);
+      g.beginPath();
+      g.moveTo(-9, -w / 2);
+      g.lineTo(9, -w / 2);
+      g.lineTo(6, -w / 2 + 20);
+      g.lineTo(-6, -w / 2 + 20);
+      g.closePath();
+      g.fill();
       g.restore();
     }
-    g.strokeStyle = 'rgba(255,255,255,0.8)';
-    g.lineWidth = 3;
+    // 印刷内圈（虚线）
+    g.strokeStyle = light ? 'rgba(40,60,120,0.7)' : 'rgba(255,250,240,0.75)';
+    g.setLineDash([5, 4]);
+    g.lineWidth = 2;
     g.beginPath();
-    g.arc(w / 2, h / 2, w * 0.3, 0, Math.PI * 2);
+    g.arc(cx, cy, w * 0.36, 0, Math.PI * 2);
     g.stroke();
-    g.fillStyle = color === '#f4f1ea' ? '#333' : '#fff';
-    g.font = `bold ${label.length > 3 ? 22 : 30}px ${FONT}`;
+    g.setLineDash([]);
+    // 中心镶片
+    const inlay = g.createRadialGradient(cx - 10, cy - 10, 4, cx, cy, w * 0.3);
+    inlay.addColorStop(0, '#fbf7ee');
+    inlay.addColorStop(1, '#e7dfcd');
+    g.fillStyle = inlay;
+    g.beginPath();
+    g.arc(cx, cy, w * 0.29, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.25)';
+    g.lineWidth = 1.5;
+    g.stroke();
+    g.fillStyle = light ? '#1d1d24' : color;
+    g.font = `700 ${label.length > 3 ? 26 : label.length > 2 ? 32 : 38}px Georgia, "Times New Roman", serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(label, w / 2, h / 2 + 1);
+    g.fillText(label, cx, cy + 1);
+    g.font = `600 10px Georgia, serif`;
+    g.fillStyle = 'rgba(60,50,40,0.7)';
+    g.fillText('A P C', cx, cy + 26);
+    const img = g.getImageData(0, 0, w, h);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const n = (Math.random() - 0.5) * 10;
+      img.data[i] += n;
+      img.data[i + 1] += n;
+      img.data[i + 2] += n;
+    }
+    g.putImageData(img, 0, 0);
   });
 }
 

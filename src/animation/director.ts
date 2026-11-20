@@ -24,10 +24,9 @@ const GAP: Partial<Record<GameEvent['type'], number>> = {
   win: 400,
 };
 
+/** 玩家面前的筹码堆：下注从这里推出，赢得的筹码回到这里 */
 function handPos(l: SeatLayout): V3 {
-  // 动物手部大致位置（座位与桌边之间）
-  const a = l.angle;
-  return [Math.sin(a) * 3.3, 1.3, Math.cos(a) * 3.3];
+  return [l.stack[0], l.stack[1], l.stack[2]];
 }
 
 /** 别人全押时，各种动物的招牌反应 */
@@ -154,10 +153,10 @@ export function useTableDirector(view: TableView | null) {
             let chipDelay = 220;
             if (e.action === 'fold') {
               play(e.playerId, 'fold');
-              sound.play('fold');
+              sound.play('fold', 0.25, l ? { x: l.cards[0], z: l.cards[2] } : undefined);
               mood(e.playerId, '😮‍💨', 'sad', 1500);
             } else if (e.action === 'check') {
-              sound.play('check');
+              sound.play('check', 0, l ? { x: l.cards[0], z: l.cards[2] } : undefined);
               play(e.playerId, 'talk');
             } else if (e.action === 'call') {
               play(e.playerId, 'bet');
@@ -185,10 +184,12 @@ export function useTableDirector(view: TableView | null) {
               sound.play('allin');
               fx.setCue({ type: 'allin', playerId: e.playerId, duration: 2400 });
               fx.boostLight(0.7, 2200);
-              fx.shout('全押！', 'allin');
-              if (l) fx.burst(l.head, 'fire');
+              fx.shout('全押', 'allin');
+              // 全押：环境声降低、音乐进入高强度
+              sound.duck(0.45, 1600);
+              sound.setIntensity(1, 9000);
               if (p) sound.animal(p.profile.animal.species, 'neutral', 0.3);
-              timers.current.push(window.setTimeout(() => fx.doShake(0.09), chipDelay + DUR.chipFlight));
+              timers.current.push(window.setTimeout(() => fx.doShake(0.022), chipDelay + DUR.chipFlight));
               const others = view.players.filter((x) => x.id !== e.playerId && x.inHand && !x.busted);
               others.forEach((o, i) => {
                 const r = ALLIN_REACTION[o.profile.animal.species] ?? { emoji: '😳', face: 'wide' as MoodFace, anim: 'surprised' as AnimName };
@@ -236,6 +237,8 @@ export function useTableDirector(view: TableView | null) {
           showdownHappened = true;
           at(() => {
             fx.setCue({ type: 'showdown', duration: 2600 });
+            sound.setIntensity(0.85, 5000);
+            sound.duck(0.6, 2400);
             e.hands.forEach((h, i) => timers.current.push(window.setTimeout(() => play(h.playerId, i % 2 ? 'surprised' : 'doubt'), i * 180)));
           });
           break;
@@ -247,29 +250,39 @@ export function useTableDirector(view: TableView | null) {
         case 'win': {
           const winners = new Set(e.awards.map((a) => a.playerId));
           const tie = !e.uncontested && winners.size > 1;
+          // 牌力等级 → 演出强度（高牌 / 一对很克制，皇家同花顺最隆重）
+          let best = -1;
+          for (const sh of view.summary?.shown ?? []) if (winners.has(sh.playerId)) best = Math.max(best, sh.category);
+          const tier = e.uncontested ? -1 : best >= 9 ? 5 : best >= 8 ? 4 : best >= 7 ? 3 : best >= 4 ? 2 : best >= 2 ? 1 : 0;
+          const bestName = view.summary?.shown.find((sh) => winners.has(sh.playerId) && sh.category === best)?.handName;
           at(() => {
             let biggest = e.awards[0];
             for (const a of e.awards) if (a.amount > (biggest?.amount ?? 0)) biggest = a;
             // 1. 镜头移到赢家（平局时环绕桌面），灯光增强
+            const cueMs = tier >= 5 ? 5200 : tier >= 3 ? 4200 : 3400;
             if (tie) {
               fx.setCue({ type: 'showdown', duration: 3000 });
-              fx.shout('平局！', 'tie');
-            } else if (biggest && !e.uncontested) fx.setCue({ type: 'win', playerId: biggest.playerId, duration: 3400 });
-            if (!e.uncontested) fx.boostLight(0.9, 2800);
-            // 2. 短暂停顿后，筹码从底池飞向赢家；赢家站起来庆祝
-            const payoutDelay = e.uncontested ? 150 : 520;
+              fx.shout('平局', 'tie');
+            } else if (biggest && !e.uncontested) fx.setCue({ type: 'win', playerId: biggest.playerId, duration: cueMs });
+            if (tier >= 3 && bestName) {
+              fx.shout(bestName, 'hand');
+              sound.duck(0.3, 2600);
+            }
+            if (tier >= 1) fx.boostLight(Math.min(1, 0.3 + tier * 0.15), 2000 + tier * 400);
+            // 2. 短暂停顿后，筹码从底池移向赢家；赢家起身庆祝
+            const payoutDelay = e.uncontested ? 150 : tier >= 3 ? 900 : 520;
             e.awards.forEach((a, i) => {
               const l = layout.get(a.playerId);
               if (!l) return;
-              fx.flyChips({ from: POT_POS, to: handPos(l), amount: a.amount, duration: 850, delay: payoutDelay + i * STAGGER.winnerPayout });
+              fx.flyChips({ from: POT_POS, to: handPos(l), amount: a.amount, duration: 950, delay: payoutDelay + i * STAGGER.winnerPayout, arc: 0.12 });
               timers.current.push(
                 window.setTimeout(() => {
-                  play(a.playerId, e.uncontested ? 'happy' : 'win');
-                  mood(a.playerId, tie ? '🤝' : '😆', 'happy', 2800);
-                  if (!e.uncontested) {
-                    fx.burst(l.head, 'confetti');
-                    fx.burst(l.head, 'gold');
-                  } else fx.burst(l.head, 'sparkle');
+                  play(a.playerId, e.uncontested || tier <= 0 ? 'happy' : 'win');
+                  if (!e.uncontested) mood(a.playerId, tie ? '🤝' : '😆', 'happy', 2600);
+                  // 粒子：按牌力分级，始终克制
+                  if (tier >= 1) fx.burst(l.head, 'gold');
+                  if (tier >= 2) fx.burst(l.head, 'confetti');
+                  if (tier >= 5) timers.current.push(window.setTimeout(() => fx.burst(l.head, 'gold'), 600));
                 }, payoutDelay + i * STAGGER.winnerPayout),
               );
             });
@@ -287,14 +300,19 @@ export function useTableDirector(view: TableView | null) {
                 } else if (Math.random() < 0.3) play(p.id, 'sad');
               }
             }
+            // 4. 音乐释放紧张感
+            sound.setIntensity(0);
             const viewerWon = winners.has(viewer);
             if (viewerWon) {
-              timers.current.push(window.setTimeout(() => sound.play('win'), payoutDelay));
+              timers.current.push(window.setTimeout(() => sound.play(tier >= 5 ? 'royal' : 'win'), payoutDelay));
               if (me) sound.animal(me.profile.animal.species, 'happy', 0.4 + payoutDelay / 1000);
+            } else if (tier >= 5) {
+              timers.current.push(window.setTimeout(() => sound.play('royal'), payoutDelay));
             } else if (me && me.inHand && !me.folded && showdownHappened) {
               sound.play('lose');
             } else {
-              sound.play('chips', 0.2);
+              const l = biggest ? layout.get(biggest.playerId) : undefined;
+              sound.play('chips', 0.2, l ? { x: l.stack[0], z: l.stack[2] } : undefined);
             }
           });
           break;

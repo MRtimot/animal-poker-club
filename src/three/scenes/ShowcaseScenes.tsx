@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { ContactShadows, Html, OrbitControls } from '@react-three/drei';
+import { ContactShadows, Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { AnimalModel } from '../animals/AnimalModel';
 import { AnimalConfig, randomAnimal } from '../../core/player/profile';
@@ -14,11 +14,11 @@ import { ease } from '../../animation/motion';
 import { GEO, mat } from '../animals/materials';
 import { seededRandom } from '../../core/utils/random';
 
-function Pedestal({ position, color = '#c9a227', r = 0.9 }: { position: [number, number, number]; color?: string; r?: number }) {
+function Pedestal({ position, color = '#b58a3c', r = 0.9 }: { position: [number, number, number]; color?: string; r?: number }) {
   return (
     <group position={position}>
-      <mesh geometry={GEO.cyl} material={mat('#3d2014', { rough: 0.4 })} position={[0, 0.12, 0]} scale={[r, 0.24, r]} castShadow receiveShadow />
-      <mesh geometry={GEO.torus} material={mat(color, { rough: 0.3, metal: 0.8 })} position={[0, 0.24, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[r, r, 0.4]} />
+      <mesh geometry={GEO.cyl} material={mat('#1e130d', { rough: 0.7 })} position={[0, 0.12, 0]} scale={[r, 0.24, r]} castShadow receiveShadow />
+      <mesh geometry={GEO.torusThin} material={mat(color, { rough: 0.3, metal: 1 })} position={[0, 0.245, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[r, r, 1]} />
     </group>
   );
 }
@@ -102,7 +102,7 @@ export function HomeScene({ config }: { config: AnimalConfig }) {
         const z = 1.2 - k * 0.9;
         return (
           <group key={i}>
-            <Pedestal position={[x, 0, z]} r={0.75} color={['#e94f9a', '#5fe1ff', '#7dff8a'][k - 1]} />
+            <Pedestal position={[x, 0, z]} r={0.75} />
             <ShowAnimal config={f} position={[x, 0.66, z]} rotY={-side * 0.35} offset={i + 1} />
           </group>
         );
@@ -202,21 +202,28 @@ export function CreatorScene({ config, anim }: { config: AnimalConfig; anim: { n
   }, [camera]);
   return (
     <>
-      <color attach="background" args={['#1b1230']} />
-      <fog attach="fog" args={['#1b1230', 9, 20]} />
-      <hemisphereLight args={['#ffe2f0', '#2a1840', 0.8]} />
-      <spotLight position={[3, 6, 4]} angle={0.5} penumbra={0.6} intensity={90} castShadow={quality !== 'low'} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-      <pointLight position={[-4, 2, -2]} intensity={25} color="#ff5fa8" />
-      <pointLight position={[4, 2, -3]} intensity={25} color="#5fe1ff" />
+      {/* 摄影棚：中性灰背景、主光 + 柔光补光 + 轮廓光，真实呈现毛色与材质 */}
+      <color attach="background" args={['#141316']} />
+      <fog attach="fog" args={['#141316', 9, 20]} />
+      <hemisphereLight args={['#f2ece4', '#1a1816', 0.45]} />
+      <spotLight position={[3, 6, 4]} angle={0.5} penumbra={0.8} intensity={110} color="#fff1e0" castShadow={quality !== 'low'} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+      <pointLight position={[-4, 2.4, 2]} intensity={14} color="#e8eef8" />
+      <directionalLight position={[0, 4, -6]} intensity={1.4} color="#dfe8ff" />
+      {quality !== 'low' && (
+        <Environment resolution={128} frames={1}>
+          <Lightformer intensity={2} color="#fff4e6" position={[3, 5, 4]} scale={[4, 4, 1]} />
+          <Lightformer intensity={0.8} color="#e6eeff" position={[-5, 2, 1]} rotation-y={Math.PI / 2} scale={[6, 3, 1]} />
+        </Environment>
+      )}
       <group>
-        <Pedestal position={[0, -0.3, 0]} r={1.2} color="#ff5fa8" />
+        <Pedestal position={[0, -0.3, 0]} r={1.2} />
         <CreatorAnimal config={config} anim={anim} />
       </group>
       <Bursts density={quality === 'low' ? 0.5 : 1} />
       <ContactShadows position={[0, -0.29, 0]} opacity={0.45} scale={6} blur={2.4} far={3} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.31, 0]} receiveShadow>
         <circleGeometry args={[12, 48]} />
-        <meshStandardMaterial color="#24173d" roughness={0.9} />
+        <meshStandardMaterial color="#1c1a1d" roughness={0.7} />
       </mesh>
       <OrbitControls target={[0, 1.25, 0]} enablePan={false} minDistance={2.2} maxDistance={8} maxPolarAngle={Math.PI * 0.62} enableDamping makeDefault />
     </>
@@ -240,7 +247,7 @@ export function LobbyScene({ members, playerId }: { members: LobbyMember[]; play
         const z = 1.2 - Math.abs(i - (n - 1) / 2) * 0.25;
         return (
           <group key={m.id} position={[x, 0, z]}>
-            <Pedestal position={[0, 0, 0]} r={0.6} color={m.id === playerId ? '#5fe1ff' : m.ready ? '#7dff8a' : '#c9a227'} />
+            <Pedestal position={[0, 0, 0]} r={0.6} color={m.id === playerId ? '#9fb4c4' : m.ready ? '#8fae7a' : '#b58a3c'} />
             <group position={[0, 0.66, 0]} rotation={[0, -x * 0.08, 0]}>
               <ShowAnimal config={m.profile.animal} position={[0, 0, 0]} rotY={0} offset={i} scale={0.9} />
             </group>

@@ -16,6 +16,8 @@ export const ANIM_DURATION: Record<AnimName, number> = {
 
 /** 表情（情绪系统）：会改变动物脸部，并在头顶短暂显示 */
 export type MoodFace = 'normal' | 'happy' | 'wide' | 'sad' | 'angry' | 'smug' | 'doubt' | 'x';
+export type ShoutKind = 'allin' | 'street' | 'tie' | 'end' | 'hand';
+
 export interface Mood {
   emoji: string;
   face: MoodFace;
@@ -35,6 +37,8 @@ export interface ChipFlight {
   amount: number;
   start: number; // ms (performance.now)
   duration: number;
+  /** 抬起高度：下注贴着桌面滑动（约 0.05），派奖略高 */
+  arc?: number;
 }
 
 export interface Bubble {
@@ -72,10 +76,13 @@ interface FxState {
   /** 桌面灯光增强（0~1） */
   light: { level: number; start: number; duration: number };
   /** 屏幕中央的大字提示（全押！/ 翻牌 / 转牌 / 河牌 / 平局！） */
-  announce: { id: number; text: string; kind: 'allin' | 'street' | 'tie' | 'end'; start: number } | null;
-  shout: (text: string, kind: 'allin' | 'street' | 'tie' | 'end') => void;
+  announce: { id: number; text: string; kind: ShoutKind; start: number } | null;
+  shout: (text: string, kind: ShoutKind) => void;
   setMood: (playerId: string, emoji: string, face: MoodFace, ms?: number) => void;
   doShake: (amp: number) => void;
+  /** 大底池紧张度 0~1 */
+  tension: number;
+  setTension: (v: number) => void;
   boostLight: (level: number, ms: number) => void;
   play: (playerId: string, name: AnimName) => void;
   flyChips: (f: Omit<ChipFlight, 'id' | 'start'> & { delay?: number }) => void;
@@ -106,6 +113,10 @@ export const useFx = create<FxState>()((set, get) => ({
     set({ moods: { ...get().moods, [playerId]: { emoji, face, start: now, until: now + ms } } });
   },
   doShake: (amp) => set({ shake: { amp, start: performance.now() } }),
+  tension: 0,
+  setTension: (v) => {
+    if (Math.abs(v - get().tension) > 0.02) set({ tension: v });
+  },
   boostLight: (level, ms) => set({ light: { level, start: performance.now(), duration: ms } }),
   play: (playerId, name) => {
     set({ anims: { ...get().anims, [playerId]: { name, start: performance.now() / 1000 } } });
@@ -137,7 +148,7 @@ export const useFx = create<FxState>()((set, get) => ({
       set({ flights, bubbles, bursts, moods });
     }
   },
-  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, announce: null, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
+  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, announce: null, tension: 0, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
 }));
 
 if (typeof window !== 'undefined') {

@@ -18,6 +18,8 @@ export interface SeatLayout {
   seat: V3;
   cards: V3;
   bet: V3;
+  /** 玩家面前桌上的筹码堆 */
+  stack: V3;
   head: V3;
   tag: V3;
   button: V3;
@@ -44,6 +46,7 @@ export function computeLayout(view: Pick<TableView, 'players' | 'viewerId'>): Ma
       seat: at(a, SEAT_R, SEAT_Y),
       cards: at(a, isViewer ? 2.45 : 2.6, TABLE_Y + 0.012),
       bet: at(a, 1.95, TABLE_Y + 0.01),
+      stack: at(a - (isViewer ? 0.3 : 0.34), 2.72, TABLE_Y + 0.004),
       head: at(a, SEAT_R, SEAT_Y + 2.45),
       // 自己的名牌放在侧边，避免挡住自己的手牌
       tag: isViewer ? [SEAT_R * 0.62, SEAT_Y + 1.2, SEAT_R * 0.92] : at(a, SEAT_R - 0.45, SEAT_Y + 2.3),

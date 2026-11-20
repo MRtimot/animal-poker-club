@@ -21,6 +21,7 @@ import { useSettings } from '../../store/settingsStore';
 import { formatChips } from '../../utils/format';
 import { cardBackTexture } from '../textures';
 import { SceneLights } from './SceneLights';
+import { sound } from '../../audio/sound';
 
 interface RetireCard {
   key: string;
@@ -31,7 +32,7 @@ interface RetireCard {
 }
 
 function seatStatus(p: SeatView, view: TableView): { text: string; cls: string } {
-  if (!p.connected && !p.isAI) return { text: '离线', cls: 'offline' };
+  if (!p.connected && !p.isAI) return { text: '连接中…', cls: 'offline' };
   if (p.busted) return { text: '已出局', cls: 'out' };
   if (p.sittingOut) return { text: '已离开', cls: 'out' };
   if (view.currentPlayerId === p.id) return { text: '思考中…', cls: 'thinking' };
@@ -47,26 +48,38 @@ function seatStatus(p: SeatView, view: TableView): { text: string; cls: string }
   return { text: '', cls: '' };
 }
 
+/**
+ * 环形倒计时：平滑减少；最后 5 秒变琥珀色，最后 3 秒变红，最后 1 秒进入紧急状态（轻微脉动，不闪烁）
+ */
 function TurnTimer({ view }: { view: TableView }) {
   const offset = useGame((s) => s.clockOffset);
   const [, tick] = useState(0);
   useEffect(() => {
-    const iv = setInterval(() => tick((x) => x + 1), 250);
+    const iv = setInterval(() => tick((x) => x + 1), 200);
     return () => clearInterval(iv);
   }, []);
   if (!view.turnDeadline) return null;
   const remaining = Math.max(0, view.turnDeadline - (Date.now() + offset));
   const total = Math.max(1, view.turnTotalMs);
   const secs = Math.ceil(remaining / 1000);
-  const warn = remaining <= 5000 && total > 6000;
+  const human = total > 6000;
+  const state = !human ? '' : remaining <= 1000 ? 'urgent' : remaining <= 3000 ? 'danger' : remaining <= 5000 ? 'warn' : '';
+  const R = 15;
+  const C = 2 * Math.PI * R;
   return (
-    <div className={`nt-timer ${warn ? 'warn' : ''}`}>
-      <div
-        key={view.turnDeadline}
-        className="nt-timer-bar"
-        style={{ animationDuration: `${remaining}ms`, width: `${(remaining / total) * 100}%` }}
-      />
-      {total > 6000 && <span key={warn ? secs : 'n'} className="nt-secs">{secs}</span>}
+    <div className={`ring-timer ${state}`}>
+      <svg viewBox="0 0 36 36" width="34" height="34">
+        <circle cx="18" cy="18" r={R} className="rt-track" />
+        <circle
+          key={view.turnDeadline}
+          cx="18"
+          cy="18"
+          r={R}
+          className="rt-bar"
+          style={{ strokeDasharray: C, strokeDashoffset: C * (1 - remaining / total), animationDuration: `${remaining}ms`, ['--c' as any]: C }}
+        />
+      </svg>
+      {human && <span className="rt-secs">{secs}</span>}
     </div>
   );
 }
@@ -101,7 +114,7 @@ const NameTag = memo(function NameTag({ p, view, layout, winAmount }: { p: SeatV
   if (view.bbId === p.id && view.phase !== 'idle') badges.push('大盲');
   return (
     <Html position={layout.tag} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
-      <div className={`nametag ${isCurrent ? 'current' : ''} ${p.folded ? 'folded' : ''} ${layout.isViewer ? 'me' : ''}`}>
+      <div className={`nametag ${isCurrent ? 'current' : ''} ${p.folded ? 'folded' : ''} ${layout.isViewer ? 'me' : ''} ${!p.connected && !p.isAI ? 'offline' : ''}`}>
         <Bubble playerId={p.id} />
         <MoodBadge playerId={p.id} />
         <div className="nt-name">
@@ -225,7 +238,8 @@ function SeatEntrance({ layout, species, playerId, order, chair, children }: {
   );
 }
 
-function PlayerSeat({ p, view, layout, allLayout, dealOrder, dealDelay, highlight, winAmount, seedIndex }: {
+function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, dealDelay, highlight, winAmount, seedIndex }: {
+  showdownOrder: string[];
   p: SeatView;
   view: TableView;
   layout: SeatLayout;
@@ -239,6 +253,8 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, dealDelay, highligh
   const rotY = layout.angle + Math.PI;
   const thinking = view.currentPlayerId === p.id;
   const showdown = view.phase === 'showdown' || view.phase === 'complete';
+  // 摊牌时按顺序逐个亮牌
+  const showOrder = Math.max(0, showdownOrder.indexOf(p.id));
   // 头转向正在行动的玩家
   const lookYaw = useMemo(() => {
     const cur = view.currentPlayerId && view.currentPlayerId !== p.id ? allLayout.get(view.currentPlayerId) : undefined;
@@ -258,7 +274,7 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, dealDelay, highligh
         species={p.profile.animal.species}
         playerId={p.id}
         order={seedIndex}
-        chair={<Chair position={[layout.seat[0], 0, layout.seat[2]]} rotY={rotY} color={layout.isViewer ? '#1f5c8a' : '#7a1f2b'} />}
+        chair={<Chair position={[layout.seat[0], 0, layout.seat[2]]} rotY={rotY} />}
       >
         <group position={layout.seat} rotation={[0, rotY, 0]}>
           {!p.busted && !p.sittingOut && (
@@ -292,6 +308,7 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, dealDelay, highligh
             yaw={yaw}
             tilt={tilt}
             faceUp={faceUp}
+            flipDelay={layout.isViewer ? 0 : showOrder * 650}
             delay={dealDelay + idx * STAGGER.holeCard}
             highlight={!!c && highlight.has(c.id)}
             moveDelay={350}
@@ -302,7 +319,10 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, dealDelay, highligh
       })}
 
       {/* 下注筹码 */}
-      <ChipPile amount={p.bet} position={layout.bet} />
+      {/* 玩家面前的筹码堆（赢得的筹码到达后才增加） */}
+      <ChipPile amount={p.chips} position={layout.stack} layout="stack" delay={1650} rotY={layout.angle} />
+      {/* 下注筹码 */}
+      <ChipPile amount={p.bet} position={layout.bet} layout="bet" />
     </group>
   );
 }
@@ -386,11 +406,50 @@ function PotLabel({ view }: { view: TableView }) {
   );
 }
 
+/** 胜利时照亮赢家区域的聚光灯（自然、克制地亮起再退去） */
+function WinnerLight({ layout }: { layout: Map<string, SeatLayout> }) {
+  const light = useRef<THREE.SpotLight>(null!);
+  const target = useMemo(() => new THREE.Object3D(), []);
+  const level = useRef(0);
+  useFrame((_, dt) => {
+    const cue = useFx.getState().cue;
+    const seat = cue && cue.type === 'win' && cue.playerId ? layout.get(cue.playerId) : undefined;
+    const t = cue ? (performance.now() - cue.start) / cue.duration : 1;
+    const want = seat && t < 0.92 ? 1 : 0;
+    level.current = damp(level.current, want, want ? 2.2 : 1.4, dt);
+    if (seat) {
+      target.position.set(seat.seat[0], 1.6, seat.seat[2]);
+      light.current.position.set(seat.seat[0] * 0.35, 7.2, seat.seat[2] * 0.35);
+    }
+    light.current.intensity = level.current * 70;
+    light.current.visible = level.current > 0.01;
+  });
+  return (
+    <>
+      <primitive object={target} />
+      <spotLight ref={light} target={target} angle={0.32} penumbra={0.8} decay={2} color="#ffe2b0" intensity={0} visible={false} />
+    </>
+  );
+}
+
 export function GameScene({ view }: { view: TableView }) {
   const quality = useSettings((s) => s.quality);
   const cameraMode = useGame((s) => s.cameraMode);
   const ids = view.players.map((p) => p.id).join(',');
   const layout = useMemo(() => computeLayout(view), [ids, view.viewerId]); // eslint-disable-line
+
+  const showdownOrder = useMemo(() => {
+    const ev = view.events.find((e) => e.type === 'showdown');
+    return ev && ev.type === 'showdown' ? ev.hands.map((h) => h.playerId) : [];
+  }, [view.events]);
+  // 大底池：底池占全桌筹码的比例 → 灯光与音乐的紧张度
+  useEffect(() => {
+    const total = view.players.reduce((a, p) => a + p.chips + p.bet, 0) + view.potCollected;
+    const ratio = total > 0 ? view.potTotal / total : 0;
+    const tension = Math.min(1, Math.max(0, (ratio - 0.15) / 0.45));
+    useFx.getState().setTension(tension);
+    sound.setBaseIntensity(tension * 0.6);
+  }, [view.potTotal]); // eslint-disable-line
 
   const dealOrder = useMemo(() => {
     const ev = view.events.find((e) => e.type === 'dealHole');
@@ -451,6 +510,7 @@ export function GameScene({ view }: { view: TableView }) {
           layout={layout.get(p.id)!}
           allLayout={layout}
           dealOrder={dealOrder}
+          showdownOrder={showdownOrder}
           dealDelay={dealDelay}
           highlight={highlight}
           winAmount={wins.get(p.id) ?? 0}
@@ -483,12 +543,13 @@ export function GameScene({ view }: { view: TableView }) {
           // 翻牌三张依次出现，中间短暂停顿；河牌飞得更慢、停顿更久再翻开
           delay={i < 3 ? STAGGER.flop[i] : 120}
           flightMs={i === 4 ? 720 : 560}
-          arcHeight={i === 4 ? 0.9 : 0.6}
+          arcHeight={i === 4 ? 0.32 : 0.18}
           revealPause={i === 4 ? 520 : i === 3 ? 220 : 90}
           highlight={highlight.has(c.id)}
         />
       ))}
-      <ChipPile amount={view.potCollected} position={POT_POS} delay={DUR.chipFlight + 300} neat />
+      <ChipPile amount={view.potCollected} position={POT_POS} delay={DUR.chipFlight + 300} layout="neat" />
+      <WinnerLight layout={layout} />
       <PotLabel view={view} />
       <ChipFlights />
       <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />

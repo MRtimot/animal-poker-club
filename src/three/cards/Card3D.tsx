@@ -6,24 +6,64 @@ import { cardBackTexture, cardFaceTexture } from '../textures';
 import { CARD_H, CARD_W, DECK_POS, V3 } from '../layout';
 import { sound } from '../../audio/sound';
 import { DUR, arc, clamp01, damp, ease, settle } from '../../animation/motion';
+import { shadowGeo, shadowMaterial } from '../realism';
+import { TABLE_Y } from '../layout';
 
-const cardGeo = new THREE.BoxGeometry(CARD_W, 0.008, CARD_H);
-const edgeMat = new THREE.MeshStandardMaterial({ color: '#f1ece0', roughness: 0.6 });
-let backMat: THREE.MeshStandardMaterial | null = null;
-const faceMats = new Map<string, THREE.MeshStandardMaterial>();
-const glowMat = new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.0, depthWrite: false });
-const glowGeo = new THREE.PlaneGeometry(CARD_W * 1.18, CARD_H * 1.14);
+// —— 写实卡牌几何：圆角、真实厚度、纸张边缘 ——
+const CARD_T = 0.006;
+const CORNER = 0.038;
+function cardShape() {
+  const w = CARD_W / 2;
+  const h = CARD_H / 2;
+  const r = CORNER;
+  const sh = new THREE.Shape();
+  sh.moveTo(-w + r, -h);
+  sh.lineTo(w - r, -h);
+  sh.quadraticCurveTo(w, -h, w, -h + r);
+  sh.lineTo(w, h - r);
+  sh.quadraticCurveTo(w, h, w - r, h);
+  sh.lineTo(-w + r, h);
+  sh.quadraticCurveTo(-w, h, -w, h - r);
+  sh.lineTo(-w, -h + r);
+  sh.quadraticCurveTo(-w, -h, -w + r, -h);
+  return sh;
+}
+function capGeo(up: boolean) {
+  const g = new THREE.ShapeGeometry(cardShape(), 5);
+  const pos = g.getAttribute('position');
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / CARD_W + 0.5, pos.getY(i) / CARD_H + 0.5);
+  g.rotateX(up ? -Math.PI / 2 : Math.PI / 2);
+  g.translate(0, up ? CARD_T / 2 : -CARD_T / 2, 0);
+  return g;
+}
+const faceGeo = capGeo(true);
+const backGeo = capGeo(false);
+const edgeGeo = (() => {
+  const g = new THREE.ExtrudeGeometry(cardShape(), { depth: CARD_T, bevelEnabled: false, curveSegments: 5 });
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, -CARD_T / 2, 0);
+  return g;
+})();
+const hiddenMat = new THREE.MeshBasicMaterial({ visible: false });
+const edgeMat = new THREE.MeshStandardMaterial({ color: '#ece6d8', roughness: 0.7 });
+const edgeMats = [hiddenMat, edgeMat];
+let backMat: THREE.MeshPhysicalMaterial | null = null;
+const faceMats = new Map<string, THREE.MeshPhysicalMaterial>();
+const glowMat = new THREE.MeshBasicMaterial({ color: '#ffd98a', transparent: true, opacity: 0.0, depthWrite: false });
+const glowGeo = new THREE.PlaneGeometry(CARD_W * 1.12, CARD_H * 1.09);
 const glintMat = new THREE.MeshBasicMaterial({ color: '#fff3c8', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
-const glintGeo = new THREE.PlaneGeometry(CARD_W * 1.02, CARD_H * 1.02);
+const glintGeo = new THREE.PlaneGeometry(CARD_W * 0.98, CARD_H * 0.98);
 
+// 覆膜纸牌：略带清漆光泽，灯光下会出现柔和的高光
 function getBack() {
-  if (!backMat) backMat = new THREE.MeshStandardMaterial({ map: cardBackTexture(), roughness: 0.45 });
+  if (!backMat) backMat = new THREE.MeshPhysicalMaterial({ map: cardBackTexture(), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
   return backMat;
 }
 function getFace(card: Card) {
   let m = faceMats.get(card.id);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ map: cardFaceTexture(card), roughness: 0.4 });
+    m = new THREE.MeshPhysicalMaterial({ map: cardFaceTexture(card), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
     faceMats.set(card.id, m);
   }
   return m;
@@ -52,6 +92,8 @@ export interface Card3DProps {
   /** 落地后隐藏（回收到牌堆的旧牌） */
   vanishOnLand?: boolean;
   silent?: boolean;
+  /** 摊牌时逐个翻开：翻面前的等待（毫秒） */
+  flipDelay?: number;
 }
 
 const tmpA = new THREE.Vector3();
@@ -63,12 +105,14 @@ const tmpA = new THREE.Vector3();
  */
 export function Card3D({
   card, target, yaw = 0, tilt = 0, faceUp, delay = 0, from = DECK_POS, fromFaceUp = false, fromYaw, highlight = false,
-  flightMs = DUR.cardFlight, arcHeight = 0.6, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent,
+  flightMs = DUR.cardFlight, arcHeight = 0.22, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent, flipDelay = 0,
 }: Card3DProps) {
   const ref = useRef<THREE.Group>(null!);
   const glow = useRef<THREE.Mesh>(null!);
   const glint = useRef<THREE.Mesh>(null!);
+  const shadow = useRef<THREE.Mesh>(null!);
   const st = useRef({
+    jitter: 0,
     start: performance.now() + delay,
     landed: false,
     landTime: 0,
@@ -86,18 +130,17 @@ export function Card3D({
   });
   const myGlow = useMemo(() => glowMat.clone(), []);
   const myGlint = useMemo(() => glintMat.clone(), []);
+  const myShadow = useMemo(() => shadowMaterial('rect', 0.6).clone(), []);
   useEffect(
     () => () => {
       myGlow.dispose();
       myGlint.dispose();
+      myShadow.dispose();
     },
-    [myGlow, myGlint],
+    [myGlow, myGlint, myShadow],
   );
 
-  const materials = useMemo(() => {
-    const face = card ? getFace(card) : getBack();
-    return [edgeMat, edgeMat, face, getBack(), edgeMat, edgeMat];
-  }, [card]);
+  const faceMat = card ? getFace(card) : getBack();
 
   const want = faceUp && card ? 0 : Math.PI;
 
@@ -107,10 +150,10 @@ export function Card3D({
     if (!s.landed) return;
     if (Math.abs(want - s.flip) > 0.01 && s.flipStart < 0) {
       s.flipFrom = s.flip;
-      s.flipStart = performance.now();
-      if (!silent) sound.play('flip');
+      s.flipStart = performance.now() + flipDelay;
+      if (!silent) sound.play('flip', flipDelay / 1000, { x: s.pos.x, z: s.pos.z });
     }
-  }, [want, silent]);
+  }, [want, silent]); // eslint-disable-line
 
   const tKey = target.join(',');
   useEffect(() => {
@@ -127,6 +170,17 @@ export function Card3D({
     s.moveStart = performance.now() + moveDelay;
   }, [tKey]); // eslint-disable-line
 
+  /** 接触阴影：贴在桌面上，牌抬得越高阴影越淡、越大 */
+  const placeShadow = (x: number, y: number, z: number, ry: number) => {
+    const sh = shadow.current;
+    const above = Math.max(0, y - TABLE_Y);
+    sh.position.set(x + above * 0.08, TABLE_Y + 0.0012, z + above * 0.05);
+    sh.rotation.set(-Math.PI / 2, 0, ry);
+    const k = 1 + above * 1.4;
+    sh.scale.set(CARD_W * 1.3 * k, CARD_H * 1.25 * k, 1);
+    myShadow.opacity = 0.6 / (1 + above * 7);
+  };
+
   useFrame((_, dt) => {
     const s = st.current;
     const g = ref.current;
@@ -134,14 +188,16 @@ export function Card3D({
     const now = performance.now();
     if (now < s.start || s.gone) {
       g.visible = false;
+      shadow.current.visible = false;
       return;
     }
     g.visible = true;
+    shadow.current.visible = true;
 
     if (!s.landed) {
       if (!s.soundPlayed) {
         s.soundPlayed = true;
-        if (!silent) sound.play('card');
+        if (!silent) sound.play('card', 0, { x: s.moveTo.x, z: s.moveTo.z });
       }
       const p = clamp01((now - s.start) / flightMs);
       const e = ease.outCubic(p);
@@ -150,18 +206,22 @@ export function Card3D({
       s.pos.y += arc(p, arcHeight);
       // 旋转着飞出，逐渐减速对准目标朝向；飞行中轻微倾斜
       const startYaw = fromYaw ?? yaw;
-      const spin = vanishOnLand ? 0.5 : 1.6;
+      // 荷官发牌：低平的弧线，只有很少的旋转
+      const spin = vanishOnLand ? 0.2 : 0.45;
       const yNow = startYaw + (yaw - startYaw) * e + (1 - e) * Math.PI * spin;
-      const roll = Math.sin(p * Math.PI) * (vanishOnLand ? 0.12 : 0.3);
+      const roll = Math.sin(p * Math.PI) * (vanishOnLand ? 0.05 : 0.08);
       s.flip = fromFaceUp ? ease.inOutCubic(clamp01(p * 1.5)) * Math.PI : Math.PI;
       g.position.copy(s.pos);
       g.rotation.set(tilt * e + roll * 0.5, yNow, s.flip + roll, 'YXZ');
       glint.current.visible = false;
+      placeShadow(s.pos.x, s.pos.y, s.pos.z, yNow);
       if (p >= 1) {
         s.landed = true;
         s.landTime = now;
         s.yaw = yaw;
         s.tilt = tilt;
+        // 落桌时的摩擦：极轻微的转动后停住
+        s.jitter = (Math.random() - 0.5) * 0.06;
         if (vanishOnLand) {
           s.gone = true;
           g.visible = false;
@@ -220,8 +280,10 @@ export function Card3D({
     } else {
       s.flip = want;
     }
+    const jit = s.jitter * Math.exp(-since * 9);
     g.position.set(s.pos.x, s.pos.y + bounce + flipLift, s.pos.z);
-    g.rotation.set(s.tilt, s.yaw, s.flip, 'YXZ');
+    g.rotation.set(s.tilt, s.yaw + jit, s.flip, 'YXZ');
+    placeShadow(s.pos.x, s.pos.y + bounce + flipLift + (s.tilt ? 0.08 : 0), s.pos.z, s.yaw + jit);
 
     // 获胜牌发光 + 翻面光泽
     myGlow.opacity = damp(myGlow.opacity, highlight ? 0.55 + Math.sin(now / 200) * 0.2 : 0, 8, dt);
@@ -231,10 +293,15 @@ export function Card3D({
   });
 
   return (
+    <>
+    <mesh ref={shadow} geometry={shadowGeo} material={myShadow} visible={false} renderOrder={1} />
     <group ref={ref} visible={false}>
-      <mesh geometry={cardGeo} material={materials} castShadow receiveShadow />
-      <mesh ref={glow} geometry={glowGeo} material={myGlow} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.006, 0]} visible={false} />
-      <mesh ref={glint} geometry={glintGeo} material={myGlint} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0055, 0]} visible={false} />
+      <mesh geometry={faceGeo} material={faceMat} castShadow receiveShadow />
+      <mesh geometry={backGeo} material={getBack()} castShadow />
+      <mesh geometry={edgeGeo} material={edgeMats} />
+      <mesh ref={glow} geometry={glowGeo} material={myGlow} rotation={[-Math.PI / 2, 0, 0]} position={[0, -CARD_T, 0]} visible={false} />
+      <mesh ref={glint} geometry={glintGeo} material={myGlint} rotation={[-Math.PI / 2, 0, 0]} position={[0, CARD_T / 2 + 0.001, 0]} visible={false} />
     </group>
+    </>
   );
 }

@@ -33,6 +33,15 @@ export type ChatEmitter = (playerId: string, kind: 'chat' | 'emote', text: strin
  * 游戏控制器：驱动牌桌引擎的节奏（发牌动画等待、AI 思考、行动计时、下一手）。
  * 在浏览器（本地 AI 对战）与服务器（在线房间）中共用同一份代码。
  */
+/** 各性格的思考节奏：[最短毫秒, 随机范围] */
+const AI_PACE: Record<string, [number, number]> = {
+  aggressiveFox: [500, 900], // 激进：出手快
+  cautiousPanda: [1200, 1700], // 保守：慢慢想
+  crazyFrog: [300, 2400], // 疯狂：忽快忽慢
+  smartCat: [900, 1300], // 聪明：稳定
+  luckyRabbit: [600, 1600],
+};
+
 export class GameController {
   readonly engine: PokerEngine;
   private meta = new Map<string, SeatMeta>();
@@ -159,7 +168,12 @@ export class GameController {
     }
     const meta = this.meta.get(cur.id)!;
     if (meta.isAI) {
-      const think = this.delay(700 + this.aiRng() * 1400 + extraDelay);
+      // 像真人一样思考：不同性格的思考时间不同，面对大注时更犹豫
+      const pace = AI_PACE[meta.aiPersonality ?? 'smartCat'] ?? AI_PACE.smartCat;
+      const legal = e.getLegalActions(cur.id);
+      const facing = legal && legal.toCall > 0 ? Math.min(1, legal.toCall / Math.max(1, cur.chips)) : 0;
+      const hesitate = facing > 0.3 ? 600 + this.aiRng() * 1400 * facing : 0;
+      const think = this.delay(pace[0] + this.aiRng() * pace[1] + hesitate + extraDelay);
       this.turnTotalMs = think;
       this.schedule(think, () => this.runAI(cur.id));
     } else {

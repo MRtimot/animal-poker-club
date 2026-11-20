@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { QUALITY_NAME, Quality, useSettings } from '../../store/settingsStore';
+import { QUALITY_NAME, Quality, ROOM_NAME, RoomTheme, useSettings } from '../../store/settingsStore';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
 import { BackButton, Btn, Modal, Seg } from '../common/ui';
@@ -18,15 +18,26 @@ export function QuickSettings() {
   return (
     <>
       <div className="field">
-        <label>画质</label>
-        <Seg options={(Object.keys(QUALITY_NAME) as Quality[]).map((q) => ({ value: q, label: QUALITY_NAME[q] }))} value={s.quality} onChange={(q) => s.set({ quality: q })} />
+        <label>扑克房间</label>
+        <Seg options={(Object.keys(ROOM_NAME) as RoomTheme[]).map((r) => ({ value: r, label: ROOM_NAME[r] }))} value={s.room} onChange={(r) => s.set({ room: r })} />
         <div className="small muted" style={{ marginTop: 6 }}>
-          低：无阴影，适合旧手机 · 中：基础阴影 · 高：柔和阴影 + 光晕 · 极高：环境反射 + 景深
+          豪华赌场：木材、皮革与吧台 · 夜景高层：落地窗外的城市夜景 · 森林小屋：壁炉与窗外森林
         </div>
       </div>
+      <div className="field">
+        <label>画质</label>
+        <Seg options={(Object.keys(QUALITY_NAME) as Quality[]).map((q) => ({ value: q, label: QUALITY_NAME[q] }))} value={s.quality} onChange={(q) => s.set({ quality: q, autoQuality: false })} />
+        <div className="small muted" style={{ marginTop: 6 }}>
+          低：无阴影，适合旧手机 · 中：基础阴影与反射 · 高：柔和阴影 + 灰尘光束 · 极高：高清阴影 + 景深
+        </div>
+      </div>
+      <label className="toggle">
+        <span>⚡ 自动画质（帧率不足时自动降低画质）</span>
+        <input type="checkbox" checked={s.autoQuality} onChange={(e) => s.set({ autoQuality: e.target.checked })} />
+      </label>
       {slider('🎵 背景音乐', 'musicVolume')}
       {slider('🔊 音效', 'sfxVolume')}
-      {slider('🌲 环境声音', 'ambientVolume')}
+      {slider('🌃 环境声音', 'ambientVolume')}
       <label className="toggle">
         <span>🎥 自动镜头（下注、全押、摊牌、获胜时自动移动）</span>
         <input type="checkbox" checked={s.autoCamera} onChange={(e) => s.set({ autoCamera: e.target.checked })} />

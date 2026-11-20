@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { fabricNormal, furNormal, leatherNormal } from '../realism';
+
+/** 表面类型：毛发 / 织物（斜纹、针织、帆布）/ 皮革 */
+export type Surface = 'fur' | 'twill' | 'knit' | 'canvas' | 'leather';
 
 // 共享几何体与材质缓存：降低内存占用与 GPU 状态切换
 export const GEO = {
@@ -18,9 +22,39 @@ export const GEO = {
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
 
-export function mat(color: string, opts: { rough?: number; metal?: number; emissive?: string; ei?: number; opacity?: number } = {}) {
-  const key = `${color}|${opts.rough ?? 0.75}|${opts.metal ?? 0}|${opts.emissive ?? ''}|${opts.ei ?? 0}|${opts.opacity ?? 1}`;
+export function mat(color: string, opts: { rough?: number; metal?: number; emissive?: string; ei?: number; opacity?: number; surface?: Surface } = {}) {
+  const key = `${color}|${opts.rough ?? 0.75}|${opts.metal ?? 0}|${opts.emissive ?? ''}|${opts.ei ?? 0}|${opts.opacity ?? 1}|${opts.surface ?? ''}`;
   let m = matCache.get(key);
+  if (!m && opts.surface && !opts.emissive && !opts.metal && (opts.opacity ?? 1) >= 1) {
+    const c = new THREE.Color(color);
+    const sf = opts.surface;
+    if (sf === 'fur') {
+      // 毛发近似：顺毛方向的法线 + sheen（掠射角的柔和光晕，像真实毛发的轮廓光）
+      m = new THREE.MeshPhysicalMaterial({
+        color,
+        roughness: 0.82,
+        normalMap: furNormal(),
+        normalScale: new THREE.Vector2(0.55, 0.55),
+        sheen: 1,
+        sheenRoughness: 0.5,
+        sheenColor: c.clone().lerp(new THREE.Color('#ffffff'), 0.45),
+      });
+    } else if (sf === 'leather') {
+      m = new THREE.MeshPhysicalMaterial({ color, roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.4, normalMap: leatherNormal(), normalScale: new THREE.Vector2(0.4, 0.4) });
+    } else {
+      // 织物：细小的编织法线 + 轻微 sheen
+      m = new THREE.MeshPhysicalMaterial({
+        color,
+        roughness: 0.88,
+        normalMap: fabricNormal(sf),
+        normalScale: new THREE.Vector2(0.45, 0.45),
+        sheen: 0.5,
+        sheenRoughness: 0.7,
+        sheenColor: c.clone().lerp(new THREE.Color('#ffffff'), 0.25),
+      });
+    }
+    matCache.set(key, m);
+  }
   if (!m) {
     m = new THREE.MeshStandardMaterial({
       color,

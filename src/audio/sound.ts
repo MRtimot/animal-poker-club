@@ -4,7 +4,7 @@ import type { Species } from '../core/player/profile';
 
 type SfxName =
   | 'card' | 'flip' | 'chip' | 'chips' | 'button' | 'hover' | 'win' | 'lose' | 'turn' | 'allin'
-  | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick';
+  | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick' | 'royal';
 
 class SoundEngine {
   ctx: AudioContext | null = null;
@@ -18,6 +18,13 @@ class SoundEngine {
   private nextNoteTime = 0;
   private ambientStarted = false;
   private wantMusic = false;
+  /** 当前音效的输出节点（空间音频时指向声像器） */
+  private out: AudioNode | null = null;
+  private reverbSend!: GainNode;
+  /** 音乐紧张度 0~1：正常 → 大底池 → 全押 / 摊牌 */
+  private intensity = 0;
+  private intensityTarget = 0;
+  private intensityUntil = 0;
 
   /** 首次用户交互后初始化（浏览器策略要求） */
   unlock() {
@@ -41,6 +48,25 @@ class SoundEngine {
     this.sfx.connect(this.master);
     this.music.connect(this.master);
     this.ambient.connect(this.master);
+    // 房间混响：用衰减噪声合成的脉冲响应（小型木质房间）
+    const conv = ctx.createConvolver();
+    const irLen = Math.floor(ctx.sampleRate * 1.4);
+    const ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < irLen; i++) {
+        const t = i / irLen;
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3.2) * (i < 40 ? i / 40 : 1);
+      }
+    }
+    conv.buffer = ir;
+    const damp = ctx.createBiquadFilter();
+    damp.type = 'lowpass';
+    damp.frequency.value = 3800;
+    this.reverbSend = ctx.createGain();
+    this.reverbSend.gain.value = 0.16;
+    this.sfx.connect(this.reverbSend);
+    this.reverbSend.connect(conv).connect(damp).connect(this.master);
     this.applyVolumes();
     // 噪声缓冲
     const len = ctx.sampleRate * 2;
@@ -84,7 +110,7 @@ class SoundEngine {
     if (opts.glide) o.frequency.exponentialRampToValueAtTime(Math.max(20, opts.glide), t + dur);
     if (opts.detune) o.detune.value = opts.detune;
     this.env(g, t, opts.attack ?? 0.005, opts.vol ?? 0.2, dur);
-    o.connect(g).connect(opts.dest ?? this.sfx);
+    o.connect(g).connect(opts.dest ?? this.out ?? this.sfx);
     o.start(t);
     o.stop(t + dur + (opts.attack ?? 0.005) + 0.05);
   }
@@ -101,18 +127,65 @@ class SoundEngine {
     f.Q.value = opts.q ?? 1;
     const g = ctx.createGain();
     this.env(g, t, opts.attack ?? 0.002, opts.vol ?? 0.3, dur);
-    src.connect(f).connect(g).connect(opts.dest ?? this.sfx);
+    src.connect(f).connect(g).connect(opts.dest ?? this.out ?? this.sfx);
     src.start(t, Math.random() * 1.5);
     src.stop(t + dur + 0.1);
   }
 
-  play(name: SfxName, delay = 0) {
+  /**
+   * 播放音效。pos 为声音在牌桌上的世界坐标：x 决定左右声像，z 决定远近（越远越小声、混响越多），
+   * 这样左侧玩家下注时，筹码声就从左边传来。
+   */
+  play(name: SfxName, delay = 0, pos?: { x: number; z?: number }) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime + delay;
+    if (pos && this.ctx.createStereoPanner) {
+      const pan = this.ctx.createStereoPanner();
+      pan.pan.value = Math.max(-0.85, Math.min(0.85, pos.x / 4.2));
+      const g = this.ctx.createGain();
+      const far = Math.max(0, -(pos.z ?? 0)) / 4.2; // 0 = 近处，1 = 桌子对面
+      g.gain.value = 1 - far * 0.35;
+      pan.connect(g).connect(this.sfx);
+      this.out = pan;
+      window.setTimeout(() => {
+        try {
+          pan.disconnect();
+          g.disconnect();
+        } catch {
+          /* 已断开 */
+        }
+      }, (delay + 3) * 1000);
+    }
+    try {
+      this.playInner(name, t);
+    } finally {
+      this.out = null;
+    }
+  }
+
+  /** 音乐紧张度：持续 ms 毫秒后回落到 base */
+  setIntensity(level: number, ms = 0) {
+    if (ms > 0) {
+      this.intensityTarget = Math.max(this.intensityTarget, level);
+      this.intensityUntil = performance.now() + ms;
+    } else {
+      this.intensityTarget = level;
+      this.intensityUntil = 0;
+    }
+  }
+
+  /** 大底池带来的基础紧张度 */
+  private baseIntensity = 0;
+  setBaseIntensity(level: number) {
+    this.baseIntensity = Math.max(0, Math.min(0.6, level));
+  }
+
+  private playInner(name: SfxName, t: number) {
     switch (name) {
       case 'card':
-        this.noise(t, 0.07, { freq: 3200, q: 0.8, vol: 0.35 });
-        this.noise(t + 0.02, 0.05, { freq: 1200, q: 1.2, vol: 0.12 });
+        // 纸牌划过空气 + 落在绒布上的闷响
+        this.noise(t, 0.09, { freq: 2600, q: 0.7, vol: 0.22, attack: 0.02 });
+        this.noise(t + 0.08, 0.05, { freq: 700, q: 0.9, vol: 0.2, type: 'lowpass' });
         break;
       case 'flip':
         this.noise(t, 0.05, { freq: 4200, q: 1.5, vol: 0.3 });
@@ -129,11 +202,14 @@ class SoundEngine {
         break;
       }
       case 'chips':
-        for (let i = 0; i < 6; i++) {
-          const tt = t + i * 0.045 + Math.random() * 0.02;
-          const f = 2200 + Math.random() * 1400;
-          this.tone(f, tt, 0.05, { vol: 0.08 });
-          this.noise(tt, 0.025, { freq: 5200, q: 2, vol: 0.09 });
+        // 筹码滑过绒布 + 一连串清脆的碰撞声
+        this.noise(t, 0.16, { freq: 1100, q: 0.6, vol: 0.06, attack: 0.04, type: 'lowpass' });
+        for (let i = 0; i < 7; i++) {
+          const tt = t + 0.1 + i * (0.03 + Math.random() * 0.025);
+          const f = 2600 + Math.random() * 1600;
+          this.tone(f, tt, 0.035, { vol: 0.06 });
+          this.tone(f * 1.52, tt + 0.002, 0.025, { vol: 0.03 });
+          this.noise(tt, 0.02, { freq: 6000, q: 2.5, vol: 0.07 });
         }
         break;
       case 'check':
@@ -144,8 +220,9 @@ class SoundEngine {
         this.noise(t, 0.18, { freq: 1500, q: 0.6, vol: 0.2, attack: 0.03 });
         break;
       case 'button':
-        this.tone(660, t, 0.06, { type: 'triangle', vol: 0.12 });
-        this.tone(990, t + 0.035, 0.07, { type: 'sine', vol: 0.08 });
+        // 触感明确但安静的按键声
+        this.noise(t, 0.025, { freq: 1800, q: 1.2, vol: 0.12 });
+        this.tone(1100, t, 0.03, { type: 'sine', vol: 0.025 });
         break;
       case 'hover':
         this.tone(1200, t, 0.03, { type: 'sine', vol: 0.03 });
@@ -161,21 +238,27 @@ class SoundEngine {
         this.tone(1320, t + 0.12, 0.28, { type: 'sine', vol: 0.12 });
         break;
       case 'allin': {
-        this.tone(110, t, 0.9, { type: 'sawtooth', vol: 0.08, attack: 0.25, glide: 220 });
-        this.tone(220, t, 0.9, { type: 'triangle', vol: 0.1, attack: 0.25, glide: 440 });
-        this.noise(t, 0.8, { freq: 800, q: 0.5, vol: 0.08, attack: 0.4, type: 'highpass' });
-        this.tone(660, t + 0.75, 0.4, { type: 'square', vol: 0.05 });
+        // 低沉的冲击 + 缓慢上升的气流声
+        this.tone(55, t, 0.9, { type: 'sine', vol: 0.22, attack: 0.01, glide: 38 });
+        this.noise(t, 0.12, { freq: 220, q: 0.7, vol: 0.25, type: 'lowpass' });
+        this.noise(t + 0.05, 1.2, { freq: 1600, q: 0.4, vol: 0.05, attack: 0.9 });
         break;
       }
       case 'win': {
-        const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
-        notes.forEach((f, i) => this.tone(f, t + i * 0.09, 0.45, { type: 'triangle', vol: 0.14 }));
-        [1046.5, 1318.5, 1568].forEach((f) => this.tone(f, t + 0.5, 0.9, { type: 'sine', vol: 0.08 }));
-        for (let i = 0; i < 10; i++) this.tone(2000 + Math.random() * 3000, t + 0.5 + i * 0.06, 0.12, { vol: 0.03 });
+        // 温暖的大三和弦缓慢展开，不用卡通琶音
+        [261.6, 329.6, 392, 523.3].forEach((f, i) => this.tone(f, t + i * 0.06, 1.6, { type: 'sine', vol: 0.06, attack: 0.08 }));
+        this.tone(130.8, t, 1.8, { type: 'triangle', vol: 0.05, attack: 0.1 });
         break;
       }
       case 'lose': {
-        [392, 370, 349.2, 293.7].forEach((f, i) => this.tone(f, t + i * 0.22, 0.4, { type: 'triangle', vol: 0.12, glide: f * 0.97 }));
+        [293.7, 261.6].forEach((f, i) => this.tone(f, t + i * 0.32, 0.7, { type: 'sine', vol: 0.06, attack: 0.05, glide: f * 0.98 }));
+        break;
+      }
+      case 'royal': {
+        // 皇家同花顺：低沉的铺底 + 缓慢上行的和弦（稀有、隆重但不吵闹）
+        this.tone(65.4, t, 2.6, { type: 'sine', vol: 0.12, attack: 0.3 });
+        [261.6, 329.6, 392, 523.3, 659.3, 784, 1046.5].forEach((f, i) => this.tone(f, t + 0.2 + i * 0.16, 1.8 - i * 0.12, { type: 'sine', vol: 0.07, attack: 0.05 }));
+        this.noise(t + 0.2, 1.6, { freq: 9000, q: 0.5, vol: 0.03, attack: 0.6, type: 'highpass' });
         break;
       }
       case 'unlock': {
@@ -271,7 +354,7 @@ class SoundEngine {
 
   private scheduleMusic() {
     const ctx = this.ctx!;
-    const bpm = 84;
+    const bpm = 84 + this.intensity * 10;
     const eighth = 60 / bpm / 2;
     // ii–V–I–vi 进行（F 大调）
     const chords: [number, number[]][] = [
@@ -280,6 +363,12 @@ class SoundEngine {
       [87.31, [0, 4, 7, 11]], // Fmaj7
       [146.83, [0, 3, 7, 10]], // Dm7
     ];
+    // 紧张度平滑变化
+    if (this.intensityUntil && performance.now() > this.intensityUntil) {
+      this.intensityTarget = 0;
+      this.intensityUntil = 0;
+    }
+    this.intensity += (Math.max(this.baseIntensity, this.intensityTarget) - this.intensity) * 0.08;
     while (this.nextNoteTime < ctx.currentTime + 0.4) {
       const t = this.nextNoteTime;
       const step = this.musicStep;
@@ -301,7 +390,14 @@ class SoundEngine {
         this.tone(r * 2 ** (walk / 12) * (r > 120 ? 0.5 : 1), t, eighth * 1.8, { type: 'triangle', vol: 0.09, attack: 0.01, dest: this.music });
       }
       // 刷子鼓
-      this.noise(t, beat % 2 ? 0.05 : 0.09, { freq: 7000, q: 0.7, vol: beat % 2 ? 0.015 : 0.03, type: 'highpass', dest: this.music });
+      this.noise(t, beat % 2 ? 0.05 : 0.09, { freq: 7000, q: 0.7, vol: (beat % 2 ? 0.015 : 0.03) * (1 + this.intensity * 0.8), type: 'highpass', dest: this.music });
+      // 紧张度：低频脉冲（心跳感）与持续的低音铺底
+      if (this.intensity > 0.3 && beat % 4 === 0) {
+        this.tone(55, t, 0.22, { type: 'sine', vol: 0.11 * this.intensity, attack: 0.005, glide: 40, dest: this.music });
+      }
+      if (this.intensity > 0.6 && beat === 0) {
+        this.tone(r * 0.5, t, eighth * 8, { type: 'sawtooth', vol: 0.012 * this.intensity, attack: 0.4, dest: this.music });
+      }
       // 偶尔的旋律
       if (beat === 3 && Math.random() < 0.5) {
         const scale = [0, 2, 4, 7, 9, 12];
@@ -332,8 +428,17 @@ class SoundEngine {
     const chirp = () => {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
-      const base = 3800 + Math.random() * 1200;
-      for (let i = 0; i < 3; i++) this.tone(base, t + i * 0.07, 0.04, { type: 'sine', vol: 0.012, dest: this.ambient });
+      const room = useSettings.getState().room;
+      if (room === 'cabin') {
+        // 森林小屋：窗外的虫鸣
+        const base = 3800 + Math.random() * 1200;
+        for (let i = 0; i < 3; i++) this.tone(base, t + i * 0.07, 0.04, { type: 'sine', vol: 0.012, dest: this.ambient });
+      } else if (Math.random() < 0.35) {
+        // 赌场 / 高层：远处偶尔传来的杯子轻碰声
+        const f = 2400 + Math.random() * 900;
+        this.tone(f, t, 0.5, { type: 'sine', vol: 0.006, dest: this.ambient });
+        this.tone(f * 2.7, t, 0.3, { type: 'sine', vol: 0.003, dest: this.ambient });
+      }
       setTimeout(chirp, 2500 + Math.random() * 5000);
     };
     setTimeout(chirp, 3000);

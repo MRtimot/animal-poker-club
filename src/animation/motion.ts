@@ -97,3 +97,27 @@ export const CSS_EASE = {
   back: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
   inOut: 'cubic-bezier(0.65, 0, 0.35, 1)',
 };
+
+/**
+ * 临界阻尼平滑（类似 Unity SmoothDamp）：带速度的跟随，起步时加速、到达前减速，
+ * 镜头像真实的摄影轨道车一样有惯性，而不是指数插值那样“瞬间起步”。
+ */
+export function smoothDamp(cur: number, target: number, vel: { v: number }, smoothTime: number, dt: number, maxSpeed = Infinity) {
+  if (dt <= 0) return cur;
+  const st = Math.max(0.0001, smoothTime);
+  const omega = 2 / st;
+  const x = omega * dt;
+  const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  let change = cur - target;
+  const maxChange = maxSpeed * st;
+  change = Math.max(-maxChange, Math.min(maxChange, change));
+  const t = cur - change;
+  const temp = (vel.v + omega * change) * dt;
+  vel.v = (vel.v - omega * temp) * exp;
+  let out = t + (change + temp) * exp;
+  if (target - cur > 0 === out > target) {
+    out = target;
+    vel.v = (out - target) / dt;
+  }
+  return out;
+}

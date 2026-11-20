@@ -1,8 +1,9 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { AnimalConfig, EYE_COLORS, FUR_COLORS, SPECIES_MAP } from '../../core/player/profile';
-import { GEO, GOLD, mat, shade } from './materials';
+import { GEO, GOLD, mat, shade, type Surface } from './materials';
+import { irisTexture } from '../realism';
 import { LOOKS, TailType } from './species';
 import { animatePose, basePose } from '../../animation/animalAnimations';
 import { AnimName, useFx } from '../../store/fxStore';
@@ -11,9 +12,47 @@ import { damp, ease } from '../../animation/motion';
 type V3 = [number, number, number];
 type GeoKey = keyof typeof GEO;
 
+/**
+ * 表面上下文：毛发颜色集合 → 自动使用毛发材质；服装区域 → 自动使用织物材质。
+ * 这样所有部件共享统一的材质语言，不会看起来来自不同的游戏。
+ */
+const SurfaceCtx = createContext<{ fur: Set<string>; fabric: Surface | null }>({ fur: new Set(), fabric: null });
+
 function M({ g = 'sphere', c, p, s, r, m, cast }: { g?: GeoKey; c: string; p?: V3; s?: V3 | number; r?: V3; m?: Parameters<typeof mat>[1]; cast?: boolean }) {
+  const ctx = useContext(SurfaceCtx);
   const scale = typeof s === 'number' ? ([s, s, s] as V3) : s;
-  return <mesh geometry={GEO[g]} material={mat(c, m)} position={p} scale={scale} rotation={r} castShadow={cast} />;
+  const plain = !m || (!m.metal && !m.emissive && (m.opacity ?? 1) >= 1);
+  const surface: Surface | undefined = m?.surface ?? (plain ? (ctx.fabric ?? (ctx.fur.has(c) ? 'fur' : undefined)) : undefined);
+  return <mesh geometry={GEO[g]} material={mat(c, surface ? { ...m, surface } : m)} position={p} scale={scale} rotation={r} castShadow={cast} />;
+}
+
+const FABRIC: Record<string, Surface> = { suit: 'twill', hoodie: 'knit', tshirt: 'knit', denim: 'twill', gown: 'canvas', police: 'twill', chef: 'canvas', racer: 'leather' };
+
+// —— 写实眼睛：巩膜（带清漆光泽）+ 虹膜纹理 + 瞳孔 + 角膜高光层 ——
+function capGeo(theta: number) {
+  const g = new THREE.SphereGeometry(1, 32, 10, 0, Math.PI * 2, 0, theta);
+  g.rotateX(Math.PI / 2);
+  const pos = g.getAttribute('position');
+  const uv = g.getAttribute('uv');
+  const k = Math.sin(theta);
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / k / 2 + 0.5, pos.getY(i) / k / 2 + 0.5);
+  return g;
+}
+const IRIS_GEO = capGeo(0.62);
+const PUPIL_GEO = capGeo(0.24);
+const CORNEA_GEO = capGeo(0.78);
+const scleraMat = new THREE.MeshPhysicalMaterial({ color: '#f3efe6', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 });
+const pupilMat = new THREE.MeshStandardMaterial({ color: '#030304', roughness: 0.2 });
+const corneaMat = new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, clearcoat: 1, clearcoatRoughness: 0, depthWrite: false });
+const catchMat = new THREE.MeshBasicMaterial({ color: '#fffaf0', transparent: true, opacity: 0.9 });
+const irisMats = new Map<string, THREE.MeshPhysicalMaterial>();
+function irisMat(hex: string) {
+  let m = irisMats.get(hex);
+  if (!m) {
+    m = new THREE.MeshPhysicalMaterial({ map: irisTexture(hex), roughness: 0.35, clearcoat: 0.6 });
+    irisMats.set(hex, m);
+  }
+  return m;
 }
 
 // ───────────── 尾巴几何体（缓存） ─────────────
@@ -448,6 +487,8 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   const wingR = useRef<THREE.Group>(null!);
   const coolGlasses = useRef<THREE.Group>(null!);
   const earsRef = useRef<THREE.Group>(null!);
+  const gazeRefs = useRef<(THREE.Group | null)[]>([]);
+  const gaze = useRef({ x: 0, y: 0, tx: 0, ty: 0, next: 0 });
   const hatRef = useRef<THREE.Group>(null!);
   const lookCur = useRef(0);
   const lookRef = useRef(lookYaw);
@@ -494,6 +535,18 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
     const lt = lookRef.current == null || folded ? 0 : Math.max(-0.75, Math.min(0.75, lookRef.current));
     lookCur.current = damp(lookCur.current, lt, 3.2, dt);
     pose.headY += lookCur.current;
+    // 眼神：思考时看自己的牌，平时看桌面 / 正在行动的玩家；偶尔快速扫视（眼跳）
+    const gz = gaze.current;
+    if (nowMs > gz.next) {
+      gz.next = nowMs + 900 + Math.random() * 2200;
+      gz.tx = (Math.random() - 0.5) * 0.36;
+      gz.ty = (Math.random() - 0.5) * 0.18;
+    }
+    const wantY = gz.tx + (lookRef.current == null ? 0 : Math.max(-0.4, Math.min(0.4, lookRef.current * 0.5)));
+    const wantX = gz.ty + (seated ? (thinking ? 0.32 : 0.16) : 0) + (folded ? 0.2 : 0);
+    gz.x = damp(gz.x, wantX, 22, dt);
+    gz.y = damp(gz.y, wantY, 22, dt);
+    for (const g of gazeRefs.current) if (g) g.rotation.set(gz.x, gz.y, 0);
     if (earsRef.current) {
       earsRef.current.rotation.x = -pose.ear * 0.2;
       earsRef.current.scale.y = 1 + pose.ear * 0.08;
@@ -558,16 +611,26 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   else if ((earStyle === 'normal' || earStyle === 'big') && earType === 'none') earType = 'small';
   const earScale = earStyle === 'big' ? 1.45 : 1;
   const earColor = f.panda ? '#1f1f24' : fur;
+  // 这些颜色都是“毛”：头、身体、四肢、耳朵、口鼻、尾巴
+  const furSet = useMemo(
+    () => new Set([fur, limbs, earColor, muzzle, inner, shade(fur, 0.75), shade(fur, 1.1), shade(fur, 0.65), shade(fur, 0.95), f.panda ? '#1f1f24' : '', '#ffffff'].filter(Boolean)),
+    [fur, limbs, earColor, muzzle, inner, f.panda],
+  );
 
   const eyes = (
     <>
       <group ref={eyesNormal} position={[0, eyeY, 0]}>
         {[eyeX, -eyeX].map((x, i) => (
           <group key={x} position={[x, 0, eyeZ]}>
-            <M c="#ffffff" s={0.085 * es} m={{ rough: 0.2 }} />
-            <M c={eyeHex} p={[0, 0, 0.045 * es]} s={[0.06 * es, 0.065 * es, 0.05 * es]} m={{ rough: 0.15 }} />
-            <M c="#050505" p={[0, 0, 0.075 * es]} s={[0.033 * es, 0.036 * es, 0.03 * es]} m={{ rough: 0.1 }} />
-            <M c="#ffffff" p={[0.022 * es, 0.025 * es, 0.095 * es]} s={0.014 * es} m={{ emissive: '#ffffff', ei: 0.6 }} />
+            <mesh geometry={GEO.sphere} material={scleraMat} scale={0.085 * es} />
+            {/* 眼球转动：虹膜、瞳孔一起移动 */}
+            <group ref={(r) => (gazeRefs.current[i] = r)}>
+              <mesh geometry={IRIS_GEO} material={irisMat(eyeHex)} scale={0.0862 * es} />
+              <mesh geometry={PUPIL_GEO} material={pupilMat} scale={0.0868 * es} />
+              <mesh geometry={CORNEA_GEO} material={corneaMat} scale={0.091 * es} renderOrder={2} />
+            </group>
+            {/* 灯光在角膜上的反光点（不随眼球移动） */}
+            <mesh geometry={GEO.sphereLow} material={catchMat} position={[0.024 * es, 0.03 * es, 0.084 * es]} scale={0.0105 * es} />
             {(lidAmount > 0 || (mischief && i === 0)) && (
               <M g="halfSphere" c={frog ? fur : shade(fur, 0.95)} s={0.093 * es} r={[mischief ? 0.6 : lidAmount, 0, 0]} />
             )}
@@ -705,6 +768,7 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
 
   return (
     <group>
+      <SurfaceCtx.Provider value={{ fur: furSet, fabric: null }}>
       <group ref={root}>
         <group position={[0, standOffset, 0]}>
           {/* 身体 */}
@@ -712,7 +776,9 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
             <M c={fur} p={[0, 0.55, 0]} s={[0.5, 0.56, 0.44]} m={{ rough: 0.85 }} cast />
             {config.outfit === 'none' && <M c={f.penguin ? '#ffffff' : shade(inner, 1)} p={[0, 0.5, 0.28]} s={[0.33, 0.38, 0.2]} m={{ rough: 0.9 }} />}
             {f.tiger && config.outfit === 'none' && [0.4, 0.6, 0.8].map((y) => <M key={y} g="box" c="#2a1a12" p={[0, y, -0.42]} s={[0.3, 0.03, 0.05]} />)}
-            <Outfit outfit={config.outfit} color={outfitColor} />
+            <SurfaceCtx.Provider value={{ fur: furSet, fabric: FABRIC[config.outfit] ?? 'canvas' }}>
+              <Outfit outfit={config.outfit} color={outfitColor} />
+            </SurfaceCtx.Provider>
             <Accessory type={config.accessory} color={outfitColor} />
           </group>
 
@@ -829,6 +895,7 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
           </group>
         </group>
       </group>
+      </SurfaceCtx.Provider>
     </group>
   );
 });
