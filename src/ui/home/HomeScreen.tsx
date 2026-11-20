@@ -21,6 +21,11 @@ export function HomeScreen() {
           <div className="title">动物扑克俱乐部</div>
           <div className="subtitle">诈唬、策略与动物之间的较量</div>
           <div className="slogan">今天，谁才是真正的扑克王？</div>
+          <div className="founder-badge">
+            <span className="founder-crown">👑</span>
+            <span className="founder-label">创始人</span>
+            <span className="founder-name">Timothy Ong</span>
+          </div>
         </div>
         <div className="panel profile-chip">
           <Avatar animal={animal} />
@@ -70,7 +75,7 @@ export function HomeScreen() {
             ⚙️ 设置
           </Btn>
         </div>
-        <div className="home-foot">创始人：Timothy Ong · 仅使用虚拟筹码 · 无真钱交易 · 无第三方服务</div>
+        <div className="home-foot">仅使用虚拟筹码 · 无真钱交易 · 无第三方服务</div>
       </div>
       {rules && <RulesModal onClose={() => setRules(false)} />}
     </div>

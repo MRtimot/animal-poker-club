@@ -462,6 +462,46 @@ h1, h2, h3 {
   color: var(--cyan);
   font-weight: 700;
 }
+.founder-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 8px 18px 8px 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(90, 50, 10, 0.92), rgba(60, 25, 70, 0.92));
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 4px rgba(242, 201, 76, 0.15), 0 0 26px rgba(242, 201, 76, 0.45), 0 8px 20px rgba(0, 0, 0, 0.4);
+  animation: founderGlow 2.6s ease-in-out infinite;
+  width: fit-content;
+}
+.founder-crown {
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+.founder-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #2a1606;
+  background: linear-gradient(180deg, #ffe08a, var(--gold2));
+  padding: 3px 9px;
+  border-radius: 8px;
+  letter-spacing: 2px;
+}
+.founder-name {
+  font-size: clamp(18px, 2.4vw, 24px);
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  background: linear-gradient(180deg, #fff6d0, #f2c94c 60%, #e0a92a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+@keyframes founderGlow {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(242, 201, 76, 0.15), 0 0 18px rgba(242, 201, 76, 0.35), 0 8px 20px rgba(0, 0, 0, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(242, 201, 76, 0.25), 0 0 34px rgba(242, 201, 76, 0.7), 0 8px 20px rgba(0, 0, 0, 0.4); }
+}
 .profile-chip {
   display: flex;
   gap: 12px;

@@ -152,7 +152,11 @@ function LoadingScreen({ done }: { done: boolean }) {
         <div style={{ width: `${p}%` }} />
       </div>
       <p className="muted small">{tips[Math.floor(p / 26) % tips.length]}</p>
-      <p className="muted small" style={{ marginTop: 24, opacity: 0.7 }}>创始人 · Timothy Ong</p>
+      <div className="founder-badge" style={{ margin: '28px auto 0' }}>
+        <span className="founder-crown">👑</span>
+        <span className="founder-label">创始人</span>
+        <span className="founder-name">Timothy Ong</span>
+      </div>
     </div>
   );
 }
