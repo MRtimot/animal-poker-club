@@ -1968,3 +1968,14 @@ h1, h2, h3 {
     transition-duration: 1ms !important;
   }
 }
+.founder-title {
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #1b1230;
+  background: linear-gradient(90deg, #ffe08a, #f2c94c);
+  box-shadow: 0 0 12px rgba(242, 201, 76, 0.6);
+}

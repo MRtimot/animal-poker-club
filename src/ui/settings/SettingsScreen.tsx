@@ -91,7 +91,7 @@ export function SettingsScreen() {
         <p className="small muted" style={{ marginTop: 16, lineHeight: 1.7 }}>
           《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。所有数据保存在你自己的浏览器中。
           <br />
-          创始人：<b className="gold">Timothy Ong</b>
+          创始人：<b className="gold">Timothy Ong</b>（Founder of APEX）
         </p>
       </div>
       {confirm && (

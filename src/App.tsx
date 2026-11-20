@@ -159,6 +159,7 @@ function LoadingScreen({ done }: { done: boolean }) {
         <span className="founder-crown">👑</span>
         <span className="founder-label">创始人</span>
         <span className="founder-name">Timothy Ong</span>
+        <span className="founder-title">Founder of APEX</span>
       </div>
     </div>
   );
