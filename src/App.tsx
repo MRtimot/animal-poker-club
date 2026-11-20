@@ -152,6 +152,7 @@ function LoadingScreen({ done }: { done: boolean }) {
         <div style={{ width: `${p}%` }} />
       </div>
       <p className="muted small">{tips[Math.floor(p / 26) % tips.length]}</p>
+      <p className="muted small" style={{ marginTop: 24, opacity: 0.7 }}>创始人 · Timothy Ong</p>
     </div>
   );
 }

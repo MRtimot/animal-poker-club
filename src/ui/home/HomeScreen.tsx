@@ -70,7 +70,7 @@ export function HomeScreen() {
             ⚙️ 设置
           </Btn>
         </div>
-        <div className="home-foot">仅使用虚拟筹码 · 无真钱交易 · 无第三方服务</div>
+        <div className="home-foot">创始人：Timothy Ong · 仅使用虚拟筹码 · 无真钱交易 · 无第三方服务</div>
       </div>
       {rules && <RulesModal onClose={() => setRules(false)} />}
     </div>
