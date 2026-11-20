@@ -12,7 +12,7 @@ export function RoomLobby() {
   const toast = useGame((s) => s.toast);
   const [addOpen, setAddOpen] = useState(false);
   const [aiP, setAiP] = useState<AIPersonality>('smartCat');
-  const [aiD, setAiD] = useState<AIDifficulty>('normal');
+  const [aiD, setAiD] = useState<AIDifficulty>('easy');
   const [confirmLeave, setConfirmLeave] = useState(false);
   if (!room) return null;
 

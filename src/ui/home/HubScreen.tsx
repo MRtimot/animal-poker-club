@@ -22,7 +22,7 @@ export function HubScreen() {
   const achievements = useProfile((s) => s.achievements);
 
   const [count, setCount] = useState(4);
-  const [difficulty, setDifficulty] = useState<AIDifficulty>('normal');
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('easy');
   const [chips, setChips] = useState(1000);
   const [blinds, setBlinds] = useState(0);
   const [mix, setMix] = useState<AIPersonality[]>(['aggressiveFox', 'cautiousPanda', 'crazyFrog', 'smartCat', 'luckyRabbit', 'smartCat', 'aggressiveFox']);

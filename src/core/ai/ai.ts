@@ -32,11 +32,19 @@ export const PERSONALITIES: Record<AIPersonality, PersonalityInfo> = {
 
 export const DIFFICULTY_NAME: Record<AIDifficulty, string> = { easy: '简单', normal: '普通', hard: '困难', expert: '专家' };
 
-const DIFFICULTY: Record<AIDifficulty, { iterations: number; noise: number; potOddsSkill: number }> = {
-  easy: { iterations: 60, noise: 0.18, potOddsSkill: 0.3 },
-  normal: { iterations: 160, noise: 0.08, potOddsSkill: 0.65 },
-  hard: { iterations: 320, noise: 0.03, potOddsSkill: 0.9 },
-  expert: { iterations: 650, noise: 0, potOddsSkill: 1 },
+/**
+ * 难度参数（AI 从不偷看别人的牌，只是“打得好不好”不同）：
+ * - aggr：加注倾向倍率（低难度很少主动加注，赢不到大底池）
+ * - bluff：诈唬倍率
+ * - timid：面对较大下注时，非强牌直接弃牌的概率
+ * - loose：用弱牌跟注的概率（低难度像“跟注站”，会把筹码送给拿到好牌的玩家）
+ * - allinEq：主动全押所需的最低胜率
+ */
+export const DIFFICULTY: Record<AIDifficulty, { iterations: number; noise: number; potOddsSkill: number; aggr: number; bluff: number; timid: number; allinEq: number; loose: number }> = {
+  easy: { iterations: 50, noise: 0.3, potOddsSkill: 0.2, aggr: 0.15, bluff: 0.1, timid: 0.3, allinEq: 0.99, loose: 0.6 },
+  normal: { iterations: 120, noise: 0.18, potOddsSkill: 0.5, aggr: 0.35, bluff: 0.3, timid: 0.25, allinEq: 0.96, loose: 0.4 },
+  hard: { iterations: 320, noise: 0.03, potOddsSkill: 0.9, aggr: 1, bluff: 1, timid: 0.1, allinEq: 0.88, loose: 0 },
+  expert: { iterations: 650, noise: 0, potOddsSkill: 1, aggr: 1.1, bluff: 1.1, timid: 0, allinEq: 0.86, loose: 0 },
 };
 
 export interface AIContext {
@@ -87,7 +95,7 @@ export function decideAction(ctx: AIContext, personality: AIPersonality, difficu
   const roll = rng();
 
   // 随机“发疯”：小概率无视牌力
-  if (rng() < randomness * 0.18) {
+  if (rng() < randomness * 0.18 * D.aggr) {
     const r = rng();
     if (r < 0.35 && legal.canRaise) return raise(ctx, P, 0.5 + rng(), equity, 'bluffing');
     if (r < 0.45 && legal.canAllIn && personality !== 'cautiousPanda' && rng() < 0.3) return allin(legal, equity, 'bluffing');
@@ -100,8 +108,8 @@ export function decideAction(ctx: AIContext, personality: AIPersonality, difficu
 
   // 很强：价值下注 / 加注
   if (relative >= strongLine || equity > 0.8) {
-    if (legal.canRaise && roll < 0.55 + P.aggression * 0.45) {
-      const big = equity > 0.88 && rng() < 0.35 + P.aggression * 0.3;
+    if (legal.canRaise && roll < (0.55 + P.aggression * 0.45) * D.aggr) {
+      const big = equity > D.allinEq && rng() < (0.35 + P.aggression * 0.3) * D.aggr;
       if (big && ctx.chips < ctx.pot * 1.2 && legal.canAllIn) return allin(legal, equity, 'confident');
       return raise(ctx, P, big ? 1 : 0.55 + rng() * 0.4, equity, 'confident');
     }
@@ -110,19 +118,27 @@ export function decideAction(ctx: AIContext, personality: AIPersonality, difficu
     return allin(legal, equity, 'confident');
   }
 
+  // 低难度容易被吓跑：面对超过 1/3 底池的下注，非强牌常常直接弃牌
+  if (toCall > 0 && toCall >= ctx.pot * 0.3 && toCall > ctx.bigBlind && rng() < D.timid) {
+    return { action: { type: 'fold' }, equity, mood: 'nervous' };
+  }
+
   // 中等：根据赔率跟注，偶尔加注
   const margin = (1 - D.potOddsSkill) * 0.15; // 难度越低，算赔率越粗糙
   const callable = equity + margin >= potOdds * (1 + P.tightness) && relative >= playLine * 0.75;
   if (relative >= playLine) {
-    if (legal.canRaise && roll < P.aggression * 0.45) return raise(ctx, P, 0.4 + rng() * 0.35, equity, 'confident');
+    if (legal.canRaise && roll < P.aggression * 0.45 * D.aggr) return raise(ctx, P, 0.4 + rng() * 0.35, equity, 'confident');
     if (legal.canCheck) return { action: { type: 'check' }, equity, mood: 'neutral' };
     if (callable || toCall <= ctx.bigBlind) return callOrAllin(legal, equity, ctx);
   }
 
   // 弱：诈唬 / 过牌 / 弃牌
-  const bluffChance = P.bluff * (ctx.opponents <= 2 ? 1.2 : 0.6) * (ctx.phase === 'preflop' ? 0.6 : 1);
+  const bluffChance = P.bluff * D.bluff * (ctx.opponents <= 2 ? 1.2 : 0.6) * (ctx.phase === 'preflop' ? 0.6 : 1);
   if (legal.canRaise && rng() < bluffChance && !ctx.facingRaise) return raise(ctx, P, 0.5 + rng() * 0.5, equity, 'bluffing');
   if (legal.canCheck) return { action: { type: 'check' }, equity, mood: 'nervous' };
+
+  // 低难度的“跟注站”毛病：用弱牌跟注不太大的下注
+  if (legal.canCall && toCall <= ctx.pot * 0.6 && rng() < D.loose) return callOrAllin(legal, equity, ctx);
 
   // 便宜的跟注（例如大盲位被补盲）
   const cheap = toCall <= ctx.bigBlind && ctx.phase === 'preflop' && relative > 0.7;
