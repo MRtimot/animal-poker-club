@@ -13,6 +13,26 @@ import { RulesModal } from '../common/RulesModal';
 import { ChatPanel } from './ChatPanel';
 import { QuickSettings } from '../settings/SettingsScreen';
 import { sound } from '../../audio/sound';
+import { useFx } from '../../store/fxStore';
+import { AnimatedChips } from '../common/AnimatedNumber';
+
+/** 屏幕中央的大字提示：全押！/ 翻牌 / 转牌 / 河牌 / 平局！ */
+function Announcer() {
+  const a = useFx((s) => s.announce);
+  const [visible, setVisible] = useState<number | null>(null);
+  useEffect(() => {
+    if (!a) return;
+    setVisible(a.id);
+    const t = setTimeout(() => setVisible((v) => (v === a.id ? null : v)), a.kind === 'street' ? 1300 : 1900);
+    return () => clearTimeout(t);
+  }, [a?.id]); // eslint-disable-line
+  if (!a || visible !== a.id) return null;
+  return (
+    <div key={a.id} className={`announce announce-${a.kind}`}>
+      <span>{a.text}</span>
+    </div>
+  );
+}
 
 function TopBar({ view, onRules, onSettings }: { view: TableView; onRules: () => void; onSettings: () => void }) {
   const cameraMode = useGame((s) => s.cameraMode);
@@ -87,7 +107,7 @@ function MyHand({ view }: { view: TableView }) {
       <div>
         <div className="label">{me.folded ? '已弃牌' : '当前牌型'}</div>
         <div className="hand-name">{info && !me.folded ? info.name : '—'}</div>
-        <div className="mychips">🪙 {formatChips(me.chips)}</div>
+        <div className="mychips">🪙 <AnimatedChips value={me.chips} /></div>
       </div>
     </div>
   );
@@ -240,7 +260,7 @@ function ResultBanner({ view }: { view: TableView }) {
   const nameOf = (id: string) => (id === view.viewerId ? '你' : view.players.find((p) => p.id === id)?.name ?? '玩家');
   return (
     <div className={`panel result-banner ${meWin ? 'me-win' : ''}`}>
-      <div className="big">{meWin ? '🎉 你赢了！' : summary.winners.length > 1 ? '🤝 平分底池' : `🏆 ${nameOf(summary.winners[0].playerId)} 获胜`}</div>
+      <div className="big">{meWin ? '🎉 你赢了！' : new Set(summary.winners.map((w) => w.playerId)).size > 1 ? '🤝 平局！平分底池' : `🏆 ${nameOf(summary.winners[0].playerId)} 获胜`}</div>
       {summary.winners.map((w) => (
         <div className="line" key={w.playerId}>
           {nameOf(w.playerId)} {w.handName ? `以「${w.handName}」` : ''}赢得 <b className="gold">{formatChips(w.amount)}</b> 筹码
@@ -408,6 +428,7 @@ export function GameHUD({ view }: { view: TableView }) {
         <ActionBar view={view} />
       </div>
       <ResultBanner view={view} />
+      <Announcer />
       <NextHandCountdown view={view} />
       <GameOver view={view} />
       <Tutorial />

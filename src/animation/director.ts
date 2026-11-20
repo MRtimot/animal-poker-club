@@ -2,7 +2,11 @@
 import { useEffect, useRef } from 'react';
 import type { TableView } from '../core/game/view';
 import type { GameEvent } from '../core/table/types';
-import { useFx, AnimName } from '../store/fxStore';
+import { useFx, AnimName, MoodFace } from '../store/fxStore';
+import { DUR, STAGGER } from './motion';
+import type { Card } from '../core/cards/card';
+import type { Species } from '../core/player/profile';
+import { evaluateHand, HandCategory } from '../core/poker/handEvaluator';
 import { computeLayout, POT_POS, SeatLayout, V3 } from '../three/layout';
 import { sound } from '../audio/sound';
 import { useGame } from '../store/gameStore';
@@ -26,6 +30,46 @@ function handPos(l: SeatLayout): V3 {
   return [Math.sin(a) * 3.3, 1.3, Math.cos(a) * 3.3];
 }
 
+/** 别人全押时，各种动物的招牌反应 */
+const ALLIN_REACTION: Partial<Record<Species, { emoji: string; face: MoodFace; anim: AnimName }>> = {
+  panda: { emoji: '😳', face: 'wide', anim: 'surprised' },
+  fox: { emoji: '🤨', face: 'doubt', anim: 'doubt' },
+  rabbit: { emoji: '😱', face: 'wide', anim: 'shock' },
+  cat: { emoji: '😏', face: 'smug', anim: 'smug' },
+  frog: { emoji: '🤣', face: 'happy', anim: 'laugh' },
+  bear: { emoji: '😳', face: 'wide', anim: 'surprised' },
+  dog: { emoji: '😨', face: 'wide', anim: 'nervous' },
+  monkey: { emoji: '🙈', face: 'wide', anim: 'nervous' },
+  lion: { emoji: '😤', face: 'angry', anim: 'angry' },
+  tiger: { emoji: '😤', face: 'angry', anim: 'angry' },
+  wolf: { emoji: '🤨', face: 'doubt', anim: 'doubt' },
+  penguin: { emoji: '😐', face: 'normal', anim: 'think' },
+  koala: { emoji: '😪', face: 'normal', anim: 'nervous' },
+  raccoon: { emoji: '🤨', face: 'doubt', anim: 'doubt' },
+  dragon: { emoji: '😏', face: 'smug', anim: 'smug' },
+};
+
+/** 自己手牌的强弱（只看自己能看到的牌，不泄露任何对手信息） */
+function myStrength(hole: (Card | null)[], board: Card[]): 'strong' | 'ok' | 'weak' | null {
+  const cards = hole.filter((c): c is Card => !!c);
+  if (cards.length < 2) return null;
+  if (board.length >= 3) {
+    const r = evaluateHand([...cards, ...board]);
+    if (r.category >= HandCategory.TwoPair) return 'strong';
+    if (r.category === HandCategory.OnePair) return 'ok';
+    return 'weak';
+  }
+  const [a, b] = cards;
+  if (a.rank === b.rank && a.rank >= 9) return 'strong';
+  if (a.rank === b.rank || (a.rank >= 11 && b.rank >= 11) || (Math.max(a.rank, b.rank) === 14 && a.suit === b.suit)) return 'ok';
+  if (Math.max(a.rank, b.rank) < 10 && a.suit !== b.suit && Math.abs(a.rank - b.rank) > 3) return 'weak';
+  return null;
+}
+
+/**
+ * 游戏状态动画控制器：服务器 / 本地引擎产生的牌局事件 → 动物动作、表情、筹码飞行、镜头、灯光、音效。
+ * UI 不去猜状态，所有表现都由事件驱动，并按节奏依次播放。
+ */
 export function useTableDirector(view: TableView | null) {
   const lastSeq = useRef<number | null>(null);
   const lastHand = useRef<number>(-1);
@@ -45,10 +89,7 @@ export function useTableDirector(view: TableView | null) {
       lastHand.current = view.handNumber;
       return;
     }
-    if (view.handNumber !== lastHand.current) {
-      // 新的一手：事件序号在服务器端连续递增
-      lastHand.current = view.handNumber;
-    }
+    if (view.handNumber !== lastHand.current) lastHand.current = view.handNumber;
     const fresh = events.filter((e) => e.seq > (lastSeq.current ?? 0));
     if (!fresh.length) return;
     lastSeq.current = maxSeq;
@@ -58,14 +99,25 @@ export function useTableDirector(view: TableView | null) {
     const now = performance.now();
     cursor.current = Math.max(cursor.current, now);
     const viewer = view.viewerId;
-    const name = (id: string) => view.players.find((p) => p.id === id);
+    const seat = (id: string) => view.players.find((p) => p.id === id);
+    const me = seat(viewer);
 
-    const at = (fn: () => void) => {
-      const delay = Math.max(0, cursor.current - performance.now());
+    const at = (fn: () => void, extra = 0) => {
+      const delay = Math.max(0, cursor.current + extra - performance.now());
       if (delay < 5) fn();
       else timers.current.push(window.setTimeout(fn, delay));
     };
     const play = (id: string, a: AnimName) => fx.play(id, a);
+    const mood = (id: string, emoji: string, face: MoodFace, ms?: number) => fx.setMood(id, emoji, face, ms);
+    const active = () => view.players.filter((p) => p.inHand && !p.folded);
+
+    /** 根据自己的牌决定表情（只影响自己的动物） */
+    const reactToMyCards = (board: Card[]) => {
+      if (!me || !me.inHand || me.folded) return;
+      const s = myStrength(me.hole, board);
+      if (s === 'strong') mood(viewer, '😏', 'smug', 2400);
+      else if (s === 'weak') mood(viewer, '😐', 'normal', 1800);
+    };
 
     let showdownHappened = false;
 
@@ -76,7 +128,19 @@ export function useTableDirector(view: TableView | null) {
           break;
         case 'blind': {
           const l = layout.get(e.playerId);
-          if (l) at(() => fx.flyChips({ from: handPos(l), to: l.bet, amount: e.amount, duration: 380 }));
+          if (l) at(() => fx.flyChips({ from: handPos(l), to: l.bet, amount: e.amount, duration: DUR.chipFlight - 120 }));
+          break;
+        }
+        case 'dealHole': {
+          // 发完牌后：大家低头看一眼自己的牌
+          const n = e.order.length;
+          at(() => {
+            view.players.forEach((p, i) => {
+              if (!p.inHand) return;
+              timers.current.push(window.setTimeout(() => play(p.id, 'peek'), 120 * i));
+            });
+            reactToMyCards([]);
+          }, n * STAGGER.holeCard + 700);
           break;
         }
         case 'turn':
@@ -84,11 +148,14 @@ export function useTableDirector(view: TableView | null) {
           break;
         case 'action': {
           const l = layout.get(e.playerId);
-          const p = name(e.playerId);
+          const p = seat(e.playerId);
           at(() => {
+            // 下注：动物先看向筹码、伸手（动作），再把筹码推出去
+            let chipDelay = 220;
             if (e.action === 'fold') {
               play(e.playerId, 'fold');
               sound.play('fold');
+              mood(e.playerId, '😮‍💨', 'sad', 1500);
             } else if (e.action === 'check') {
               sound.play('check');
               play(e.playerId, 'talk');
@@ -97,14 +164,43 @@ export function useTableDirector(view: TableView | null) {
             } else if (e.action === 'raise') {
               play(e.playerId, 'raise');
               fx.setCue({ type: 'action', playerId: e.playerId, duration: 1500 });
+              // 被加注的玩家：有人惊讶，有人怀疑
+              const others = active().filter((x) => x.id !== e.playerId);
+              others.forEach((o, i) => {
+                if (Math.random() > 0.45) return;
+                const sur = Math.random() < 0.5;
+                timers.current.push(
+                  window.setTimeout(() => {
+                    mood(o.id, sur ? '😳' : '🤨', sur ? 'wide' : 'doubt', 1800);
+                    if (!sur) play(o.id, 'doubt');
+                  }, 450 + i * 120),
+                );
+              });
             } else if (e.action === 'allin') {
+              // 全押：自信 → 镜头快速推进 → 推出所有筹码 → 桌面震动 →“全押！”→ 其他动物反应
+              chipDelay = 380;
               play(e.playerId, 'allin');
+              mood(e.playerId, '😎', 'smug', 3000);
+              fx.setCool(e.playerId, 3000);
               sound.play('allin');
-              fx.setCue({ type: 'allin', playerId: e.playerId, duration: 2200 });
+              fx.setCue({ type: 'allin', playerId: e.playerId, duration: 2400 });
+              fx.boostLight(0.7, 2200);
+              fx.shout('全押！', 'allin');
               if (l) fx.burst(l.head, 'fire');
               if (p) sound.animal(p.profile.animal.species, 'neutral', 0.3);
+              timers.current.push(window.setTimeout(() => fx.doShake(0.09), chipDelay + DUR.chipFlight));
+              const others = view.players.filter((x) => x.id !== e.playerId && x.inHand && !x.busted);
+              others.forEach((o, i) => {
+                const r = ALLIN_REACTION[o.profile.animal.species] ?? { emoji: '😳', face: 'wide' as MoodFace, anim: 'surprised' as AnimName };
+                timers.current.push(
+                  window.setTimeout(() => {
+                    mood(o.id, r.emoji, r.face, 2400);
+                    play(o.id, r.anim);
+                  }, 900 + i * 140),
+                );
+              });
             }
-            if (l && e.added > 0) fx.flyChips({ from: handPos(l), to: l.bet, amount: e.added, duration: 420, delay: 180 });
+            if (l && e.added > 0) fx.flyChips({ from: handPos(l), to: l.bet, amount: e.added, duration: DUR.chipFlight, delay: chipDelay });
           });
           break;
         }
@@ -112,58 +208,89 @@ export function useTableDirector(view: TableView | null) {
           at(() => {
             e.amounts.forEach(({ playerId, amount }, i) => {
               const l = layout.get(playerId);
-              if (l) fx.flyChips({ from: l.bet, to: POT_POS, amount, duration: 500, delay: i * 50 });
+              if (l) fx.flyChips({ from: l.bet, to: POT_POS, amount, duration: DUR.chipFlight, delay: i * STAGGER.chipCollect });
             });
           });
           break;
-        case 'board':
+        case 'board': {
+          const street = e.street;
+          const board = view.board.slice(0, street === 'flop' ? 3 : street === 'turn' ? 4 : 5);
           at(() => {
-            // 动物们对公共牌的反应（纯表现）
-            for (const p of view.players) {
-              if (!p.inHand || p.folded || Math.random() > 0.22) continue;
-              play(p.id, Math.random() < 0.5 ? 'nervous' : 'surprised');
-            }
+            fx.setCue({ type: street === 'flop' ? 'flop' : street === 'turn' ? 'turn' : 'river', duration: street === 'river' ? 2300 : street === 'flop' ? 2000 : 1600 });
+            fx.boostLight(street === 'river' ? 0.45 : 0.25, street === 'river' ? 2200 : 1500);
+            if (street === 'river') sound.duck(0.35, 1800);
+            fx.shout(street === 'flop' ? '翻牌' : street === 'turn' ? '转牌' : '河牌', 'street');
           });
+          // 牌翻开后，动物们的反应
+          const revealAt = street === 'flop' ? 1500 : street === 'turn' ? 1000 : 1500;
+          at(() => {
+            for (const p of active()) {
+              if (p.id === viewer || Math.random() > 0.25) continue;
+              play(p.id, Math.random() < 0.5 ? 'nervous' : 'doubt');
+            }
+            reactToMyCards(board);
+          }, revealAt);
           break;
+        }
         case 'showdown':
           showdownHappened = true;
           at(() => {
             fx.setCue({ type: 'showdown', duration: 2600 });
-            for (const h of e.hands) play(h.playerId, 'surprised');
+            e.hands.forEach((h, i) => timers.current.push(window.setTimeout(() => play(h.playerId, i % 2 ? 'surprised' : 'doubt'), i * 180)));
           });
           break;
         case 'refund': {
           const l = layout.get(e.playerId);
-          if (l) at(() => fx.flyChips({ from: l.bet, to: handPos(l), amount: e.amount, duration: 500 }));
+          if (l) at(() => fx.flyChips({ from: l.bet, to: handPos(l), amount: e.amount, duration: DUR.chipFlight }));
           break;
         }
         case 'win': {
           const winners = new Set(e.awards.map((a) => a.playerId));
+          const tie = !e.uncontested && winners.size > 1;
           at(() => {
             let biggest = e.awards[0];
+            for (const a of e.awards) if (a.amount > (biggest?.amount ?? 0)) biggest = a;
+            // 1. 镜头移到赢家（平局时环绕桌面），灯光增强
+            if (tie) {
+              fx.setCue({ type: 'showdown', duration: 3000 });
+              fx.shout('平局！', 'tie');
+            } else if (biggest && !e.uncontested) fx.setCue({ type: 'win', playerId: biggest.playerId, duration: 3400 });
+            if (!e.uncontested) fx.boostLight(0.9, 2800);
+            // 2. 短暂停顿后，筹码从底池飞向赢家；赢家站起来庆祝
+            const payoutDelay = e.uncontested ? 150 : 520;
             e.awards.forEach((a, i) => {
-              if (a.amount > (biggest?.amount ?? 0)) biggest = a;
               const l = layout.get(a.playerId);
               if (!l) return;
-              fx.flyChips({ from: POT_POS, to: handPos(l), amount: a.amount, duration: 800, delay: i * 250 });
-              play(a.playerId, e.uncontested ? 'happy' : 'win');
-              if (!e.uncontested) fx.burst(l.head, 'confetti');
-              else fx.burst(l.head, 'sparkle');
+              fx.flyChips({ from: POT_POS, to: handPos(l), amount: a.amount, duration: 850, delay: payoutDelay + i * STAGGER.winnerPayout });
+              timers.current.push(
+                window.setTimeout(() => {
+                  play(a.playerId, e.uncontested ? 'happy' : 'win');
+                  mood(a.playerId, tie ? '🤝' : '😆', 'happy', 2800);
+                  if (!e.uncontested) {
+                    fx.burst(l.head, 'confetti');
+                    fx.burst(l.head, 'gold');
+                  } else fx.burst(l.head, 'sparkle');
+                }, payoutDelay + i * STAGGER.winnerPayout),
+              );
             });
-            if (biggest && !e.uncontested) fx.setCue({ type: 'win', playerId: biggest.playerId, duration: 3200 });
-            // 输家的反应
+            // 3. 输家：愣住 → 低头 → 叹气
             if (!e.uncontested) {
               for (const p of view.players) {
                 if (winners.has(p.id) || !p.inHand) continue;
-                if (!p.folded) play(p.id, 'lose');
-                else if (Math.random() < 0.3) play(p.id, 'sad');
+                if (!p.folded) {
+                  timers.current.push(
+                    window.setTimeout(() => {
+                      play(p.id, 'lose');
+                      mood(p.id, '😨', 'wide', 1400);
+                    }, payoutDelay + 200),
+                  );
+                } else if (Math.random() < 0.3) play(p.id, 'sad');
               }
             }
             const viewerWon = winners.has(viewer);
-            const me = name(viewer);
             if (viewerWon) {
-              sound.play('win');
-              if (me) sound.animal(me.profile.animal.species, 'happy', 0.4);
+              timers.current.push(window.setTimeout(() => sound.play('win'), payoutDelay));
+              if (me) sound.animal(me.profile.animal.species, 'happy', 0.4 + payoutDelay / 1000);
             } else if (me && me.inHand && !me.folded && showdownHappened) {
               sound.play('lose');
             } else {

@@ -24,6 +24,14 @@ export function Btn({ children, kind = 'gold', size, block, onClick, disabled, t
         sound.play('button');
         onClick?.();
       }}
+      onPointerUp={(e) => {
+        // 松开时弹回：96% → 103% → 100%
+        const el = e.currentTarget;
+        el.classList.remove('btn-release');
+        void el.offsetWidth;
+        el.classList.add('btn-release');
+      }}
+      onAnimationEnd={(e) => e.currentTarget.classList.remove('btn-release')}
       disabled={disabled}
       title={title}
     >

@@ -59,6 +59,16 @@ class SoundEngine {
     this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6, t, 0.2);
   }
 
+  /** 河牌等关键时刻：音乐与环境声短暂降低，然后恢复 */
+  duck(level: number, ms: number) {
+    if (!this.ctx) return;
+    const s = useSettings.getState();
+    const t = this.ctx.currentTime;
+    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * level, t, 0.15);
+    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * level, t, 0.15);
+    window.setTimeout(() => this.applyVolumes(), ms);
+  }
+
   private env(g: GainNode, t: number, a: number, peak: number, d: number) {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a);

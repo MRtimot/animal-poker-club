@@ -1,15 +1,34 @@
+import { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
+import * as THREE from 'three';
 import type { Quality } from '../../store/settingsStore';
+import { useFx } from '../../store/fxStore';
+import { ease } from '../../animation/motion';
 
 /** 暖色俱乐部灯光：吊灯主光（带阴影）+ 半球环境光 + 暖色补光 */
 export function SceneLights({ quality }: { quality: Quality }) {
   const shadows = quality !== 'low';
   const mapSize = quality === 'ultra' ? 2048 : quality === 'high' ? 2048 : 1024;
+  const spot = useRef<THREE.SpotLight>(null!);
+  const hemi = useRef<THREE.HemisphereLight>(null!);
+  const born = useRef(performance.now());
+  // 灯光控制：场景出现时逐渐亮起；全押 / 获胜时桌面灯光增强，然后缓慢恢复
+  useFrame(() => {
+    const now = performance.now();
+    const intro = 0.12 + 0.88 * ease.inOutSine(Math.min(1, (now - born.current) / 1600));
+    const l = useFx.getState().light;
+    const lt = (now - l.start) / l.duration;
+    const boost = l.duration > 0 && lt >= 0 && lt < 1 ? l.level * Math.min(1, lt * 6) * (1 - ease.inQuad(lt)) : 0;
+    if (spot.current) spot.current.intensity = 140 * intro * (1 + boost * 0.7);
+    if (hemi.current) hemi.current.intensity = 0.55 * (0.4 + intro * 0.6) * (1 - boost * 0.25);
+  });
   return (
     <>
-      <hemisphereLight args={['#ffe2b8', '#3a2418', 0.55]} />
+      <hemisphereLight ref={hemi} args={['#ffe2b8', '#3a2418', 0.55]} />
       <ambientLight intensity={0.18} color="#ffd9a8" />
       <spotLight
+        ref={spot}
         position={[0, 8.4, 0.5]}
         angle={0.62}
         penumbra={0.55}

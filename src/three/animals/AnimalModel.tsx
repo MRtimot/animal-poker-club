@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { AnimalConfig, EYE_COLORS, FUR_COLORS, SPECIES_MAP } from '../../core/player/profile';
@@ -6,6 +6,7 @@ import { GEO, GOLD, mat, shade } from './materials';
 import { LOOKS, TailType } from './species';
 import { animatePose, basePose } from '../../animation/animalAnimations';
 import { AnimName, useFx } from '../../store/fxStore';
+import { damp, ease } from '../../animation/motion';
 
 type V3 = [number, number, number];
 type GeoKey = keyof typeof GEO;
@@ -398,9 +399,11 @@ export interface AnimalModelProps {
   folded?: boolean;
   thinking?: boolean;
   seed?: number;
+  /** 头部看向的方向（相对身体的偏航角），例如正在行动的玩家 */
+  lookYaw?: number | null;
 }
 
-export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, seated = false, folded = false, thinking = false, seed = 0 }: AnimalModelProps) {
+export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, seated = false, folded = false, thinking = false, seed = 0, lookYaw = null }: AnimalModelProps) {
   const look = LOOKS[config.species];
   const sp = SPECIES_MAP[config.species];
   const furHex = FUR_COLORS.find((f) => f.id === config.furColor)?.hex || sp.color;
@@ -444,6 +447,21 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   const wingL = useRef<THREE.Group>(null!);
   const wingR = useRef<THREE.Group>(null!);
   const coolGlasses = useRef<THREE.Group>(null!);
+  const earsRef = useRef<THREE.Group>(null!);
+  const hatRef = useRef<THREE.Group>(null!);
+  const lookCur = useRef(0);
+  const lookRef = useRef(lookYaw);
+  lookRef.current = lookYaw;
+  // 换帽子：帽子从上方落到头上
+  const hatDrop = useRef(-10);
+  const firstHat = useRef(true);
+  useEffect(() => {
+    if (firstHat.current) {
+      firstHat.current = false;
+      return;
+    }
+    hatDrop.current = performance.now();
+  }, [config.hat]);
 
   const frog = !!f.frog;
   const eyeX = frog ? 0.19 : 0.155;
@@ -456,12 +474,40 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   const lidAmount = config.expression === 'cool' ? 0.55 : config.expression === 'sleepy' ? 0.95 : 0;
   const baseHappy = config.expression === 'happy';
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
     const time = state.clock.elapsedTime;
     let a = anim ?? null;
     if (animKey) a = useFx.getState().anims[animKey] ?? a;
-    let pose = basePose(time, seed, seated, folded, thinking);
+    let pose = basePose(time, seed, seated, folded, thinking, config.species);
     if (a) pose = animatePose(pose, a.name, performance.now() / 1000 - a.start, seated);
+    // 情绪系统：没有一次性动画改变脸部时，显示当前情绪
+    const nowMs = performance.now();
+    const mood = animKey ? useFx.getState().moods[animKey] : undefined;
+    if (mood && mood.until > nowMs && pose.face === 'normal') {
+      const w = Math.min(1, (nowMs - mood.start) / 200) * Math.min(1, (mood.until - nowMs) / 300);
+      if (w > 0.4) pose.face = mood.face;
+      if (mood.face === 'smug') pose.lean -= 0.08 * w;
+      if (mood.face === 'wide') pose.lean -= 0.1 * w;
+      if (mood.face === 'sad') pose.headX += 0.25 * w;
+    }
+    // 看向正在行动的玩家（平滑转头）
+    const lt = lookRef.current == null || folded ? 0 : Math.max(-0.75, Math.min(0.75, lookRef.current));
+    lookCur.current = damp(lookCur.current, lt, 3.2, dt);
+    pose.headY += lookCur.current;
+    if (earsRef.current) {
+      earsRef.current.rotation.x = -pose.ear * 0.2;
+      earsRef.current.scale.y = 1 + pose.ear * 0.08;
+    }
+    if (hatRef.current) {
+      const ht = (nowMs - hatDrop.current) / 650;
+      if (ht >= 0 && ht < 1) {
+        hatRef.current.position.y = (1 - ease.outBounce(ht)) * 0.9;
+        hatRef.current.rotation.y = (1 - ease.outCubic(ht)) * Math.PI * 2;
+      } else {
+        hatRef.current.position.y = 0;
+        hatRef.current.rotation.y = 0;
+      }
+    }
 
     root.current.position.y = pose.y;
     root.current.rotation.set(pose.lean, pose.turn, pose.roll);
@@ -476,20 +522,23 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
 
     const face = pose.face;
     const happy = face === 'happy' || (baseHappy && face === 'normal');
+    const smug = face === 'smug';
+    const doubt = face === 'doubt';
     eyesHappy.current.visible = happy;
     eyesX.current.visible = face === 'x';
     eyesNormal.current.visible = !happy && face !== 'x';
     const open = face === 'wide' ? Math.max(pose.eyeOpen, 1.25) : pose.eyeOpen;
-    eyesNormal.current.scale.set(face === 'wide' ? 1.15 : 1, Math.max(0.08, open), 1);
+    eyesNormal.current.scale.set(face === 'wide' ? 1.15 : 1, Math.max(0.08, smug ? Math.min(open, 0.5) : doubt ? Math.min(open, 0.8) : open), 1);
 
-    const br = face === 'angry' ? 0.45 : face === 'sad' ? -0.4 : browRot;
-    const showBrow = baseBrow !== 'none' || face === 'angry' || face === 'sad';
+    const br = face === 'angry' ? 0.45 : face === 'sad' ? -0.4 : smug ? 0.12 : browRot;
+    const showBrow = baseBrow !== 'none' || face === 'angry' || face === 'sad' || smug || doubt;
     browL.current.visible = browR.current.visible = showBrow;
-    browL.current.rotation.z = br;
-    browR.current.rotation.z = -br;
-    const by = eyeY + 0.12 * es + (face === 'wide' ? 0.04 : 0);
-    browL.current.position.y = by;
-    browR.current.position.y = by;
+    // 怀疑：一边眉毛挑起，另一边压低
+    browL.current.rotation.z = doubt ? -0.35 : br;
+    browR.current.rotation.z = doubt ? -0.4 : -br;
+    const by = eyeY + 0.12 * es + (face === 'wide' ? 0.04 : 0) + (smug ? -0.02 : 0);
+    browL.current.position.y = by + (doubt ? 0.05 : 0);
+    browR.current.position.y = by - (doubt ? 0.01 : 0);
 
     if (wingL.current) {
       wingL.current.rotation.y = 0.5 + pose.wing;
@@ -765,8 +814,10 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
                 )}
               {eyes}
               {mouth}
-              {ears}
-              <Hat hat={config.hat} color={outfitColor} />
+              <group ref={earsRef}>{ears}</group>
+              <group ref={hatRef}>
+                <Hat hat={config.hat} color={outfitColor} />
+              </group>
               <Glasses type={config.glasses} eyeX={eyeX} eyeY={eyeY} />
               {config.glasses !== 'shades' && (
                 <group ref={coolGlasses} visible={false}>

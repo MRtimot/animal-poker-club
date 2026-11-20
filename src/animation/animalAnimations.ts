@@ -18,7 +18,38 @@ export interface Pose {
   tail: number; // 尾巴摆动
   squash: number; // 身体压缩（1 = 正常）
   wing: number;
-  face: 'normal' | 'happy' | 'wide' | 'x' | 'sad' | 'angry';
+  /** 耳朵抖动 / 竖起（0 = 静止） */
+  ear: number;
+  face: 'normal' | 'happy' | 'wide' | 'x' | 'sad' | 'angry' | 'smug' | 'doubt';
+}
+
+/** 物种的待机性格：节奏、摆动幅度与小习惯 */
+interface IdleStyle {
+  pace: number; // 呼吸 / 摆动速度
+  sway: number; // 身体摇摆幅度
+  tail: number; // 尾巴幅度
+  glance: number; // 张望频率
+  hop?: boolean; // 偶尔原地小跳（青蛙）
+  earPerk?: boolean; // 耳朵偶尔竖起（兔子）
+}
+const IDLE: Record<string, IdleStyle> = {
+  cat: { pace: 1, sway: 1, tail: 1.5, glance: 1.2 },
+  fox: { pace: 1.05, sway: 1, tail: 1.4, glance: 1.5 },
+  panda: { pace: 0.7, sway: 2.2, tail: 0.3, glance: 0.6 },
+  bear: { pace: 0.75, sway: 1.8, tail: 0.3, glance: 0.7 },
+  koala: { pace: 0.6, sway: 1.4, tail: 0.2, glance: 0.5 },
+  frog: { pace: 1.1, sway: 0.6, tail: 0, glance: 0.9, hop: true },
+  rabbit: { pace: 1.4, sway: 0.8, tail: 0.6, glance: 1.4, earPerk: true },
+  dog: { pace: 1.2, sway: 1, tail: 2, glance: 1.2 },
+  monkey: { pace: 1.3, sway: 1.3, tail: 1.3, glance: 1.8 },
+};
+const DEFAULT_IDLE: IdleStyle = { pace: 1, sway: 1, tail: 1, glance: 1 };
+
+/** 周期性的小事件：每 period 秒发生一次，持续 len 秒，返回 0~1~0 的包络 */
+function every(time: number, period: number, len: number, offset: number) {
+  const ph = (time + offset) % period;
+  if (ph > len) return 0;
+  return Math.sin((ph / len) * Math.PI);
 }
 
 export const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -28,9 +59,10 @@ const smooth = (v: number) => {
 };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-export function basePose(time: number, seed: number, seated: boolean, folded: boolean, thinking: boolean): Pose {
+export function basePose(time: number, seed: number, seated: boolean, folded: boolean, thinking: boolean, species = ''): Pose {
   const s = seed * 7.13;
-  const breathe = Math.sin(time * 2 + s) * 0.5 + 0.5;
+  const st = IDLE[species] ?? DEFAULT_IDLE;
+  const breathe = Math.sin(time * 2 * st.pace + s) * 0.5 + 0.5;
   // 自然眨眼：每 ~3.7 秒一次
   const blinkPhase = (time + s) % 3.7;
   const blink = blinkPhase < 0.12 ? Math.abs(Math.cos((blinkPhase / 0.12) * Math.PI)) : 1;
@@ -40,9 +72,9 @@ export function basePose(time: number, seed: number, seated: boolean, folded: bo
     y: 0,
     lean: seated ? 0.06 : 0,
     turn: 0,
-    roll: Math.sin(time * 0.9 + s) * 0.015,
+    roll: Math.sin(time * 0.9 * st.pace + s) * 0.015 * st.sway,
     headX: Math.sin(time * 0.6 + s) * 0.04,
-    headY: Math.sin(time * 0.45 + s * 2) * 0.12,
+    headY: Math.sin(time * 0.45 * st.pace + s * 2) * 0.12,
     headZ: Math.sin(time * 0.7 + s) * 0.04,
     armLX: restX + Math.sin(time * 1.3 + s) * 0.03,
     armLZ: restZ,
@@ -50,11 +82,40 @@ export function basePose(time: number, seed: number, seated: boolean, folded: bo
     armRZ: -restZ,
     mouth: 0,
     eyeOpen: blink,
-    tail: Math.sin(time * 2.2 + s) * 0.35,
+    tail: Math.sin(time * 2.2 * st.pace + s) * 0.35 * st.tail,
     squash: 1 + breathe * 0.025,
     wing: Math.sin(time * 3 + s) * 0.15,
+    ear: 0,
     face: 'normal',
   };
+
+  // —— 微动画：让角色“活着”，但不过度 ——
+  // 偶尔看向旁边的玩家
+  const glancePeriod = 7.5 / st.glance;
+  const gl = every(time, glancePeriod, 1.6, s);
+  const glDir = Math.sin(Math.floor((time + s) / glancePeriod) * 12.9898) > 0 ? 1 : -1;
+  p.headY += gl * 0.42 * glDir;
+  p.headX -= gl * 0.04;
+  // 耳朵抖一下
+  p.ear = every(time, 4.3 + (seed % 3) * 0.7, 0.28, s * 1.7) * (Math.sin(time * 60) * 0.5 + 0.5);
+  if (st.earPerk) p.ear = Math.max(p.ear, every(time, 6.1, 1.2, s) * 1.2);
+  // 青蛙：偶尔原地小跳（先压缩再跳）
+  if (st.hop) {
+    const ph = (time + s) % 5.2;
+    if (ph < 0.18) p.squash -= Math.sin((ph / 0.18) * Math.PI) * 0.08;
+    else if (ph < 0.5) p.y += Math.sin(((ph - 0.18) / 0.32) * Math.PI) * 0.09;
+  }
+  // 偶尔打哈欠 / 伸懒腰（不在思考或弃牌时）
+  if (!thinking && !folded) {
+    const y = every(time, 21 + (seed % 4) * 3, 1.8, s * 3.1);
+    if (y > 0) {
+      p.mouth = Math.max(p.mouth, y * 0.95);
+      p.headX -= y * 0.28;
+      p.eyeOpen = Math.min(p.eyeOpen, 1 - y * 0.8);
+      p.armLZ += y * 0.4;
+      p.armRZ -= y * 0.4;
+    }
+  }
   if (folded) {
     p.lean = -0.08;
     p.headX = 0.18 + Math.sin(time * 0.5) * 0.03;
@@ -276,6 +337,60 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       o.mouth = 0.4;
       o.face = 'happy';
       break;
+    case 'stretch': {
+      // 入座后伸懒腰
+      const k = Math.sin(clamp01(p / 0.8) * Math.PI);
+      o.armLX = o.armRX = lerp(restX, -2.9, k);
+      o.armLZ = 0.35 * k;
+      o.armRZ = -0.35 * k;
+      o.lean = -0.15 * k;
+      o.headX = -0.3 * k;
+      o.mouth = 0.8 * k;
+      o.eyeOpen = 1 - 0.85 * k;
+      o.squash = 1 + 0.06 * k;
+      break;
+    }
+    case 'settle': {
+      // 坐下后整理衣服：左右扯一扯、拍一拍
+      o.armLX = o.armRX = restX + 0.55;
+      o.armLZ = -0.25 + Math.sin(t * 14) * 0.12;
+      o.armRZ = 0.25 - Math.sin(t * 14) * 0.12;
+      o.headX = 0.28;
+      o.roll = Math.sin(t * 7) * 0.04;
+      break;
+    }
+    case 'doubt': {
+      // 怀疑：歪头、眯眼、托下巴
+      o.headZ = 0.22;
+      o.headY = base.headY * 0.3 + 0.15;
+      o.armRX = -2.0;
+      o.armRZ = 0.4;
+      o.lean = -0.05;
+      o.eyeOpen = 0.75;
+      o.face = 'doubt';
+      break;
+    }
+    case 'smug': {
+      // 自信：往后靠、抱臂、微笑
+      o.lean = -0.14;
+      o.headX = -0.12;
+      o.armLX = o.armRX = -1.2;
+      o.armLZ = -0.6;
+      o.armRZ = 0.6;
+      o.tail = Math.sin(t * 6) * 0.5;
+      o.face = 'smug';
+      break;
+    }
+    case 'peek': {
+      // 看底牌：低头、双手捂牌、偷偷抬起一角
+      const k = Math.sin(clamp01(p) * Math.PI);
+      o.headX = 0.45 * k;
+      o.lean = base.lean + 0.15 * k;
+      o.armLX = o.armRX = restX - 0.25 * k;
+      o.armLZ = -0.15 * k;
+      o.armRZ = 0.15 * k;
+      break;
+    }
     default:
       return base;
   }

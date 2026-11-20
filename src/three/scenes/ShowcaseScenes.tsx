@@ -8,7 +8,9 @@ import type { LobbyMember } from '../../core/protocol';
 import { ClubEnvironment, PokerTableMesh } from '../environment/ClubEnvironment';
 import { SceneLights } from './SceneLights';
 import { useSettings } from '../../store/settingsStore';
-import { AnimName } from '../../store/fxStore';
+import { AnimName, useFx } from '../../store/fxStore';
+import { Bursts } from '../effects/Bursts';
+import { ease } from '../../animation/motion';
 import { GEO, mat } from '../animals/materials';
 import { seededRandom } from '../../core/utils/random';
 
@@ -110,6 +112,87 @@ export function HomeScene({ config }: { config: AnimalConfig }) {
   );
 }
 
+type Change = { kind: 'species' | 'outfit' | 'random'; start: number };
+
+/**
+ * 创建器里的动物：
+ * 换动物：缩小旋转 → 粒子 → 新动物弹出；换衣服：转一圈；随机生成：快速旋转 → 突然停住
+ */
+function CreatorAnimal({ config, anim }: { config: AnimalConfig; anim: { name: AnimName; start: number } | null }) {
+  const [shown, setShown] = useState(config);
+  const prev = useRef(config);
+  const change = useRef<Change | null>(null);
+  const g = useRef<THREE.Group>(null!);
+  useEffect(() => {
+    const a = prev.current;
+    prev.current = config;
+    const keys = Object.keys(config) as (keyof AnimalConfig)[];
+    const diff = keys.filter((k) => a[k] !== config[k]).length;
+    const now = performance.now();
+    if (diff >= 4) {
+      change.current = { kind: 'random', start: now };
+      useFx.getState().burst([0, 1.3, 0], 'sparkle');
+      const t = setTimeout(() => setShown(config), 380);
+      return () => clearTimeout(t);
+    }
+    if (a.species !== config.species) {
+      change.current = { kind: 'species', start: now };
+      const t = setTimeout(() => {
+        setShown(config);
+        useFx.getState().burst([0, 0.9, 0], 'poof');
+        useFx.getState().burst([0, 1.4, 0], 'sparkle');
+      }, 230);
+      return () => clearTimeout(t);
+    }
+    if (a.outfit !== config.outfit || a.outfitColor !== config.outfitColor) change.current = { kind: 'outfit', start: now };
+    setShown(config);
+  }, [config]);
+  useFrame(() => {
+    const c = change.current;
+    if (!g.current) return;
+    let sc = 1;
+    let rot = 0;
+    let y = 0;
+    if (c) {
+      const t = (performance.now() - c.start) / 1000;
+      if (c.kind === 'species') {
+        if (t < 0.23) {
+          const p = t / 0.23;
+          sc = 1 - ease.inQuad(p) * 0.95;
+          rot = ease.inQuad(p) * Math.PI;
+        } else if (t < 0.8) {
+          const p = (t - 0.23) / 0.57;
+          sc = 0.05 + 0.95 * ease.outBack(p, 2);
+          rot = Math.PI + ease.outCubic(p) * Math.PI;
+          y = Math.sin(p * Math.PI) * 0.25;
+        } else change.current = null;
+      } else if (c.kind === 'outfit') {
+        if (t < 0.7) rot = ease.inOutCubic(t / 0.7) * Math.PI * 2;
+        else change.current = null;
+      } else {
+        // 随机：快速旋转、身体发光粒子，然后突然停住（轻微回弹）
+        if (t < 0.75) {
+          rot = Math.PI * 6 * ease.inOutSine(t / 0.75);
+          y = Math.sin((t / 0.75) * Math.PI) * 0.35;
+          sc = 1 - Math.sin((t / 0.75) * Math.PI) * 0.12;
+        } else if (t < 1.1) {
+          const p = (t - 0.75) / 0.35;
+          rot = Math.sin(p * Math.PI * 2) * 0.18 * (1 - p);
+          sc = 1 + Math.sin(p * Math.PI) * 0.06;
+        } else change.current = null;
+      }
+    }
+    g.current.scale.setScalar(sc);
+    g.current.rotation.y = rot;
+    g.current.position.y = 0.36 + y;
+  });
+  return (
+    <group ref={g} position={[0, 0.36, 0]}>
+      <AnimalModel config={shown} anim={anim} seed={3} />
+    </group>
+  );
+}
+
 /** 动物创建器：可拖动旋转、滚轮缩放的 360° 实时预览 */
 export function CreatorScene({ config, anim }: { config: AnimalConfig; anim: { name: AnimName; start: number } | null }) {
   const quality = useSettings((s) => s.quality);
@@ -127,10 +210,9 @@ export function CreatorScene({ config, anim }: { config: AnimalConfig; anim: { n
       <pointLight position={[4, 2, -3]} intensity={25} color="#5fe1ff" />
       <group>
         <Pedestal position={[0, -0.3, 0]} r={1.2} color="#ff5fa8" />
-        <group position={[0, 0.36, 0]}>
-          <AnimalModel config={config} anim={anim} seed={3} />
-        </group>
+        <CreatorAnimal config={config} anim={anim} />
       </group>
+      <Bursts density={quality === 'low' ? 0.5 : 1} />
       <ContactShadows position={[0, -0.29, 0]} opacity={0.45} scale={6} blur={2.4} far={3} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.31, 0]} receiveShadow>
         <circleGeometry args={[12, 48]} />

@@ -137,17 +137,20 @@ function LoadingScreen({ done }: { done: boolean }) {
     return () => clearTimeout(t);
   }, [done]);
   if (gone) return null;
-  const tips = ['正在布置森林俱乐部…', '动物们正在入座…', '正在洗牌…', '正在擦亮筹码…'];
+  const tips = ['正在布置森林俱乐部…', '动物们正在入座…', '狐狸正在洗牌…', '正在擦亮筹码…'];
   return (
     <div className="loading-screen" style={{ opacity: done ? 0 : 1, pointerEvents: done ? 'none' : 'auto' }}>
-      <div className="animals">
-        {['🐱', '🦊', '🐼', '🐸', '🦁'].map((e, i) => (
-          <span key={e} style={{ animationDelay: `${i * 0.12}s` }}>
-            {e}
-          </span>
-        ))}
+      {/* 小狐狸正在洗牌 */}
+      <div className="shuffler" aria-hidden>
+        <span className="shuffler-fox">🦊</span>
+        <div className="shuffler-deck">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <i key={i} style={{ animationDelay: `${i * 0.14}s` }} />
+          ))}
+        </div>
       </div>
       <h1 style={{ marginTop: 14, color: '#f2c94c', letterSpacing: 4 }}>动物扑克俱乐部</h1>
+      <p className="small" style={{ margin: '6px 0 0', color: '#fff3c8' }}>正在准备牌桌……</p>
       <div className="loading-bar">
         <div style={{ width: `${p}%` }} />
       </div>
@@ -194,6 +197,7 @@ export default function App() {
   const [creatorAnim, setCreatorAnim] = useState<{ name: AnimName; start: number } | null>(null);
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
+  const sceneKind = screen === 'game' ? 'game' : screen === 'creator' ? 'creator' : screen === 'room' && room ? 'room' : 'home';
 
   useEffect(() => {
     // 若之前在在线房间中（例如刷新了页面），自动重连回去
@@ -237,6 +241,8 @@ export default function App() {
           </Suspense>
         </Canvas>
       </ErrorBoundary>
+      {/* 页面转场：3D 场景切换时先暗下来再淡入，避免模型瞬间替换 */}
+      <div key={sceneKind} className="scene-fade" aria-hidden />
       <Directors />
       <div className="overlay">
         {screen === 'home' && <HomeScreen />}
