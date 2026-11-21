@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import type { Card } from '../../core/cards/card';
 import { SUIT_SYMBOL, isRed, rankLabel } from '../../core/cards/card';
 import { AnimalConfig, FUR_COLORS, SPECIES_MAP } from '../../core/player/profile';
@@ -110,7 +110,16 @@ export function furHex(a: AnimalConfig) {
   return FUR_COLORS.find((f) => f.id === a.furColor)?.hex || SPECIES_MAP[a.species].color;
 }
 
-export function Avatar({ animal, size }: { animal: AnimalConfig; size?: 'sm' }) {
+/** 玩家头像：登录玩家显示 Google 公开头像，否则（或加载失败时）显示默认动物头像 */
+export function Avatar({ animal, size, src }: { animal: AnimalConfig; size?: 'sm' | 'lg'; src?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  if (src && !broken)
+    return (
+      <div className={`avatar avatar-img ${size ?? ''}`}>
+        <img src={src} alt="" referrerPolicy="no-referrer" draggable={false} onError={() => setBroken(true)} />
+      </div>
+    );
   return (
     <div className={`avatar ${size ?? ''}`} style={{ background: `radial-gradient(circle at 35% 30%, #ffffff55, ${furHex(animal)})` }}>
       {SPECIES_MAP[animal.species].emoji}

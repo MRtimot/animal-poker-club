@@ -118,6 +118,7 @@ const NameTag = memo(function NameTag({ p, view, layout, winAmount }: { p: SeatV
         <Bubble playerId={p.id} />
         <MoodBadge playerId={p.id} />
         <div className="nt-name">
+          {p.profile.avatar && <img className="nt-avatar" src={p.profile.avatar} alt="" referrerPolicy="no-referrer" draggable={false} />}
           {p.name}
           {layout.isViewer && <span className="nt-you">你</span>}
           {p.isAI && <span className="nt-ai">AI</span>}

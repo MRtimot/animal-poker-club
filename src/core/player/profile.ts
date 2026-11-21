@@ -169,6 +169,8 @@ export interface PlayerProfile {
   name: string;
   animal: AnimalConfig;
   level?: number;
+  /** 登录玩家的公开头像（仅限 Google 公开头像地址，由服务器填写） */
+  avatar?: string;
 }
 
 export const DEFAULT_ANIMAL: AnimalConfig = {

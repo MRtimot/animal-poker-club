@@ -33,8 +33,9 @@ export const session = {
       g.set({ mode: null, view: null, chat: [] });
       g.setScreen('home');
     } else if (g.mode === 'online') {
+      const solo = !!g.room?.solo;
       net.leaveRoom();
-      g.setScreen('online');
+      g.setScreen(solo ? 'quick' : 'online');
     } else {
       g.setScreen('home');
     }

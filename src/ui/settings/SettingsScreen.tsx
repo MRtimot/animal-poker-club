@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { QUALITY_NAME, Quality, ROOM_NAME, RoomTheme, useSettings } from '../../store/settingsStore';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
+import { useAccount } from '../../store/accountStore';
 import { BackButton, Btn, Modal, Seg } from '../common/ui';
 import { net } from '../../net/netClient';
 
@@ -56,6 +57,7 @@ export function SettingsScreen() {
   const serverUrl = useSettings((s) => s.serverUrl);
   const setS = useSettings((s) => s.set);
   const resetAll = useProfile((s) => s.resetAll);
+  const signedIn = useAccount((s) => s.status === 'signedIn');
   const [url, setUrl] = useState(serverUrl);
   const [confirm, setConfirm] = useState(false);
 
@@ -94,13 +96,19 @@ export function SettingsScreen() {
           >
             📘 重新观看新手教程
           </Btn>
-          <Btn kind="red" onClick={() => setConfirm(true)}>
-            🗑️ 重置所有游戏数据
-          </Btn>
+          {signedIn ? (
+            <Btn kind="ghost" onClick={() => setScreen('profile')}>
+              👤 账号与云端存档
+            </Btn>
+          ) : (
+            <Btn kind="red" onClick={() => setConfirm(true)}>
+              🗑️ 重置本机游客数据
+            </Btn>
+          )}
         </div>
         <div className="grow" />
         <p className="small muted" style={{ marginTop: 16, lineHeight: 1.7 }}>
-          《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。所有数据保存在你自己的浏览器中。
+          《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。{signedIn ? '你的游戏进度保存在云端服务器，设置会自动同步到你的其他设备。' : '游客数据只保存在这台设备的浏览器中，登录后可以保存到云端。'}
           <br />
           创始人：<b className="gold">Timothy Ong</b>（Founder of APEX）
         </p>

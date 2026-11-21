@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { TableView } from '../core/game/view';
 import type { ChatMessage, RoomInfo } from '../core/protocol';
 
-export type Screen = 'home' | 'creator' | 'quick' | 'online' | 'room' | 'game' | 'collection' | 'settings';
+export type Screen = 'home' | 'login' | 'onboarding' | 'profile' | 'creator' | 'quick' | 'online' | 'room' | 'game' | 'collection' | 'settings';
 export type CameraMode = 'overview' | 'player' | 'free';
 export type ConnStatus = 'idle' | 'connecting' | 'connected' | 'disconnected';
 

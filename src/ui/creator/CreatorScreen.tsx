@@ -10,6 +10,8 @@ import { BackButton, Btn, Seg } from '../common/ui';
 import type { AnimName } from '../../store/fxStore';
 import { net } from '../../net/netClient';
 import { sound } from '../../audio/sound';
+import { useAccount } from '../../store/accountStore';
+import { nicknameError } from '../../core/account/types';
 
 type Tab = 'species' | 'look' | 'face' | 'outfit' | 'hat' | 'glasses' | 'acc';
 const TABS: { id: Tab; label: string }[] = [
@@ -47,6 +49,7 @@ export function CreatorScreen({ onAnim }: { onAnim: (a: { name: AnimName; start:
   const achievements = useProfile((s) => s.achievements);
   const level = levelFromXp(xp);
   const [tab, setTab] = useState<Tab>('species');
+  const signedIn = useAccount((s) => s.status === 'signedIn');
 
   const patch = (p: Partial<AnimalConfig>) => {
     setAnimal({ ...animal, ...p });
@@ -206,6 +209,7 @@ export function CreatorScreen({ onAnim }: { onAnim: (a: { name: AnimName; start:
           <div className="field" style={{ marginBottom: 4 }}>
             <label>动物名字（显示在头顶）</label>
             <input className="input" value={name} maxLength={12} placeholder="例如：小橘" onChange={(e) => setName(e.target.value)} />
+            {signedIn && nicknameError(name) && <div className="small err-text" style={{ marginTop: 4 }}>{nicknameError(name)}（不会保存）</div>}
           </div>
           <div className="name-ideas">
             {NAME_IDEAS.slice(0, 8).map((n) => (

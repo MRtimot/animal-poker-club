@@ -3,6 +3,7 @@ import type { PlayerAction } from './table/types';
 import type { PlayerProfile } from './player/profile';
 import type { TableView } from './game/view';
 import type { AIDifficulty, AIPersonality } from './ai/ai';
+import type { AccountState, ProgressEvent } from './account/types';
 
 export interface RoomSettings {
   maxPlayers: number; // 2~8
@@ -38,6 +39,16 @@ export interface RoomInfo {
   settings: RoomSettings;
   members: LobbyMember[];
   status: 'lobby' | 'playing' | 'finished';
+  /** 单人练习房（与 AI 对战，由服务器运行并结算奖励），其他人无法加入 */
+  solo?: boolean;
+}
+
+/** 与 AI 对战的设置（登录玩家的对局在服务器上运行，奖励由服务器计算） */
+export interface SoloSettings {
+  opponents: { personality: AIPersonality; difficulty: AIDifficulty }[];
+  startingChips: number;
+  smallBlind: number;
+  bigBlind: number;
 }
 
 export interface ChatMessage {
@@ -63,6 +74,9 @@ export type ClientMessage =
   | { t: 'emote'; emoji: string }
   | { t: 'updateProfile'; profile: PlayerProfile }
   | { t: 'backToLobby' }
+  | { t: 'startSolo'; settings: SoloSettings }
+  | { t: 'restartSolo' }
+  | { t: 'pause'; paused: boolean }
   | { t: 'ping'; time: number };
 
 export type ServerMessage =
@@ -72,7 +86,11 @@ export type ServerMessage =
   | { t: 'chat'; message: ChatMessage }
   | { t: 'chatHistory'; messages: ChatMessage[] }
   | { t: 'error'; message: string }
-  | { t: 'pong'; time: number; serverTime: number };
+  | { t: 'pong'; time: number; serverTime: number }
+  /** 账号数据在服务器上发生变化（其他设备修改、结算完成）；null = 已退出或账号被删除 */
+  | { t: 'account'; state: AccountState | null }
+  /** 服务器结算奖励后推送：获得的经验、筹码、升级、成就与解锁 */
+  | { t: 'progress'; event: ProgressEvent; state: AccountState };
 
 export const EMOTES = ['😂', '😱', '😎', '🔥', '💀', '👏', '❤️', '🤣'];
 export const QUICK_CHATS = ['好牌！', '谢谢！', '哈哈哈哈！', '我觉得你在诈牌。', '全押！', '下一局！'];

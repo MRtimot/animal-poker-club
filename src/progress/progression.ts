@@ -15,15 +15,19 @@ export function xpForLevel(level: number): number {
   return 100 * level * (level - 1);
 }
 
+/** 最高等级 */
+export const MAX_LEVEL = 100;
+
 export function levelFromXp(xp: number): number {
   let l = 1;
-  while (xp >= xpForLevel(l + 1)) l++;
+  while (l < MAX_LEVEL && xp >= xpForLevel(l + 1)) l++;
   return l;
 }
 
 export function levelProgress(xp: number) {
   const level = levelFromXp(xp);
   const cur = xpForLevel(level);
+  if (level >= MAX_LEVEL) return { level, into: xp - cur, need: xp - cur || 1, ratio: 1 };
   const next = xpForLevel(level + 1);
   return { level, into: xp - cur, need: next - cur, ratio: (xp - cur) / (next - cur) };
 }
@@ -40,6 +44,12 @@ export interface Stats {
   allInWins: number;
   uncontestedWins: number;
   onlineHands: number;
+  folds: number;
+  allIns: number;
+  /** 单手最大盈利（赢得 − 投入） */
+  biggestProfit: number;
+  totalBet: number;
+  totalWinnings: number;
   speciesWins: Partial<Record<Species, number>>;
 }
 
@@ -55,8 +65,32 @@ export const EMPTY_STATS: Stats = {
   allInWins: 0,
   uncontestedWins: 0,
   onlineHands: 0,
+  folds: 0,
+  allIns: 0,
+  biggestProfit: 0,
+  totalBet: 0,
+  totalWinnings: 0,
   speciesWins: {},
 };
+
+/** 旧存档缺少的统计字段补 0（数据版本升级时不丢失存档） */
+export function normalizeStats(s: any): Stats {
+  const out: any = { ...EMPTY_STATS, speciesWins: {} };
+  if (s && typeof s === 'object') {
+    for (const k of Object.keys(EMPTY_STATS) as (keyof Stats)[]) {
+      if (k === 'speciesWins') continue;
+      const v = Number(s[k]);
+      if (Number.isFinite(v)) out[k] = Math.floor(v);
+    }
+    if (s.speciesWins && typeof s.speciesWins === 'object') {
+      for (const sp of SPECIES) {
+        const v = Number(s.speciesWins[sp.id]);
+        if (Number.isFinite(v) && v > 0) out.speciesWins[sp.id] = Math.floor(v);
+      }
+    }
+  }
+  return out;
+}
 
 export interface AchievementDef {
   id: string;
@@ -67,11 +101,13 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
+  { id: 'first_hand', name: '第一局', desc: '完成你的第一手牌', icon: '🃏', check: (s) => s.handsPlayed >= 1 },
   { id: 'first_win', name: '第一场胜利', desc: '赢下你的第一手牌', icon: '🏆', check: (s) => s.handsWon >= 1 },
   { id: 'streak5', name: '连胜 5 局', desc: '连续赢下 5 手牌（解锁：狼）', icon: '🔥', check: (s) => s.bestStreak >= 5 },
   { id: 'quads', name: '四条', desc: '用四条赢下一手牌', icon: '🎲', check: (s) => s.bestHand >= HandCategory.FourOfAKind },
   { id: 'royal', name: '皇家同花顺', desc: '用皇家同花顺赢下一手牌', icon: '👑', check: (s) => s.bestHand >= HandCategory.RoyalFlush },
   { id: 'full_house', name: '葫芦玩家', desc: '用葫芦或更大的牌型赢牌', icon: '🏠', check: (s) => s.bestHand >= HandCategory.FullHouse },
+  { id: 'first_allin', name: '全押', desc: '第一次全押', icon: '🎯', check: (s) => s.allIns >= 1 },
   { id: 'allin_win', name: '全押获胜', desc: '全押后赢下底池（解锁：青蛙）', icon: '💥', check: (s) => s.allInWins >= 1 },
   { id: 'hands100', name: '100 局完成', desc: '累计完成 100 手牌', icon: '💯', check: (s) => s.handsPlayed >= 100 },
   { id: 'fox_master', name: '狐狸大师', desc: '使用狐狸赢下 30 手牌', icon: '🦊', check: (s) => (s.speciesWins.fox ?? 0) >= 30 },

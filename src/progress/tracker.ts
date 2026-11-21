@@ -3,10 +3,12 @@ import { useEffect, useRef } from 'react';
 import type { TableView } from '../core/game/view';
 import { useProfile } from '../store/profileStore';
 import { useGame } from '../store/gameStore';
-import { ACHIEVEMENTS, XP_RULES, levelFromXp } from './progression';
+import { ACHIEVEMENTS, levelFromXp } from './progression';
+import { applyGame, applyHand, effectiveBet } from './rewards';
 import { SPECIES, SPECIES_MAP } from '../core/player/profile';
 import { isSpeciesUnlocked } from './progression';
 import { sound } from '../audio/sound';
+import { isAccountMode } from '../store/profileStore';
 
 export function useProgressTracker(view: TableView | null, mode: 'local' | 'online' | null) {
   const doneHand = useRef<number>(-1);
@@ -15,6 +17,8 @@ export function useProgressTracker(view: TableView | null, mode: 'local' | 'onli
 
   useEffect(() => {
     if (!view || !mode) return;
+    // 登录玩家的进度由服务器结算，客户端不计算、不提交任何奖励
+    if (isAccountMode()) return;
     const me = view.players.find((p) => p.id === view.viewerId);
     if (!me) return;
     if (startHand.current !== null && view.handNumber < startHand.current) {
@@ -50,37 +54,26 @@ export function useProgressTracker(view: TableView | null, mode: 'local' | 'onli
       }
     };
 
-    // 一手牌结束
+    // 一手牌结束（游客：使用与服务器完全相同的规则在本机结算）
     if (view.phase === 'complete' && view.summary && view.handNumber !== doneHand.current) {
       doneHand.current = view.handNumber;
-      const dealtIn = me.inHand;
-      if (dealtIn) {
+      if (me.inHand) {
         const win = view.summary.winners.find((w) => w.playerId === me.id);
         const shown = view.summary.shown.find((s) => s.playerId === me.id);
         const st = useProfile.getState();
         const before = { level: levelFromXp(st.xp), ach: st.achievements };
-        const species = st.animal.species;
-        let xp = XP_RULES.handPlayed;
-        const res = st.applyProgress(0, (s) => {
-          s.handsPlayed++;
-          if (mode === 'online') s.onlineHands++;
-          if (win) {
-            s.handsWon++;
-            s.currentStreak++;
-            s.bestStreak = Math.max(s.bestStreak, s.currentStreak);
-            s.biggestPot = Math.max(s.biggestPot, win.amount);
-            if (shown) s.bestHand = Math.max(s.bestHand, shown.category);
-            if (me.allIn && !view.summary!.uncontested) s.allInWins++;
-            if (view.summary!.uncontested) s.uncontestedWins++;
-            s.speciesWins[species] = (s.speciesWins[species] ?? 0) + 1;
-            xp += XP_RULES.handWon + Math.min(XP_RULES.streakBonusMax, XP_RULES.streakBonusPer * (s.currentStreak - 1));
-          } else {
-            s.currentStreak = 0;
-          }
-          return s;
+        const { stats, xp } = applyHand(st.stats, {
+          won: !!win,
+          amount: win?.amount ?? 0,
+          bet: effectiveBet(me.totalBet, view.events as any, me.id),
+          category: win && shown ? shown.category : -1,
+          allIn: me.allIn,
+          folded: me.folded,
+          uncontested: view.summary.uncontested,
+          species: st.animal.species,
+          online: mode === 'online',
         });
-        const res2 = useProfile.getState().applyProgress(xp, (s) => s);
-        report({ newAchievements: [...res.newAchievements, ...res2.newAchievements], levelUp: res2.levelUp ?? res.levelUp }, before);
+        report(st.applyProgress(xp, () => stats), before);
       }
     }
 
@@ -90,12 +83,12 @@ export function useProgressTracker(view: TableView | null, mode: 'local' | 'onli
       const rank = view.gameOver.rankings.find((r) => r.playerId === me.id);
       const st = useProfile.getState();
       const before = { level: levelFromXp(st.xp), ach: st.achievements };
-      const won = view.gameOver.winnerId === me.id;
-      const res = st.applyProgress(won ? XP_RULES.gameWon : 0, (s) => {
-        s.gamesPlayed++;
-        if (won) s.gamesWon++;
-        return s;
-      });
+      const { stats, xp } = applyGame(
+        st.stats,
+        { place: rank?.place ?? view.players.length, players: view.players.length, hands: view.handNumber, finalChips: me.chips, mode },
+        false,
+      );
+      const res = st.applyProgress(xp, () => stats);
       st.addRecent({
         time: Date.now(),
         mode,

@@ -21,6 +21,8 @@ import { Btn, Toasts } from './ui/common/ui';
 import { useChatReactions, useTableDirector } from './animation/director';
 import { useProgressTracker } from './progress/tracker';
 import { net } from './net/netClient';
+import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge, WelcomeBanner } from './ui/account/AccountScreens';
+import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import type { AnimName } from './store/fxStore';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
@@ -118,14 +120,14 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
 
   let content: ReactNode;
   if (screen === 'game' && view) content = <GameScene view={view} />;
-  else if (screen === 'creator') content = <CreatorScene config={animal} anim={creatorAnim} />;
+  else if (screen === 'creator' || screen === 'onboarding') content = <CreatorScene config={animal} anim={creatorAnim} />;
   else if (screen === 'room' && room) content = <LobbyScene members={room.members} playerId={playerId} />;
   else content = <HomeScene config={animal} />;
 
   return (
     <>
       <color attach="background" args={['#120a20']} />
-      {screen !== 'creator' && <fog attach="fog" args={['#1a0f22', 16, 34]} />}
+      {screen !== 'creator' && screen !== 'onboarding' && <fog attach="fog" args={['#1a0f22', 16, 34]} />}
       {content}
       {screen === 'game' && cameraMode === 'free' && <OrbitControls target={[0, 1, 0]} maxPolarAngle={Math.PI * 0.48} minDistance={3} maxDistance={16} enableDamping makeDefault />}
       <PostFX quality={quality} game={screen === 'game'} />
@@ -234,11 +236,17 @@ export default function App() {
   const [creatorAnim, setCreatorAnim] = useState<{ name: AnimName; start: number } | null>(null);
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
-  const sceneKind = screen === 'game' ? 'game' : screen === 'creator' ? 'creator' : screen === 'room' && room ? 'room' : 'home';
+  const sceneKind = screen === 'game' ? 'game' : screen === 'creator' || screen === 'onboarding' ? 'creator' : screen === 'room' && room ? 'room' : 'home';
 
   useEffect(() => {
-    // 若之前在在线房间中（例如刷新了页面），自动重连回去
-    if (net.sessionId) net.connect();
+    // 先确认登录状态（服务器验证会话），再重连之前的在线房间
+    void initAccount().then(() => {
+      const a = useAccount.getState();
+      const g = useGame.getState();
+      if (a.status === 'guest' && !guestChosen() && g.screen === 'home') g.setScreen('login');
+      if (a.status === 'signedIn' && a.account && !a.account.onboarded && g.screen === 'home') g.setScreen('onboarding');
+      if (net.sessionId || a.status === 'signedIn') net.connect();
+    });
   }, []);
 
   return (
@@ -283,6 +291,9 @@ export default function App() {
       <Directors />
       <div className="overlay">
         {screen === 'home' && <HomeScreen />}
+        {screen === 'login' && <LoginScreen />}
+        {screen === 'onboarding' && <OnboardingScreen />}
+        {screen === 'profile' && <ProfileScreen />}
         {screen === 'quick' && <HubScreen />}
         {screen === 'online' && <OnlineScreen />}
         {screen === 'room' && room && <RoomLobby />}
@@ -293,6 +304,9 @@ export default function App() {
         {screen === 'game' && hasView && <HudConnector />}
         {screen === 'game' && !hasView && <div className="next-hand">正在进入牌桌…</div>}
       </div>
+      <ProfileLoading />
+      <WelcomeBanner />
+      <SyncBadge />
       <Toasts />
       <LoadingScreen done={ready} />
     </>

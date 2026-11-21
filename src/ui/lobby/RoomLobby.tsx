@@ -58,7 +58,7 @@ export function RoomLobby() {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {room.members.map((m, i) => (
             <div className="member" key={m.id}>
-              <Avatar animal={m.profile.animal} />
+              <Avatar animal={m.profile.animal} src={m.profile.avatar} />
               <div className="info">
                 <div className="name">
                   {m.profile.name} {m.id === me && <span className="gold small">（你）</span>}

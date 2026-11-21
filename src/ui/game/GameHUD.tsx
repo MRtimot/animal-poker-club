@@ -54,7 +54,7 @@ function TopBar({ view, onRules, onSettings }: { view: TableView; onRules: () =>
         ←
       </button>
       <div className="panel hud-info">
-        {mode === 'online' && room && (
+        {mode === 'online' && room && !room.solo && (
           <span className="hide-sm">
             房间 <b>{room.code}</b>
           </span>
@@ -307,7 +307,22 @@ function GameOver({ view }: { view: TableView }) {
     <Modal
       title={meWon ? '👑 你是今天的扑克王！' : '🏁 游戏结束'}
       actions={
-        mode === 'local' ? (
+        room?.solo ? (
+          <>
+            <Btn
+              kind="ghost"
+              onClick={() => {
+                net.leaveRoom();
+                setScreen('quick');
+              }}
+            >
+              返回大厅
+            </Btn>
+            <Btn kind="pink" onClick={() => net.restartSolo()}>
+              再来一局
+            </Btn>
+          </>
+        ) : mode === 'local' ? (
           <>
             <Btn
               kind="ghost"
@@ -377,15 +392,22 @@ function Tutorial() {
   const setS = useSettings((s) => s.set);
   const mode = useGame((s) => s.mode);
   const [step, setStep] = useState(0);
+  const solo = useGame((s) => !!s.room?.solo);
   useEffect(() => {
-    if (!done && mode === 'local') setLocalPaused(true);
-    return () => setLocalPaused(false);
-  }, [done, mode]);
+    if (done) return;
+    if (mode === 'local') setLocalPaused(true);
+    if (solo) net.pause(true);
+    return () => {
+      setLocalPaused(false);
+      if (solo) net.pause(false);
+    };
+  }, [done, mode, solo]);
   if (done) return null;
   const s = TUTORIAL[step];
   const finish = () => {
     setS({ tutorialDone: true });
     setLocalPaused(false);
+    if (solo) net.pause(false);
   };
   return (
     <Modal

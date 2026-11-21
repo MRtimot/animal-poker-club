@@ -1,5 +1,6 @@
 // 在线客户端：自建 WebSocket 服务器连接、自动重连、状态同步（无任何第三方服务）
-import type { ClientMessage, RoomSettings, ServerMessage } from '../core/protocol';
+import type { ClientMessage, RoomSettings, ServerMessage, SoloSettings } from '../core/protocol';
+import { onIdentityChanged, onServerAccount, onServerProgress } from '../store/accountStore';
 import type { PlayerAction } from '../core/table/types';
 import type { AIDifficulty, AIPersonality } from '../core/ai/ai';
 import { useGame } from '../store/gameStore';
@@ -91,6 +92,23 @@ class NetClient {
     this.ws = null;
   }
 
+  /** 登录 / 退出后重新连接，让服务器用新的身份识别这条连接 */
+  reconnect() {
+    const ws = this.ws;
+    if (!ws) return;
+    this.ws = null;
+    ws.onclose = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    ws.close();
+    safeStorage()?.removeItem(SESSION_KEY);
+    this.connect();
+  }
+
+  get connected() {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
   private raw(m: ClientMessage) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
     else this.queue.push(m);
@@ -118,11 +136,16 @@ class NetClient {
         if (!msg.room) {
           if (g.mode === 'online') {
             g.set({ mode: null, view: null });
-            if (g.screen === 'room' || g.screen === 'game') g.setScreen('online');
+            if (g.screen === 'room' || g.screen === 'game') g.setScreen(prev?.solo ? 'quick' : 'online');
           }
           return;
         }
         g.set({ mode: 'online' });
+        this.soloWaiter?.(true);
+        if (msg.room.solo) {
+          if (g.screen !== 'game') g.setScreen('game');
+          break;
+        }
         if (msg.room.status === 'lobby') {
           if (g.screen === 'game' || g.screen === 'online' || !prev || prev.code !== msg.room.code || g.screen === 'home') {
             g.set({ view: null });
@@ -148,7 +171,39 @@ class NetClient {
         break;
       case 'pong':
         break;
+      case 'account':
+        onServerAccount(msg.state);
+        break;
+      case 'progress':
+        onServerProgress(msg.event, msg.state);
+        break;
     }
+  }
+
+  private soloWaiter: ((ok: boolean) => void) | null = null;
+
+  /** 与 AI 对战（在服务器上运行，由服务器结算奖励）。服务器无法连接时返回 false */
+  startSolo(settings: SoloSettings, timeoutMs = 5000): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        this.soloWaiter = null;
+        resolve(false);
+      }, timeoutMs);
+      this.soloWaiter = (ok) => {
+        clearTimeout(timer);
+        this.soloWaiter = null;
+        resolve(ok);
+      };
+      const g = useGame.getState();
+      g.set({ chat: [], view: null });
+      this.send({ t: 'startSolo', settings });
+    });
+  }
+  restartSolo() {
+    this.send({ t: 'restartSolo' });
+  }
+  pause(paused: boolean) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.raw({ t: 'pause', paused });
   }
 
   // ───────────── 便捷方法 ─────────────
@@ -193,3 +248,4 @@ class NetClient {
 }
 
 export const net = new NetClient();
+onIdentityChanged(() => net.reconnect());

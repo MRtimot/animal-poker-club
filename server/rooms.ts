@@ -14,6 +14,9 @@ import {
 } from '../src/core/protocol';
 import { AI_NAMES, PERSONALITIES, type AIDifficulty, type AIPersonality } from '../src/core/ai/ai';
 import { randomAnimal, sanitizeAnimal, sanitizeName, type PlayerProfile } from '../src/core/player/profile';
+import type { AccountState, ProgressEvent } from '../src/core/account/types';
+import { effectiveBet, type GameFacts, type HandFacts } from '../src/progress/rewards';
+import type { SoloSettings } from '../src/core/protocol';
 import { randomId, randomRoomCode } from '../src/core/utils/random';
 
 export interface Connection {
@@ -21,8 +24,18 @@ export interface Connection {
   close?(): void;
 }
 
+/** 房间系统与账号系统之间的唯一接口：房间不直接接触数据库 */
+export interface AccountLink {
+  publicProfile(userId: string): PlayerProfile;
+  getState(userId: string): AccountState;
+  recordHand(userId: string, key: string, f: HandFacts): ProgressEvent | null;
+  recordGame(userId: string, key: string, f: GameFacts): ProgressEvent | null;
+}
+
 interface Session {
   sessionId: string;
+  /** 已登录玩家的账号 ID（只在服务器内部使用，从不发给客户端） */
+  userId: string | null;
   playerId: string;
   profile: PlayerProfile;
   conn: Connection | null;
@@ -32,6 +45,7 @@ interface Session {
 
 interface Member extends LobbyMember {
   sessionId?: string;
+  userId?: string | null;
 }
 
 interface Room {
@@ -43,6 +57,11 @@ interface Room {
   controller: GameController | null;
   chat: ChatMessage[];
   emptySince: number | null;
+  solo: boolean;
+  soloSettings?: SoloSettings;
+  /** 房间实例 ID + 场次：组成结算的唯一键，防止重复领奖 */
+  instanceId: string;
+  gameSeq: number;
 }
 
 export interface RoomServerOptions {
@@ -53,6 +72,7 @@ export interface RoomServerOptions {
   /** 游戏节奏倍率（测试用） */
   pace?: number;
   turnTimeMs?: number;
+  accounts?: AccountLink | null;
 }
 
 const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
@@ -60,7 +80,8 @@ const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 export class RoomServer {
   private sessions = new Map<string, Session>();
   private rooms = new Map<string, Room>();
-  private opts: Required<RoomServerOptions>;
+  private opts: Required<Omit<RoomServerOptions, 'accounts'>>;
+  private accounts: AccountLink | null;
   private sweepTimer: ReturnType<typeof setInterval>;
 
   constructor(opts: RoomServerOptions = {}) {
@@ -70,6 +91,7 @@ export class RoomServer {
       pace: opts.pace ?? 1,
       turnTimeMs: opts.turnTimeMs ?? 30_000,
     };
+    this.accounts = opts.accounts ?? null;
     this.sweepTimer = setInterval(() => this.sweep(), 5000);
   }
 
@@ -87,8 +109,9 @@ export class RoomServer {
   }
 
   /** 新连接：返回该连接的消息处理器与关闭回调 */
-  connect(conn: Connection) {
+  connect(conn: Connection, ctx: { userId?: string | null } = {}) {
     let session: Session | null = null;
+    const userId = ctx.userId ?? null;
     return {
       onMessage: (raw: string) => {
         let msg: ClientMessage;
@@ -99,7 +122,7 @@ export class RoomServer {
         }
         if (!msg || typeof msg !== 'object' || typeof (msg as any).t !== 'string') return;
         if (msg.t === 'hello') {
-          session = this.hello(conn, msg.sessionId, msg.profile);
+          session = this.hello(conn, msg.sessionId, msg.profile, userId);
           return;
         }
         if (msg.t === 'ping') {
@@ -122,10 +145,14 @@ export class RoomServer {
 
   // ───────────── 会话 ─────────────
 
-  private hello(conn: Connection, sessionId: string | undefined, profileIn: any): Session {
-    const profile = this.cleanProfile(profileIn);
+  private hello(conn: Connection, sessionId: string | undefined, profileIn: any, userId: string | null): Session {
+    // 登录玩家：昵称、动物、等级、头像全部来自服务器数据库，忽略客户端发来的资料
+    const profile = this.profileFor(userId, profileIn);
     let s = sessionId ? this.sessions.get(sessionId) : undefined;
+    // 会话属于另一个账号（或账号已退出）时不能复用，防止冒用他人的座位
+    if (s && s.userId && s.userId !== userId) s = undefined;
     if (s) {
+      s.userId = userId;
       // 断线重连：替换旧连接
       if (s.conn && s.conn !== conn) {
         try {
@@ -141,6 +168,7 @@ export class RoomServer {
     } else {
       s = {
         sessionId: randomId(24),
+        userId,
         playerId: 'u_' + randomId(10),
         profile,
         conn,
@@ -150,11 +178,19 @@ export class RoomServer {
       this.sessions.set(s.sessionId, s);
     }
     conn.send({ t: 'welcome', sessionId: s.sessionId, playerId: s.playerId });
+    if (userId && this.accounts) {
+      try {
+        conn.send({ t: 'account', state: this.accounts.getState(userId) });
+      } catch {
+        /* 账号读取失败不影响进入房间 */
+      }
+    }
 
     const room = s.roomCode ? this.rooms.get(s.roomCode) : undefined;
     const member = room?.members.find((m) => m.id === s!.playerId);
     if (room && member) {
       member.connected = true;
+      member.userId = userId;
       if (room.status === 'lobby') member.profile = profile;
       room.emptySince = null;
       room.controller?.setConnected(member.id, true);
@@ -206,6 +242,20 @@ export class RoomServer {
     }
   }
 
+  private profileFor(userId: string | null, p: any): PlayerProfile {
+    if (userId && this.accounts) {
+      try {
+        return this.accounts.publicProfile(userId);
+      } catch {
+        /* 回落到客户端资料（仅用于显示，不影响结算） */
+      }
+    }
+    const clean = this.cleanProfile(p);
+    // 游客不能显示头像，也不能自称高等级
+    clean.level = Math.min(clean.level ?? 1, 10);
+    return clean;
+  }
+
   private cleanProfile(p: any): PlayerProfile {
     return {
       name: sanitizeName(p?.name),
@@ -238,6 +288,9 @@ export class RoomServer {
           controller: null,
           chat: [],
           emptySince: null,
+          solo: false,
+          instanceId: randomId(12),
+          gameSeq: 0,
         };
         this.rooms.set(code, r);
         this.addHuman(r, s);
@@ -249,7 +302,7 @@ export class RoomServer {
       case 'joinRoom': {
         const code = String(msg.code ?? '').trim().toUpperCase();
         const target = this.rooms.get(code);
-        if (!target) return err('房间不存在，请检查房间代码');
+        if (!target || (target.solo && !target.members.some((m) => m.id === s.playerId))) return err('房间不存在，请检查房间代码');
         if (room && room !== target) this.leave(s);
         const existing = target.members.find((m) => m.id === s.playerId);
         if (existing) {
@@ -280,22 +333,7 @@ export class RoomServer {
         if (!room || !isHost) return err('只有房主可以添加 AI');
         if (room.status !== 'lobby') return err('游戏进行中无法添加 AI');
         if (room.members.length >= room.settings.maxPlayers) return err('房间已满');
-        const personality: AIPersonality = msg.personality in PERSONALITIES ? msg.personality : 'smartCat';
-        const difficulty: AIDifficulty = DIFFS.includes(msg.difficulty) ? msg.difficulty : 'normal';
-        const used = new Set(room.members.map((m) => m.profile.name));
-        const name = AI_NAMES[personality].find((n) => !used.has(n)) ?? PERSONALITIES[personality].name + room.members.length;
-        const animal = randomAnimal(Math.random, [PERSONALITIES[personality].species]);
-        room.members.push({
-          id: 'ai_' + randomId(8),
-          profile: { name, animal, level: 1 },
-          isAI: true,
-          aiPersonality: personality,
-          aiDifficulty: difficulty,
-          ready: true,
-          connected: true,
-          isHost: false,
-          chips: room.settings.startingChips,
-        });
+        const { name, personality } = this.pushAI(room, msg.personality, msg.difficulty);
         this.system(room, `${name}（${PERSONALITIES[personality].name} · AI）加入了牌桌`);
         this.broadcastRoom(room);
         return;
@@ -343,13 +381,55 @@ export class RoomServer {
         return;
       }
       case 'updateProfile': {
-        s.profile = this.cleanProfile(msg.profile);
+        s.profile = this.profileFor(s.userId, msg.profile);
         if (room && me) {
           if (room.status === 'lobby') {
             me.profile = s.profile;
             this.broadcastRoom(room);
           }
         }
+        return;
+      }
+      case 'startSolo': {
+        const solo = this.cleanSolo(msg.settings);
+        if (!solo) return err('对局设置无效');
+        if (room) this.leave(s);
+        let code = randomRoomCode();
+        while (this.rooms.has(code)) code = randomRoomCode();
+        const r: Room = {
+          code,
+          hostId: s.playerId,
+          settings: { maxPlayers: solo.opponents.length + 1, startingChips: solo.startingChips, smallBlind: solo.smallBlind, bigBlind: solo.bigBlind, turnSeconds: 45 },
+          members: [],
+          status: 'lobby',
+          controller: null,
+          chat: [],
+          emptySince: null,
+          solo: true,
+          soloSettings: solo,
+          instanceId: randomId(12),
+          gameSeq: 0,
+        };
+        this.rooms.set(code, r);
+        this.addHuman(r, s);
+        for (const o of solo.opponents) this.pushAI(r, o.personality, o.difficulty);
+        this.system(r, `欢迎来到动物扑克俱乐部！本局盲注 ${solo.smallBlind}/${solo.bigBlind}，祝你好运 🍀`);
+        s.conn?.send({ t: 'chatHistory', messages: r.chat });
+        this.startGame(r);
+        return;
+      }
+      case 'restartSolo': {
+        if (!room?.solo || !isHost) return err('当前不是单人对局');
+        if (room.status === 'playing' && !room.controller?.isGameOver()) return err('游戏仍在进行中');
+        for (const m of room.members) m.chips = room.settings.startingChips;
+        this.startGame(room);
+        return;
+      }
+      case 'pause': {
+        // 只有单人对局可以暂停（例如查看新手教程），多人房间不允许
+        if (!room?.solo || !room.controller || !isHost) return;
+        room.controller.paused = !!msg.paused;
+        this.broadcastState(room);
         return;
       }
       case 'backToLobby': {
@@ -380,10 +460,44 @@ export class RoomServer {
     return { maxPlayers, startingChips, smallBlind: blinds[0], bigBlind: blinds[1], turnSeconds };
   }
 
+  private cleanSolo(x: any): SoloSettings | null {
+    if (!x || !Array.isArray(x.opponents) || x.opponents.length < 1 || x.opponents.length > 7) return null;
+    const startingChips = Number(x.startingChips);
+    if (!CHIP_OPTIONS.includes(startingChips)) return null;
+    const blinds = BLIND_OPTIONS.find(([sb, bb]) => sb === Number(x.smallBlind) && bb === Number(x.bigBlind));
+    if (!blinds) return null;
+    const opponents = x.opponents.map((o: any) => ({
+      personality: (o?.personality in PERSONALITIES ? o.personality : 'smartCat') as AIPersonality,
+      difficulty: (DIFFS.includes(o?.difficulty) ? o.difficulty : 'easy') as AIDifficulty,
+    }));
+    return { opponents, startingChips, smallBlind: blinds[0], bigBlind: blinds[1] };
+  }
+
+  private pushAI(room: Room, p: any, d: any) {
+    const personality: AIPersonality = p in PERSONALITIES ? p : 'smartCat';
+    const difficulty: AIDifficulty = DIFFS.includes(d) ? d : 'normal';
+    const used = new Set(room.members.map((m) => m.profile.name));
+    const name = AI_NAMES[personality].find((n) => !used.has(n)) ?? PERSONALITIES[personality].name + room.members.length;
+    const animal = randomAnimal(Math.random, [PERSONALITIES[personality].species]);
+    room.members.push({
+      id: 'ai_' + randomId(8),
+      profile: { name, animal, level: 1 },
+      isAI: true,
+      aiPersonality: personality,
+      aiDifficulty: difficulty,
+      ready: true,
+      connected: true,
+      isHost: false,
+      chips: room.settings.startingChips,
+    });
+    return { name, personality };
+  }
+
   private addHuman(room: Room, s: Session) {
     room.members.push({
       id: s.playerId,
       sessionId: s.sessionId,
+      userId: s.userId,
       profile: s.profile,
       isAI: false,
       ready: false,
@@ -439,6 +553,8 @@ export class RoomServer {
 
   private startGame(room: Room) {
     room.controller?.stop();
+    room.gameSeq++;
+    const gameKey = `${room.instanceId}:${room.gameSeq}`;
     const seats: SeatConfig[] = room.members.map((m) => ({
       id: m.id,
       profile: m.profile,
@@ -460,17 +576,126 @@ export class RoomServer {
       const m = room.members.find((x) => x.id === playerId);
       if (m) this.pushChat(room, { from: playerId, name: m.profile.name, text, kind });
     };
+    // 每一手牌结束：服务器根据牌桌真实状态为登录玩家结算（客户端不参与计算）
+    c.onHandComplete = () => {
+      if (room.controller !== c) return;
+      this.settleHand(room, c, gameKey);
+    };
     c.subscribe(() => {
       if (room.controller !== c) return;
       this.broadcastState(room);
       if (c.isGameOver() && room.status === 'playing') {
         room.status = 'finished';
+        this.settleGame(room, c, gameKey);
         this.broadcastRoom(room);
       }
     });
-    this.system(room, '游戏开始！祝大家好运 🍀');
+    if (!room.solo) this.system(room, '游戏开始！祝大家好运 🍀');
     this.broadcastRoom(room);
     c.start();
+  }
+
+  // ───────────── 结算（交给账号系统） ─────────────
+
+  private settleHand(room: Room, c: GameController, gameKey: string) {
+    if (!this.accounts) return;
+    for (const m of room.members) {
+      if (m.isAI || !m.userId) continue;
+      const v = c.getView(m.id);
+      const me = v.players.find((p) => p.id === m.id);
+      const sum = v.summary;
+      if (!me || !sum || !me.inHand) continue;
+      const win = sum.winners.find((w) => w.playerId === m.id);
+      const shown = sum.shown.find((h) => h.playerId === m.id);
+      try {
+        const ev = this.accounts.recordHand(m.userId, `${gameKey}:${sum.handNumber}`, {
+          won: !!win,
+          amount: win?.amount ?? 0,
+          bet: effectiveBet(me.totalBet, v.events as any, m.id),
+          category: win && shown ? shown.category : -1,
+          allIn: me.allIn,
+          folded: me.folded,
+          uncontested: sum.uncontested,
+          species: m.profile.animal.species,
+          online: !room.solo,
+        });
+        if (ev) this.pushProgress(m.userId, ev);
+      } catch (err) {
+        console.error('[结算] 保存牌局结果失败', err);
+      }
+    }
+  }
+
+  private settleGame(room: Room, c: GameController, gameKey: string) {
+    if (!this.accounts) return;
+    const v0 = c.getView('');
+    const go = v0.gameOver;
+    if (!go) return;
+    for (const m of room.members) {
+      if (m.isAI || !m.userId) continue;
+      const rank = go.rankings.find((r) => r.playerId === m.id);
+      if (!rank) continue;
+      try {
+        const ev = this.accounts.recordGame(m.userId, gameKey, {
+          place: rank.place,
+          players: go.rankings.length,
+          hands: v0.handNumber,
+          finalChips: rank.chips,
+          mode: room.solo ? 'local' : 'online',
+        });
+        if (ev) this.pushProgress(m.userId, ev);
+      } catch (err) {
+        console.error('[结算] 保存比赛结果失败', err);
+      }
+    }
+  }
+
+  private pushProgress(userId: string, event: ProgressEvent) {
+    if (!this.accounts) return;
+    const state = this.accounts.getState(userId);
+    this.sendToUser(userId, { t: 'progress', event, state });
+    // 升级后同步牌桌上显示的等级
+    if (event.levelAfter !== event.levelBefore) this.refreshUserProfile(userId);
+  }
+
+  private sendToUser(userId: string, msg: ServerMessage) {
+    for (const s of this.sessions.values()) if (s.userId === userId && s.conn) s.conn.send(msg);
+  }
+
+  /** 账号数据在其他地方被修改（其他设备、HTTP 接口）：推送给该玩家所有在线设备 */
+  notifyAccount(userId: string, state: AccountState) {
+    this.sendToUser(userId, { t: 'account', state });
+    this.refreshUserProfile(userId);
+  }
+
+  /** 账号被删除：断开账号绑定，玩家变回游客 */
+  dropUser(userId: string) {
+    for (const s of this.sessions.values()) {
+      if (s.userId !== userId) continue;
+      s.userId = null;
+      s.conn?.send({ t: 'account', state: null });
+    }
+    for (const room of this.rooms.values()) for (const m of room.members) if (m.userId === userId) m.userId = null;
+  }
+
+  private refreshUserProfile(userId: string) {
+    if (!this.accounts) return;
+    let profile: PlayerProfile;
+    try {
+      profile = this.accounts.publicProfile(userId);
+    } catch {
+      return;
+    }
+    for (const s of this.sessions.values()) {
+      if (s.userId !== userId) continue;
+      s.profile = profile;
+      const room = s.roomCode ? this.rooms.get(s.roomCode) : undefined;
+      const m = room?.members.find((x) => x.id === s.playerId);
+      if (room && m && room.status === 'lobby') {
+        m.profile = profile;
+        this.broadcastRoom(room);
+      }
+    }
   }
 
   // ───────────── 广播 ─────────────
@@ -482,6 +707,7 @@ export class RoomServer {
       hostId: room.hostId,
       settings: room.settings,
       status: room.status,
+      ...(room.solo ? { solo: true } : {}),
       members: room.members.map((m) => ({
         id: m.id,
         profile: m.profile,

@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
-import { SPECIES_MAP } from '../../core/player/profile';
-import { Avatar, Btn, LevelBar } from '../common/ui';
+import { Btn } from '../common/ui';
+import { AccountChip } from '../account/AccountScreens';
 import { RulesModal } from '../common/RulesModal';
 
 export function HomeScreen() {
   const setScreen = useGame((s) => s.setScreen);
   const set = useGame((s) => s.set);
-  const name = useProfile((s) => s.name);
-  const animal = useProfile((s) => s.animal);
   const created = useProfile((s) => s.createdCharacter);
-  const stats = useProfile((s) => s.stats);
   const [rules, setRules] = useState(false);
 
   return (
@@ -28,18 +25,7 @@ export function HomeScreen() {
         <span className="founder-title">Founder of APEX</span>
           </div>
         </div>
-        <div className="panel profile-chip">
-          <Avatar animal={animal} />
-          <div className="grow">
-            <div style={{ fontWeight: 800 }}>
-              {name} <span className="muted small">· {SPECIES_MAP[animal.species].name}</span>
-            </div>
-            <LevelBar />
-            <div className="small muted" style={{ marginTop: 4 }}>
-              已玩 {stats.handsPlayed} 局 · 赢 {stats.handsWon} 局
-            </div>
-          </div>
-        </div>
+        <AccountChip />
       </div>
 
       <div>
@@ -76,7 +62,7 @@ export function HomeScreen() {
             ⚙️ 设置
           </Btn>
         </div>
-        <div className="home-foot">仅使用虚拟筹码 · 无真钱交易 · 无第三方服务</div>
+        <div className="home-foot">仅使用虚拟筹码 · 无真钱交易 · 登录仅用于保存游戏进度</div>
       </div>
       {rules && <RulesModal onClose={() => setRules(false)} />}
     </div>

@@ -22,3 +22,21 @@ describe('筹码堆拆分', () => {
     for (const c of breakdown(987654, 20, 12)) expect(c.count).toBeLessThanOrEqual(20);
   });
 });
+
+import { effectiveBet, applyHand } from '../src/progress/rewards';
+import { EMPTY_STATS } from '../src/progress/progression';
+
+describe('账号统计：实际投入与盈利', () => {
+  it('摊牌退回的未跟注筹码不算作投入', () => {
+    const events = [
+      { type: 'action', playerId: 'me' },
+      { type: 'refund', playerId: 'me', amount: 580 },
+      { type: 'refund', playerId: 'other', amount: 9 },
+    ];
+    expect(effectiveBet(1270, events, 'me')).toBe(690);
+    const { stats } = applyHand(EMPTY_STATS, { won: true, amount: 1380, bet: 690, category: 1, allIn: true, folded: false, uncontested: false, species: 'cat', online: false });
+    expect(stats.biggestProfit).toBe(690);
+    expect(stats.totalBet).toBe(690);
+    expect(stats.totalWinnings).toBe(1380);
+  });
+});

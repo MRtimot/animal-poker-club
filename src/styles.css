@@ -2186,3 +2186,513 @@ h1, h2, h3 {
   font-size: clamp(15px, 2.2vw, 19px);
   color: rgba(246, 239, 224, 0.85);
 }
+
+/* ═════════ 账号系统：登录页 / 加载 / 首次创建 / 玩家档案（克制的高级风格） ═════════ */
+.login-screen {
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px calc(20px + var(--safe-b));
+  background: radial-gradient(ellipse at 50% 60%, rgba(10, 6, 4, 0) 0%, rgba(8, 5, 4, 0.55) 70%, rgba(6, 4, 3, 0.8) 100%);
+}
+.login-card {
+  width: min(400px, 100%);
+  padding: 30px 28px 22px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(22, 16, 12, 0.82), rgba(14, 10, 8, 0.9));
+  border: 1px solid rgba(214, 178, 110, 0.28);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 236, 200, 0.06);
+  animation: loginIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes loginIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+}
+.login-crest {
+  letter-spacing: 10px;
+  font-size: 13px;
+  color: rgba(214, 178, 110, 0.7);
+  margin-bottom: 10px;
+}
+.login-title {
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 6px;
+  color: #ecd3a0;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+}
+.login-sub {
+  margin: 10px 0 14px;
+  color: #e9dcc6;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+.login-perks {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto 20px;
+  font-size: 13px;
+  color: rgba(233, 220, 198, 0.62);
+  line-height: 1.9;
+}
+.login-perks li::before {
+  content: '— ';
+  color: rgba(214, 178, 110, 0.6);
+}
+.gbtn-wrap {
+  position: relative;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.gbtn-host {
+  min-height: 44px;
+  display: flex;
+  justify-content: center;
+}
+.gbtn-fake {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  max-width: 100%;
+  height: 44px;
+  border-radius: 22px;
+  background: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.gbtn-fake.disabled {
+  position: static;
+  transform: none;
+  opacity: 0.55;
+}
+.gbtn-fake.busy {
+  animation: gbtnPulse 1.4s ease-in-out infinite;
+}
+@keyframes gbtnPulse {
+  50% { border-color: #d6b26e; color: #f3e2bf; }
+}
+.login-error,
+.err-text {
+  color: #ffb4a8;
+}
+.login-error {
+  margin-top: 12px;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(160, 40, 30, 0.18);
+  border: 1px solid rgba(255, 120, 100, 0.25);
+}
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 12px;
+  color: rgba(233, 220, 198, 0.4);
+  font-size: 12px;
+}
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(214, 178, 110, 0.18);
+}
+.login-note {
+  margin: 16px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: rgba(233, 220, 198, 0.45);
+}
+.dev-login {
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  display: grid;
+  gap: 6px;
+}
+
+/* 正在加载玩家资料 */
+.profile-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 4, 3, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.3s;
+  padding: 16px;
+}
+.pl-card {
+  width: min(320px, 100%);
+  padding: 24px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(22, 16, 12, 0.9), rgba(14, 10, 8, 0.94));
+  border-color: rgba(214, 178, 110, 0.28);
+}
+.pl-avatar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+  animation: plAvatarIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes plAvatarIn {
+  from { opacity: 0; transform: scale(0.6); filter: blur(4px); }
+}
+.pl-title {
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  color: #ecd3a0;
+  letter-spacing: 2px;
+  margin-bottom: 14px;
+}
+.pl-spinner {
+  width: 28px;
+  height: 28px;
+  margin: 4px auto 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(214, 178, 110, 0.2);
+  border-top-color: #d6b26e;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.pl-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 6px;
+  font-size: 12.5px;
+  color: rgba(233, 220, 198, 0.35);
+}
+.pl-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.3s;
+}
+.pl-steps li.now {
+  color: #f3e2bf;
+}
+.pl-steps li.done {
+  color: rgba(233, 220, 198, 0.8);
+}
+.pl-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(214, 178, 110, 0.25);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.pl-steps li.now .pl-dot {
+  background: #d6b26e;
+  box-shadow: 0 0 8px #d6b26e;
+}
+.pl-steps li.done .pl-dot {
+  background: #8fbf7a;
+}
+
+/* 欢迎回来 */
+.welcome-banner {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px 10px 10px;
+  border-radius: 40px;
+  background: linear-gradient(180deg, rgba(26, 19, 14, 0.92), rgba(14, 10, 8, 0.95));
+  border: 1px solid rgba(214, 178, 110, 0.35);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: welcomeIn 3.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  max-width: calc(100vw - 32px);
+}
+@keyframes welcomeIn {
+  0% { opacity: 0; transform: translate(-50%, -14px); }
+  12%, 82% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -8px); }
+}
+.wb-text {
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  color: #ecd3a0;
+  font-size: 17px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-sub {
+  font-size: 12px;
+  color: rgba(233, 220, 198, 0.6);
+}
+
+/* 自动保存状态 */
+.sync-badge {
+  position: fixed;
+  left: 16px;
+  bottom: calc(14px + var(--safe-b));
+  z-index: 40;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(14, 10, 8, 0.78);
+  border: 1px solid rgba(214, 178, 110, 0.22);
+  color: rgba(233, 220, 198, 0.75);
+  pointer-events: none;
+  animation: fadeIn 0.25s;
+}
+.sync-badge.saved {
+  color: #a9d79a;
+}
+.sync-badge.retrying,
+.sync-badge.offline {
+  color: #f0c27a;
+  border-color: rgba(240, 194, 122, 0.35);
+}
+
+/* 头像 */
+.avatar-img {
+  overflow: hidden;
+  background: #2a2018;
+  padding: 0;
+}
+.avatar-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.avatar.lg {
+  width: 64px;
+  height: 64px;
+  font-size: 34px;
+}
+.nt-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: -3px;
+  margin-right: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/* 首页右上角：玩家身份 */
+.account-chip {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.account-chip:hover {
+  border-color: rgba(214, 178, 110, 0.5);
+  transform: translateY(-1px);
+}
+.ac-name {
+  font-weight: 800;
+  font-size: 16px;
+}
+.ac-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  margin: 2px 0 6px;
+}
+.ac-lv {
+  color: #ecd3a0;
+  font-weight: 700;
+}
+.guest-save {
+  margin-top: 8px;
+  appearance: none;
+  border: 1px solid rgba(214, 178, 110, 0.4);
+  background: rgba(214, 178, 110, 0.1);
+  color: #ecd3a0;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.guest-save:hover {
+  background: rgba(214, 178, 110, 0.18);
+}
+
+/* 首次创建玩家档案 */
+.onboarding .side-panel h2 {
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  color: #ecd3a0;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.ob-steps {
+  display: flex;
+  gap: 14px;
+  font-size: 12.5px;
+  color: rgba(233, 220, 198, 0.4);
+  margin-bottom: 18px;
+}
+.ob-steps .on {
+  color: #ecd3a0;
+}
+.ob-steps .done {
+  color: rgba(169, 215, 154, 0.8);
+}
+.ob-species {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+.ob-sp,
+.ob-preset {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.ob-sp {
+  padding: 10px 4px;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  font-size: 13px;
+}
+.ob-sp .e {
+  font-size: 24px;
+}
+.ob-sp:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.ob-sp.on,
+.ob-preset.on {
+  border-color: #d6b26e;
+  background: rgba(214, 178, 110, 0.12);
+}
+.ob-presets {
+  display: grid;
+  gap: 8px;
+}
+.ob-preset {
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ob-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ob-color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+.ob-color.on {
+  border-color: #ecd3a0;
+  box-shadow: 0 0 0 2px rgba(214, 178, 110, 0.4);
+}
+
+/* 玩家档案 */
+.pf-head {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.pf-name {
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  color: #ecd3a0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pf-edit {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: rgba(233, 220, 198, 0.5);
+  cursor: pointer;
+  font-size: 16px;
+}
+.pf-edit:hover {
+  color: #ecd3a0;
+}
+.pf-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+.pf-lv {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 26px;
+  color: #ecd3a0;
+}
+.pf-chips {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--gold);
+}
+.pf-cached {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #f0c27a;
+}
+.pf-account {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(214, 178, 110, 0.15);
+}
+
+@media (max-width: 640px) {
+  .login-title {
+    font-size: 25px;
+    letter-spacing: 4px;
+  }
+  .login-card {
+    padding: 24px 18px 18px;
+  }
+  .pl-steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .welcome-banner {
+    top: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-card,
+  .pl-avatar,
+  .gbtn-fake.busy {
+    animation: none;
+  }
+  .welcome-banner {
+    animation: none;
+    transform: translateX(-50%);
+  }
+}

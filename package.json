@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "concurrently -n 服务器,网页 -c yellow,cyan \"npm:dev:server\" \"npm:dev:web\"",
     "dev:web": "vite --host",

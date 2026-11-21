@@ -4,6 +4,8 @@ import { useProfile } from '../../store/profileStore';
 import { AIDifficulty, AIPersonality, DIFFICULTY_NAME, PERSONALITIES } from '../../core/ai/ai';
 import { BLIND_OPTIONS, CHIP_OPTIONS } from '../../core/protocol';
 import { startLocalGame } from '../../net/localHost';
+import { net } from '../../net/netClient';
+import { useAccount } from '../../store/accountStore';
 import { Avatar, BackButton, Btn, LevelBar, Seg } from '../common/ui';
 import { formatChips, timeAgo } from '../../utils/format';
 import { SPECIES_MAP } from '../../core/player/profile';
@@ -15,6 +17,7 @@ const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 export function HubScreen() {
   const setScreen = useGame((s) => s.setScreen);
   const set = useGame((s) => s.set);
+  const toast = useGame((s) => s.toast);
   const name = useProfile((s) => s.name);
   const animal = useProfile((s) => s.animal);
   const stats = useProfile((s) => s.stats);
@@ -27,14 +30,27 @@ export function HubScreen() {
   const [blinds, setBlinds] = useState(0);
   const [mix, setMix] = useState<AIPersonality[]>(['aggressiveFox', 'cautiousPanda', 'crazyFrog', 'smartCat', 'luckyRabbit', 'smartCat', 'aggressiveFox']);
 
-  const start = () => {
+  const signedIn = useAccount((s) => s.status === 'signedIn');
+  const cached = useAccount((s) => s.cached);
+  const [starting, setStarting] = useState(false);
+
+  const start = async () => {
     const [sb, bb] = BLIND_OPTIONS[blinds];
-    startLocalGame({
+    const settings = {
       opponents: mix.slice(0, count).map((p) => ({ personality: p, difficulty })),
       startingChips: chips,
       smallBlind: sb,
       bigBlind: bb,
-    });
+    };
+    // 登录玩家：对局在服务器上运行，奖励由服务器计算并自动保存
+    if (signedIn && !cached) {
+      setStarting(true);
+      const ok = await net.startSolo(settings);
+      setStarting(false);
+      if (ok) return;
+      toast('服务器暂时无法同步你的资料。本局为离线对局，不计入云端存档。', 'error');
+    }
+    startLocalGame(settings);
     setScreen('game');
   };
 
@@ -60,7 +76,7 @@ export function HubScreen() {
           <div className="mode-card">
             <h3>🤖 与 AI 对战</h3>
             <div className="small muted" style={{ marginBottom: 12 }}>
-              本地 AI 完全在你的电脑上运行，不需要网络。
+              {signedIn ? '对局结果由服务器结算，经验、筹码和成就自动保存到云端。' : '游客模式：AI 在你的电脑上运行，进度只保存在本机。'}
             </div>
             <div className="field">
               <label>对手数量</label>
@@ -101,8 +117,8 @@ export function HubScreen() {
               <label>盲注</label>
               <Seg options={BLIND_OPTIONS.map(([s, b], i) => ({ value: i, label: `${s} / ${b}` }))} value={blinds} onChange={setBlinds} />
             </div>
-            <Btn kind="pink" size="lg" block onClick={start}>
-              🃏 开始对局
+            <Btn kind="pink" size="lg" block onClick={start} disabled={starting}>
+              {starting ? '正在进入牌桌……' : '🃏 开始对局'}
             </Btn>
           </div>
 

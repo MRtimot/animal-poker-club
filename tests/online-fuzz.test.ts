@@ -61,7 +61,7 @@ describe('在线压力测试', () => {
     const rng = seededRandom(42);
     const bots = [new Bot('甲'), new Bot('乙'), new Bot('丙'), new Bot('丁')];
     for (const b of bots) await b.connect();
-    bots[0].send({ t: 'createRoom', settings: { maxPlayers: 5, startingChips: 1000, smallBlind: 10, bigBlind: 20, turnSeconds: 30 } });
+    bots[0].send({ t: 'createRoom', settings: { maxPlayers: 5, startingChips: 50000, smallBlind: 10, bigBlind: 20, turnSeconds: 30 } });
     await until(() => !!bots[0].room);
     const code = bots[0].room!.code;
     for (const b of bots.slice(1)) b.send({ t: 'joinRoom', code });
@@ -72,7 +72,7 @@ describe('在线压力测试', () => {
     bots[0].send({ t: 'startGame' });
     await until(() => bots.every((b) => b.view && b.view.handNumber >= 1));
 
-    const TOTAL = 5000;
+    const TOTAL = 250000;
     let reconnects = 0;
     const deadline = Date.now() + 40000;
     while (Date.now() < deadline) {
@@ -91,9 +91,11 @@ describe('在线压力测试', () => {
           setTimeout(() => b.connect(sid), 300);
           continue;
         }
-        if (r < 0.15) b.send({ t: 'action', action: { type: 'fold' } });
-        else if (r < 0.3 && l.canRaise) b.send({ t: 'action', action: { type: 'raise', amount: l.minRaiseTo } });
-        else if (r < 0.33 && l.canAllIn) b.send({ t: 'action', action: { type: 'allin' } });
+        // 前 8 手避免下注无限升级（最小加注每次翻倍，会很快变成全员全押、整场在第一手合法结束）
+        const early = bv.handNumber < 8;
+        if (r < 0.15 || (early && l.toCall > 2000)) b.send({ t: 'action', action: { type: 'fold' } });
+        else if (r < 0.3 && l.canRaise && (!early || l.minRaiseTo <= 400)) b.send({ t: 'action', action: { type: 'raise', amount: l.minRaiseTo } });
+        else if (r < 0.33 && l.canAllIn && !early) b.send({ t: 'action', action: { type: 'allin' } });
         else b.send({ t: 'action', action: { type: l.canCheck ? 'check' : 'call' } });
       }
       await new Promise((r) => setTimeout(r, 60));
