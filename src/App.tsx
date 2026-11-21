@@ -203,6 +203,11 @@ function LoadingScreen({ done }: { done: boolean }) {
         <span className="founder-name">Timothy Ong</span>
         <span className="founder-title">Founder of APEX</span>
       </div>
+      <div className="tester-badge" style={{ margin: '10px auto 0' }}>
+        <span className="tester-icon">🧪</span>
+        <span className="tester-label">游戏测试员</span>
+        <span className="tester-name">John</span>
+      </div>
     </div>
   );
 }
