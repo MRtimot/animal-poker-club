@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useSettings } from '../../store/settingsStore';
-import { BLIND_OPTIONS, CHIP_OPTIONS } from '../../core/protocol';
+import { BLIND_OPTIONS, CHIP_OPTIONS, MAX_ROOM_PLAYERS } from '../../core/protocol';
 import { ROOM_CODE_LENGTH } from '../../core/utils/random';
 import { net } from '../../net/netClient';
 import { BUILT_IN_SERVER } from '../../net/serverAddress';
@@ -94,7 +94,7 @@ export function OnlineScreen() {
           <>
             <div className="field">
               <label>玩家人数</label>
-              <Seg options={[2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: n }))} value={players} onChange={setPlayers} />
+              <Seg options={Array.from({ length: MAX_ROOM_PLAYERS - 1 }, (_, i) => i + 2).map((n) => ({ value: n, label: n }))} value={players} onChange={setPlayers} />
             </div>
             <div className="field">
               <label>初始筹码</label>

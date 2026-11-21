@@ -23,6 +23,7 @@ import { useProgressTracker } from './progress/tracker';
 import { net } from './net/netClient';
 import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge, WelcomeBanner } from './ui/account/AccountScreens';
 import { guestChosen, initAccount, useAccount } from './store/accountStore';
+import { NetDebugPanel } from './ui/debug/NetDebugPanel';
 import type { AnimName } from './store/fxStore';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
@@ -307,6 +308,7 @@ export default function App() {
       <ProfileLoading />
       <WelcomeBanner />
       <SyncBadge />
+      <NetDebugPanel />
       <Toasts />
       <LoadingScreen done={ready} />
     </>

@@ -13,6 +13,9 @@ export interface RoomSettings {
   turnSeconds: number;
 }
 
+/** 在线房间人数上限 */
+export const MAX_ROOM_PLAYERS = 6;
+
 export const CHIP_OPTIONS = [1000, 5000, 10000, 50000];
 export const BLIND_OPTIONS: [number, number][] = [
   [10, 20],

@@ -119,6 +119,16 @@ describe('房间与连接', () => {
     b.close();
   });
 
+  it('房间最多 6 人：超过上限的房间设置被拒绝', async () => {
+    const p = new Player('房主');
+    await p.connect();
+    p.send({ t: 'createRoom', settings: { maxPlayers: 7, startingChips: 1000, smallBlind: 10, bigBlind: 20, turnSeconds: 30 } });
+    await until(() => p.errors.length > 0);
+    expect(p.errors[0]).toContain('房间设置无效');
+    expect(p.room).toBeNull();
+    p.close();
+  });
+
   it('游客昵称不能冒充系统 / 管理员', async () => {
     const p = new Player('管理员');
     await p.connect();

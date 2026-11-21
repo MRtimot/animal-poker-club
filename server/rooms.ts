@@ -4,6 +4,7 @@ import type { SeatConfig, TableView } from '../src/core/game/view';
 import {
   BLIND_OPTIONS,
   CHIP_OPTIONS,
+  MAX_ROOM_PLAYERS,
   EMOTES,
   type ChatMessage,
   type ClientMessage,
@@ -503,7 +504,7 @@ export class RoomServer {
   private cleanSettings(s: any): RoomSettings | null {
     if (!s) return null;
     const maxPlayers = Math.floor(Number(s.maxPlayers));
-    if (!(maxPlayers >= 2 && maxPlayers <= 8)) return null;
+    if (!(maxPlayers >= 2 && maxPlayers <= MAX_ROOM_PLAYERS)) return null;
     const startingChips = CHIP_OPTIONS.includes(Number(s.startingChips)) ? Number(s.startingChips) : 1000;
     const blinds = BLIND_OPTIONS.find(([sb, bb]) => sb === Number(s.smallBlind) && bb === Number(s.bigBlind)) ?? BLIND_OPTIONS[0];
     const turnSeconds = [15, 20, 30, 45, 60].includes(Number(s.turnSeconds)) ? Number(s.turnSeconds) : 30;

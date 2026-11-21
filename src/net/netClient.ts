@@ -64,6 +64,7 @@ class NetClient {
       const q = this.queue;
       this.queue = [];
       q.forEach((m) => this.raw(m));
+      this.raw({ t: 'ping', time: Date.now() });
       this.pingTimer = window.setInterval(() => this.raw({ t: 'ping', time: Date.now() }), 20000);
     };
     ws.onmessage = (ev) => {
@@ -225,6 +226,7 @@ class NetClient {
         g.toast(msg.message, 'error');
         break;
       case 'pong':
+        g.set({ latency: Math.max(0, Date.now() - msg.time) });
         break;
       case 'account':
         onServerAccount(msg.state);

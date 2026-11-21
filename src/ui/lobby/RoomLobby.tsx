@@ -64,11 +64,12 @@ export function RoomLobby() {
                   {m.profile.name} {m.id === me && <span className="gold small">（你）</span>}
                 </div>
                 <div className="sub">
+                  {!m.isAI && !m.connected && <span className="conn-lost">🟡 连接中断 · </span>}
                   {m.isHost ? '房主' : m.isAI ? `${PERSONALITIES[m.aiPersonality!]?.name ?? 'AI'} · ${DIFFICULTY_NAME[m.aiDifficulty ?? 'normal']}` : `玩家 ${i}`} · 🪙{' '}
                   {formatChips(m.chips)}
                 </div>
               </div>
-              <span className={`dot ${m.connected ? '' : 'off'}`} title={m.connected ? '在线' : '离线'} />
+              <span className={`dot ${m.connected ? '' : 'warn'}`} title={m.connected ? '在线' : '连接中断，等待重新连接'} />
               {m.isHost ? (
                 <span className="tag host">👑 房主</span>
               ) : m.isAI ? (

@@ -2700,3 +2700,27 @@ h1, h2, h3 {
 .mt8 {
   margin-top: 8px;
 }
+
+/* 联机调试面板（开发者用） */
+.net-debug {
+  position: fixed;
+  left: 8px;
+  top: 64px;
+  z-index: 90;
+  font: 11px/1.5 'SF Mono', Menlo, Consolas, monospace;
+  color: #b8f5c8;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(120, 255, 160, 0.25);
+  border-radius: 6px;
+  padding: 6px 8px;
+  pointer-events: none;
+  max-width: min(320px, calc(100vw - 16px));
+  word-break: break-all;
+}
+.dot.warn {
+  background: #f0c040;
+  box-shadow: 0 0 6px #f0c040;
+}
+.conn-lost {
+  color: #f0c27a;
+}

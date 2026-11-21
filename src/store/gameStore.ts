@@ -29,6 +29,8 @@ export interface GameState {
   pendingAction: { id: string; type: string; at: number } | null;
   /** 收到“服务器即将重启”通知（之后的断线不是普通网络问题，房间会失效） */
   serverRestarting: boolean;
+  /** 与服务器的往返延迟（毫秒），用于调试面板 */
+  latency: number | null;
 
   setScreen: (s: Screen) => void;
   setView: (v: TableView | null) => void;
@@ -57,6 +59,7 @@ export const useGame = create<GameState>()((set, get) => ({
   onlineTab: 'create',
   pendingAction: null,
   serverRestarting: false,
+  latency: null,
 
   setScreen: (screen) => set({ screen }),
   setView: (view) => {
