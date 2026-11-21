@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { net } from '../../net/netClient';
+import { session } from '../../net/session';
 import { AIDifficulty, AIPersonality, DIFFICULTY_NAME, PERSONALITIES } from '../../core/ai/ai';
 import { Avatar, Btn, Modal, Seg, useBusy } from '../common/ui';
 import { ChatPanel } from '../game/ChatPanel';
@@ -180,10 +181,7 @@ export function RoomLobby() {
               </Btn>
               <Btn
                 kind="red"
-                onClick={() => {
-                  net.leaveRoom();
-                  useGame.getState().setScreen('online');
-                }}
+                onClick={() => session.leave('online')}
               >
                 离开
               </Btn>

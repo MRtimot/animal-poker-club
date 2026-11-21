@@ -6,7 +6,7 @@ import { PHASE_NAME } from '../../core/table/types';
 import { describePartial, evaluateHand } from '../../core/poker/handEvaluator';
 import { session } from '../../net/session';
 import { net } from '../../net/netClient';
-import { restartLocalGame, setLocalPaused, stopLocalGame } from '../../net/localHost';
+import { setLocalPaused } from '../../net/localHost';
 import { formatChips } from '../../utils/format';
 import { Btn, MiniCard, Modal } from '../common/ui';
 import { RulesModal } from '../common/RulesModal';
@@ -300,7 +300,6 @@ function GameOver({ view }: { view: TableView }) {
   const mode = useGame((s) => s.mode);
   const room = useGame((s) => s.room);
   const playerId = useGame((s) => s.playerId);
-  const setScreen = useGame((s) => s.setScreen);
   const go = view.gameOver;
   const [show, setShow] = useState(false);
   useEffect(() => {
@@ -319,59 +318,36 @@ function GameOver({ view }: { view: TableView }) {
     <Modal
       title={meWon ? '👑 你是今天的扑克王！' : '🏁 游戏结束'}
       actions={
-        room?.solo ? (
-          <>
-            <Btn
-              kind="ghost"
-              onClick={() => {
-                net.leaveRoom();
-                setScreen('quick');
-              }}
-            >
-              返回大厅
-            </Btn>
-            <Btn kind="pink" onClick={() => net.restartSolo()}>
-              再来一局
-            </Btn>
-          </>
-        ) : mode === 'local' ? (
-          <>
-            <Btn
-              kind="ghost"
-              onClick={() => {
-                stopLocalGame();
-                useGame.getState().set({ mode: null, view: null });
-                setScreen('quick');
-              }}
-            >
-              返回大厅
-            </Btn>
-            <Btn kind="pink" onClick={() => restartLocalGame()}>
-              再来一局
-            </Btn>
-          </>
-        ) : (
-          <>
-            <Btn
-              kind="ghost"
-              onClick={() => {
-                net.leaveRoom();
-                setScreen('online');
-              }}
-            >
-              离开房间
-            </Btn>
-            {isHost ? (
-              <Btn kind="pink" onClick={() => net.backToLobby()}>
-                返回房间大厅
+        <>
+          <Btn kind="ghost" onClick={() => session.leave('home')}>
+            🏠 返回首页
+          </Btn>
+          {room?.solo || mode === 'local' ? (
+            <>
+              <Btn kind="ghost" onClick={() => session.leave('quick')}>
+                返回大厅
               </Btn>
-            ) : (
-              <span className="muted small" style={{ alignSelf: 'center' }}>
-                等待房主返回房间大厅…
-              </span>
-            )}
-          </>
-        )
+              <Btn kind="pink" onClick={() => session.playAgain()}>
+                再来一局
+              </Btn>
+            </>
+          ) : (
+            <>
+              <Btn kind="ghost" onClick={() => session.leave('online')}>
+                离开房间
+              </Btn>
+              {isHost ? (
+                <Btn kind="pink" onClick={() => net.backToLobby()}>
+                  返回房间大厅
+                </Btn>
+              ) : (
+                <span className="muted small" style={{ alignSelf: 'center' }}>
+                  等待房主返回房间大厅…
+                </span>
+              )}
+            </>
+          )}
+        </>
       }
     >
       <div className="muted small" style={{ marginBottom: 12 }}>
@@ -495,10 +471,7 @@ export function GameHUD({ view }: { view: TableView }) {
               </Btn>
               <Btn
                 kind="red"
-                onClick={() => {
-                  set({ modal: null });
-                  session.leave();
-                }}
+                onClick={() => session.leave('home')}
               >
                 离开
               </Btn>

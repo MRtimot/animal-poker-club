@@ -2829,3 +2829,10 @@ h1, h2, h3 {
   margin-top: 2px;
   line-height: 1.5;
 }
+.entering-table > .btn {
+  position: fixed;
+  top: calc(50% + 34px);
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}

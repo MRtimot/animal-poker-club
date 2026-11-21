@@ -35,6 +35,14 @@ class NetClient {
   private queue: ClientMessage[] = [];
   private wanted = false;
   private pingTimer: number | null = null;
+  /**
+   * 已经发出“离开房间”、还没收到服务器确认（room: null）。
+   * 这期间服务器之前已经发出的牌局状态 / 房间更新 / 聊天可能还在路上，必须忽略，
+   * 否则玩家回到首页后会被旧消息“拉回”牌桌，看到一张卡住的旧牌桌。
+   */
+  private leavingRoom = false;
+  /** 离开确认后断开连接（游客不需要一直保持空闲连接） */
+  private disconnectAfterLeave = false;
 
   url(): string {
     return serverWsUrl();
@@ -166,10 +174,28 @@ class NetClient {
     }, delay);
   }
 
+  /** 完全断开：关闭连接并清理所有计时器（心跳、换连接、重连）与待发消息 */
   disconnect() {
     this.wanted = false;
-    this.ws?.close();
+    const ws = this.ws;
     this.ws = null;
+    if (ws) {
+      ws.onclose = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onopen = null;
+      ws.close();
+    }
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    if (this.rotateTimer) clearTimeout(this.rotateTimer);
+    this.rotateTimer = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.retry = 0;
+    this.queue = [];
+    this.soloWaiter?.(false);
+    useGame.getState().set({ conn: 'idle', latency: null });
   }
 
   /** 登录 / 退出后重新连接，让服务器用新的身份识别这条连接 */
@@ -205,6 +231,21 @@ class NetClient {
 
   private handle(msg: ServerMessage) {
     const g = useGame.getState();
+    if (this.leavingRoom) {
+      if (msg.t === 'room') {
+        if (msg.room) return; // 离开前就发出的旧房间更新
+        this.leavingRoom = false;
+        tabStorage()?.removeItem(LAST_ROOM_KEY);
+        if (this.disconnectAfterLeave) {
+          this.disconnectAfterLeave = false;
+          this.disconnect();
+        }
+        return;
+      }
+      if (msg.t === 'state' || msg.t === 'chat' || msg.t === 'chatHistory') return;
+      // 离开消息还没送达就断线重连了：服务器仍认为我们在房间里，再说一次
+      if (msg.t === 'welcome') queueMicrotask(() => this.raw({ t: 'leaveRoom' }));
+    }
     switch (msg.t) {
       case 'welcome': {
         tabStorage()?.setItem(SESSION_KEY, msg.sessionId);
@@ -328,6 +369,7 @@ class NetClient {
       };
       const g = useGame.getState();
       g.set({ chat: [], view: null });
+      this.newIntent();
       this.send({ t: 'startSolo', settings });
     });
   }
@@ -340,15 +382,26 @@ class NetClient {
 
   // ───────────── 便捷方法 ─────────────
   createRoom(settings: RoomSettings) {
+    this.newIntent();
     this.send({ t: 'createRoom', settings });
   }
   joinRoom(code: string) {
+    this.newIntent();
     this.send({ t: 'joinRoom', code });
   }
-  leaveRoom() {
+  /** 离开当前房间：通知服务器，并立刻清空本地房间 / 牌局状态（之后到达的旧消息会被忽略） */
+  leaveRoom(opts: { disconnect?: boolean } = {}) {
     this.send({ t: 'leaveRoom' });
+    this.leavingRoom = true;
+    this.disconnectAfterLeave = !!opts.disconnect;
+    tabStorage()?.removeItem(LAST_ROOM_KEY);
     const g = useGame.getState();
-    g.set({ room: null, view: null, mode: null, chat: [] });
+    g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
+  }
+
+  /** 玩家开始新的房间操作：不要在离开确认后断开连接 */
+  private newIntent() {
+    this.disconnectAfterLeave = false;
   }
   ready(ready: boolean) {
     this.send({ t: 'ready', ready });

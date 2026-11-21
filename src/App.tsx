@@ -26,6 +26,8 @@ import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge
 import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import { NetDebugPanel } from './ui/debug/NetDebugPanel';
 import type { AnimName } from './store/fxStore';
+import { useBrowserBack } from './ui/useBrowserBack';
+import { session } from './net/session';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
@@ -243,6 +245,7 @@ export default function App() {
   const [creatorAnim, setCreatorAnim] = useState<{ name: AnimName; start: number } | null>(null);
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
+  useBrowserBack();
   const sceneKind = screen === 'game' ? 'game' : screen === 'creator' || screen === 'onboarding' ? 'creator' : screen === 'room' && room ? 'room' : 'home';
 
   useEffect(() => {
@@ -309,7 +312,14 @@ export default function App() {
         {screen === 'collection' && <CollectionScreen />}
         {screen === 'settings' && <SettingsScreen />}
         {screen === 'game' && hasView && <HudConnector />}
-        {screen === 'game' && !hasView && <div className="next-hand">正在进入牌桌…</div>}
+        {screen === 'game' && !hasView && (
+          <div className="entering-table">
+            <div className="next-hand">正在进入牌桌…</div>
+            <Btn kind="ghost" size="sm" onClick={() => session.leave('home')}>
+              🏠 返回首页
+            </Btn>
+          </div>
+        )}
       </div>
       <ProfileLoading />
       <WelcomeBanner />
