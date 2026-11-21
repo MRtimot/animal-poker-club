@@ -35,40 +35,40 @@ npm start          # 一个进程同时提供网页 + WebSocket（默认端口 3
 如果网页和游戏服务器不在同一个地址，可以在「设置 → 在线服务器地址」里填写，例如 `wss://poker.example.com/ws`。
 使用 HTTPS 时请在前面加一层反向代理（如 Nginx / Caddy）并转发 `/ws` 的 WebSocket。
 
-### 免费部署（RM0）：网页放 Vercel + 游戏服务器放 Render
+### 免费部署（RM0）：全部放在 Vercel
 
-Vercel 只能托管网页，不能运行一直在线的 WebSocket 服务器（多人房间需要它），所以分成两部分，都用免费方案：
+网页、实时连接（WebSocket）都在 Vercel 上运行。因为 Vercel 同一时间可能有多个函数实例，房间状态保存在一个免费的 Redis 里，任何实例都能接手。
 
-**第 1 步：在 Render 部署游戏服务器**
+1. **导入项目**：Vercel → Add New → Project → 导入本仓库（项目自带 `vercel.json`，不需要改任何构建设置）。
+2. **添加免费 Redis**：在项目里打开 Storage（或 Marketplace）→ 选择 **Upstash Redis** → Free 方案 → Connect 到这个项目。它会自动添加 `KV_URL` / `REDIS_URL` 等环境变量，不需要手动复制。
+3. **重新部署一次**（Deployments → Redeploy），让新的环境变量生效。
+4. 打开你的 Vercel 网址，一台设备创建房间，另一台输入房间代码加入。
 
-1. 打开 [Render](https://render.com)，用 GitHub 登录（**不要绑定信用卡**）→ New → Blueprint → 选择本仓库 → Apply（使用项目自带的 `render.yaml`）。
-2. 部署完成后记下服务器网址，例如 `https://animal-poker-club.onrender.com`。
-3. 在 Render 面板 → Environment 里把 `APC_ALLOWED_ORIGINS` 设为你的 Vercel 网址，例如 `https://animal-poker.vercel.app`（只允许你的网页连接这台服务器；多个网址用逗号分隔）。
+确认 Settings → Functions 里 **Fluid Compute 是开启的**（2025 年 4 月之后创建的项目默认开启），Vercel 的 WebSocket 需要它。
 
-**第 2 步：在 Vercel 部署网页**
+工作方式：
 
-1. Vercel → Add New → Project → 导入本仓库（项目自带 `vercel.json`，会自动识别为 Vite 项目）。
-2. 在 Settings → Environment Variables 添加 `VITE_GAME_SERVER` = 第 1 步的 Render 网址（这是公开地址，不是密钥）。
-3. Deploy（修改环境变量后需要重新部署一次才会生效）。
-
-玩家打开你的 Vercel 网址就能玩，网页会自动连接 Render 上的游戏服务器。
-只用 Render 也可以：直接打开 Render 网址，网页和服务器都在同一个地方。
+- 实时连接：`/api/ws`（`api/ws.js`，由 `server/vercel.ts` 打包生成；修改服务器代码后运行 `npm run build:api` 并提交）
+- Vercel 免费方案每条连接最长 300 秒：网页会在到期前自动换一条新连接，牌局不中断
+- 每次房间变化只消耗 1 条 Redis 命令（版本号比较 + 写入 + 广播在同一个脚本中完成）
 
 | 项目 | 成本 | 说明 |
 | --- | --- | --- |
 | 网页 | 免费 | Vercel（Hobby 免费方案）托管静态网页 |
-| 游戏服务器 | 免费 | Render 免费 Web 服务：Node 进程提供 WebSocket 实时连接 |
+| 实时连接 | 免费 | Vercel Functions 的 WebSocket（Hobby 方案可用） |
+| 房间状态 | 免费 | Upstash Redis 免费方案（通过 Vercel 应用市场添加） |
 | 实时通信 | 免费 | 自建 WebSocket（`ws` 开源库），不使用任何付费多人联机服务 |
-| 数据库 | 不需要 | 在线房间保存在服务器内存；玩家进度保存在各自浏览器，可导出 / 导入 |
-| HTTPS | 免费 | Vercel 与 Render 都自带证书 |
+| 数据库 | 不需要 | 玩家进度保存在各自浏览器，可导出 / 导入；Redis 只保存进行中的房间（30 分钟无活动自动过期） |
+| HTTPS | 免费 | Vercel 自带证书 |
 | 密钥 / API Key | 无 | 默认配置不需要任何密钥 |
 
-免费方案的限制（以 Render 官方文档为准，部署前请再核对一次）：
+免费方案的限制（以官方文档为准，部署前请再核对一次）：
 
-- Render 服务器闲置约 15 分钟会休眠；下一次有人连接时自动唤醒，约需 1 分钟（网页会显示“服务器正在唤醒”）
-- 每个工作区每月 750 小时免费实例时间；用完后免费服务会暂停到下个月
-- **不要绑定信用卡**：没有付款方式时，超出免费额度只会暂停服务，不会自动扣费
-- 重新部署 / 重启时在线房间会消失（玩家会看到友好提示）；服务器磁盘不会永久保存数据，所以默认不开启账号系统
+- **Vercel Hobby**：每月 4 小时实际运算时间（只在处理消息时计算）、100 万次调用、360 GB·小时内存；单条连接最长 300 秒。超出后 Vercel 会暂停网站 30 天，**不会扣费**
+- **Upstash Redis 免费方案**：每月 50 万条命令、10 GB 流量、256 MB 存储。本游戏每手牌大约消耗几十条命令，朋友之间玩足够
+- 服务器重新部署时，进行中的连接会断开后自动重连；房间保存在 Redis 中，不会丢失
+
+也可以不用 Redis，改用 Render 免费服务（`render.yaml`）运行单个服务器，房间保存在内存中；网页放 Vercel 时设置 `VITE_GAME_SERVER` 指向 Render 网址、在 Render 设置 `APC_ALLOWED_ORIGINS`。
 
 服务器很轻量：只在有人操作时同步牌局事件，不同步 3D 动画、镜头或每一帧画面；空房间 10 分钟后自动清理。
 
@@ -91,6 +91,7 @@ GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com npm start
 | `GOOGLE_CLIENT_ID` | Google OAuth 客户端 ID；不设置则不显示 Google 登录 |
 | `APC_DB_PATH` | 玩家数据库文件位置，默认 `data/apc.sqlite`（请定期备份；已加入 .gitignore） |
 | `APC_ALLOWED_ORIGINS` | （服务器）允许连接的网页地址，例如你的 Vercel 网址；支持 `https://*.vercel.app` 通配（会允许所有 Vercel 网站，不推荐）。不设置则不限制来源 |
+| `REDIS_URL` / `KV_URL` | （Vercel）Redis 连接地址，添加 Upstash Redis 后由 Vercel 自动设置；也支持 `KV_REST_API_URL` + `KV_REST_API_TOKEN` |
 | `VITE_GAME_SERVER` | （网页构建时）游戏服务器地址，例如 `https://xxx.onrender.com`；不设置则连接网页所在的网址 |
 | `APC_DEV_LOGIN=1` | 仅开发环境：显示「测试登录」，不需要 Google 即可测试账号功能；正式环境（`NODE_ENV=production`）永远关闭 |
 

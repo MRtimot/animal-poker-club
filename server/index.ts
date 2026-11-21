@@ -1,17 +1,19 @@
 // 动物扑克俱乐部 · 自建轻量服务器（HTTP 静态文件 + WebSocket），无任何第三方服务
 import http from 'node:http';
+import { Redis } from 'ioredis';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer, WebSocket } from 'ws';
 import { RoomServer, type RoomServerOptions } from './rooms';
 import { openDatabase } from './db/database';
 import { AccountService } from './account/accounts';
 import { SessionStore, SESSION_COOKIE, parseCookies } from './auth/sessions';
 import { GoogleVerifier, type GoogleVerifierOptions } from './auth/google';
 import { createApi } from './api';
-import { RateLimiter } from './rateLimit';
-import { inAllowList, isSameSite, originAllowed } from './origins';
+import { inAllowList, isSameSite } from './origins';
+import { attachGameSockets } from './gameServer';
+import { createRedisStore, redisUrlFromEnv } from './redisStore';
+import { randomId } from '../src/core/utils/random';
 
 
 /** 未开启账号系统时的接口：只告诉前端“没有登录功能”，其他一律 404 */
@@ -67,7 +69,13 @@ export function createServer(port: number, opts: ServerOptions = {}) {
     accounts = new AccountService(db);
     sessions = new SessionStore(db);
   }
-  const rooms = new RoomServer({ ...opts, accounts });
+  // 有 Redis（例如部署在 Vercel）时用 Redis 共享房间状态；否则房间保存在本进程内存中
+  let store = opts.store;
+  const redisUrl = redisUrlFromEnv();
+  if (!store && redisUrl) {
+    store = createRedisStore('srv-' + randomId(8), () => new Redis(redisUrl, { maxRetriesPerRequest: 3, lazyConnect: false }));
+  }
+  const rooms = new RoomServer({ ...opts, accounts, store });
   const api =
     accounts && sessions
       ? createApi({
@@ -84,10 +92,6 @@ export function createServer(port: number, opts: ServerOptions = {}) {
         })
       : guestOnlyApi;
   const sessionSweep = setInterval(() => sessions?.sweep(), 3600_000);
-  // 每个 IP 的并发连接数与新建连接频率（防止恶意刷连接）
-  const ipConns = new Map<string, number>();
-  const maxConnsPerIp = opts.connLimits?.perIp ?? 20;
-  const ipConnects = new RateLimiter(opts.connLimits?.perMinute ?? 60, 60_000);
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -133,60 +137,10 @@ export function createServer(port: number, opts: ServerOptions = {}) {
     fs.createReadStream(file).pipe(res);
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
-  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
-    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
-    const open = ipConns.get(ip) ?? 0;
-    if (open >= maxConnsPerIp || !ipConnects.allow(ip)) {
-      ws.close(1013, 'too many connections');
-      return;
-    }
-    ipConns.set(ip, open + 1);
-    ws.on('close', () => {
-      const n = (ipConns.get(ip) ?? 1) - 1;
-      if (n <= 0) ipConns.delete(ip);
-      else ipConns.set(ip, n);
-    });
-    let alive = true;
-    // 只有来自本站页面的连接才会带上登录身份（防止跨站 WebSocket 冒用 Cookie）
-    // 只允许本站或允许列表中的网页连接（APC_ALLOWED_ORIGINS，例如你的 Vercel 网址）
-    if (!originAllowed(req)) {
-      ws.close(1008, 'origin not allowed');
-      return;
-    }
-    // 只有来自同一个网站的连接才会带上登录身份（防止跨站 WebSocket 冒用 Cookie）
-    const origin = req.headers.origin;
-    const sameSite = !origin || isSameSite(req, origin) || inAllowList(origin);
-    let userId: string | null = null;
-    try {
-      userId = sameSite && sessions ? sessions.resolve(parseCookies(req.headers.cookie)[SESSION_COOKIE]) : null;
-    } catch {
-      userId = null;
-    }
-    const handler = rooms.connect({
-      send: (msg) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-      },
-      close: () => ws.close(),
-    }, { userId });
-    ws.on('message', (data) => handler.onMessage(data.toString()));
-    ws.on('pong', () => (alive = true));
-    ws.on('close', () => handler.onClose());
-    ws.on('error', () => handler.onClose());
-    const hb = setInterval(() => {
-      if (!alive) {
-        ws.terminate();
-        clearInterval(hb);
-        return;
-      }
-      alive = false;
-      try {
-        ws.ping();
-      } catch {
-        /* ignore */
-      }
-    }, 15000);
-    ws.on('close', () => clearInterval(hb));
+  const wss = attachGameSockets(server, {
+    rooms,
+    connLimits: opts.connLimits,
+    resolveUser: sessions ? (req) => sessions!.resolve(parseCookies(req.headers.cookie)[SESSION_COOKIE]) : undefined,
   });
 
   return new Promise<{ close: () => Promise<void>; port: number; rooms: RoomServer; accounts: AccountService | null }>((resolve) => {
@@ -200,6 +154,7 @@ export function createServer(port: number, opts: ServerOptions = {}) {
         close: () =>
           new Promise<void>((r) => {
             rooms.dispose();
+            if (store && store !== opts.store) void store.close();
             clearInterval(sessionSweep);
             for (const c of wss.clients) c.terminate();
             wss.close();
@@ -217,7 +172,7 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   const port = Number(process.env.PORT ?? 3001);
   createServer(port).then(({ port: p, rooms, close }) => {
-    console.log(`🐾 动物扑克俱乐部服务器已启动：http://localhost:${p}  （WebSocket: /ws）`);
+    console.log(`🐾 动物扑克俱乐部服务器已启动：http://localhost:${p}  （WebSocket: /api/ws）`);
     if (!process.env.GOOGLE_CLIENT_ID) console.log('ℹ️  未设置 GOOGLE_CLIENT_ID：游客模式（不使用数据库，玩家进度保存在各自浏览器中）。');
     // 部署 / 重启时：先通知在线玩家，再关闭（房间只在服务器运行期间存在）
     let stopping = false;

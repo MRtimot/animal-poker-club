@@ -64,7 +64,8 @@ export interface ChatMessage {
 }
 
 export type ClientMessage =
-  | { t: 'hello'; sessionId?: string; profile: PlayerProfile }
+  /** rotate：客户端在平台连接时限到期前主动换一条新连接（不提示“已在其他页面登录”） */
+  | { t: 'hello'; sessionId?: string; profile: PlayerProfile; rotate?: boolean }
   | { t: 'createRoom'; settings: RoomSettings }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
@@ -87,7 +88,7 @@ export type ClientMessage =
 
 export type ServerMessage =
   /** resumed：是否恢复了之前的会话（服务器重启后旧会话不存在，为 false） */
-  | { t: 'welcome'; sessionId: string; playerId: string; resumed?: boolean }
+  | { t: 'welcome'; sessionId: string; playerId: string; resumed?: boolean; rotateInMs?: number }
   /** 牌局动作的确认：ok=false 时附带原因；duplicate=true 表示重复发送，已忽略 */
   | { t: 'ack'; actionId: string; ok: boolean; message?: string; duplicate?: boolean }
   /** 服务器通知（例如即将重启） */

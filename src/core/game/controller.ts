@@ -1,4 +1,4 @@
-import { PokerEngine, PokerError } from '../table/engine';
+import { PokerEngine, PokerError, type EngineState } from '../table/engine';
 import { PlayerAction, ActionType } from '../table/types';
 import { AI_LINES, decideAction, AIPersonality, AIDifficulty } from '../ai/ai';
 import { RNG, secureRandom, pick } from '../utils/random';
@@ -16,6 +16,33 @@ export interface ControllerOptions {
   pace?: number;
   rng?: RNG;
   aiRng?: RNG;
+  /**
+   * true（默认）：控制器自己用计时器推进牌局（浏览器本地对战、单进程服务器）。
+   * false：由外部在 nextWakeAt() 时调用 tick()（多台服务器共享牌局时使用）。
+   */
+  autoRun?: boolean;
+}
+
+/** 下一步要做的事（用数据表示，而不是闭包，这样牌局可以保存后在另一台服务器上继续） */
+export type PendingStep =
+  | { kind: 'beginHand'; at: number }
+  | { kind: 'advance'; at: number }
+  | { kind: 'runAI'; at: number; playerId: string }
+  | { kind: 'autoAct'; at: number; playerId: string }
+  | { kind: 'finishGame'; at: number };
+
+/** 控制器的完整状态（可 JSON 序列化） */
+export interface ControllerState {
+  engine: EngineState;
+  meta: SeatMeta[];
+  pending: PendingStep | null;
+  turnDeadline: number | null;
+  turnTotalMs: number;
+  nextHandAt: number | null;
+  bustOrder: string[];
+  gameOver: GameOverInfo | null;
+  paused: boolean;
+  opts: { smallBlind: number; bigBlind: number; turnTimeMs: number; offlineTurnMs: number; pace: number };
 }
 
 interface SeatMeta {
@@ -43,10 +70,11 @@ const AI_PACE: Record<string, [number, number]> = {
 };
 
 export class GameController {
-  readonly engine: PokerEngine;
+  engine: PokerEngine;
   private meta = new Map<string, SeatMeta>();
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private stepToken = 0;
+  private pending: PendingStep | null = null;
+  private autoRun: boolean;
   private turnDeadline: number | null = null;
   private turnTotalMs = 0;
   private nextHandAt: number | null = null;
@@ -58,7 +86,7 @@ export class GameController {
   onChat: ChatEmitter | null = null;
   onHandComplete: (() => void) | null = null;
 
-  private opts: Required<Omit<ControllerOptions, 'rng' | 'aiRng'>>;
+  private opts: ControllerState['opts'];
   private aiRng: RNG;
 
   constructor(seats: SeatConfig[], opts: ControllerOptions) {
@@ -70,6 +98,7 @@ export class GameController {
       pace: opts.pace ?? 1,
     };
     this.aiRng = opts.aiRng ?? Math.random;
+    this.autoRun = opts.autoRun ?? true;
     this.engine = new PokerEngine({ smallBlind: opts.smallBlind, bigBlind: opts.bigBlind, rng: opts.rng ?? secureRandom });
     seats.forEach((s, i) => {
       this.engine.addPlayer(s.id, s.profile.name, s.chips, i);
@@ -98,7 +127,7 @@ export class GameController {
   }
 
   start(): void {
-    this.schedule(this.delay(1200), () => this.beginHand());
+    this.schedule(this.delay(1200), { kind: 'beginHand' });
     this.notify();
   }
 
@@ -108,20 +137,64 @@ export class GameController {
     this.timer = null;
   }
 
-  private schedule(ms: number, fn: () => void) {
+  private schedule(ms: number, step: PendingStep extends infer P ? (P extends PendingStep ? Omit<P, 'at'> : never) : never) {
+    this.pending = { ...step, at: Date.now() + Math.max(0, ms) } as PendingStep;
+    this.arm();
+  }
+
+  /** 自动模式：为下一步设置计时器 */
+  private arm() {
     if (this.timer) clearTimeout(this.timer);
-    const token = ++this.stepToken;
+    this.timer = null;
+    if (!this.autoRun || this.stopped || !this.pending) return;
+    const p = this.pending;
     this.timer = setTimeout(() => {
-      if (token !== this.stepToken || this.stopped) return;
       this.timer = null;
-      fn();
-    }, Math.max(0, ms));
+      // 计时器可能比预定时间早触发 1 毫秒：按预定时间执行，避免牌局卡住
+      if (this.pending === p) this.tick(Math.max(Date.now(), p.at));
+    }, Math.max(0, p.at - Date.now()));
+  }
+
+  /** 下一步预定执行的时间（null = 没有待办） */
+  nextWakeAt(): number | null {
+    return this.stopped || this.gameOver ? null : (this.pending?.at ?? null);
+  }
+
+  /** 执行所有已经到时间的步骤；返回是否有变化 */
+  tick(now = Date.now()): boolean {
+    let ran = false;
+    for (let guard = 0; guard < 20 && !this.stopped && this.pending && this.pending.at <= now; guard++) {
+      const p = this.pending;
+      this.pending = null;
+      ran = true;
+      switch (p.kind) {
+        case 'beginHand':
+          this.beginHand();
+          break;
+        case 'advance': {
+          this.engine.advance();
+          // 新的一街：给翻牌动画留时间
+          this.afterChange(this.engine.phase === 'flop' ? this.delay(900) : this.delay(500));
+          break;
+        }
+        case 'runAI':
+          this.runAI(p.playerId);
+          break;
+        case 'autoAct':
+          this.autoAct(p.playerId);
+          break;
+        case 'finishGame':
+          this.finishGame();
+          break;
+      }
+    }
+    return ran;
   }
 
   private beginHand() {
     if (this.stopped || this.gameOver) return;
     if (this.paused) {
-      this.schedule(this.delay(1000), () => this.beginHand());
+      this.schedule(this.delay(1000), { kind: 'beginHand' });
       return;
     }
     // 断线太久或已离开的玩家坐出
@@ -151,12 +224,7 @@ export class GameController {
       const actors = e.players.filter((p) => p.inHand && !p.folded && !p.allIn).length;
       const runout = actors < 2;
       const wait = this.delay((runout ? 1700 : 1000) + extraDelay);
-      this.schedule(wait, () => {
-        e.advance();
-        const street = e.phase;
-        // 新的一街：给翻牌动画留时间
-        this.afterChange(street === 'flop' ? this.delay(900) : this.delay(500));
-      });
+      this.schedule(wait, { kind: 'advance' });
       this.notify();
       return;
     }
@@ -175,12 +243,12 @@ export class GameController {
       const hesitate = facing > 0.3 ? 600 + this.aiRng() * 1400 * facing : 0;
       const think = this.delay(pace[0] + this.aiRng() * pace[1] + hesitate + extraDelay);
       this.turnTotalMs = think;
-      this.schedule(think, () => this.runAI(cur.id));
+      this.schedule(think, { kind: 'runAI', playerId: cur.id });
     } else {
       const total = (meta.connected && !cur.sittingOut ? this.opts.turnTimeMs : this.opts.offlineTurnMs) + extraDelay;
       this.turnTotalMs = total;
       this.turnDeadline = Date.now() + total;
-      this.schedule(total, () => this.autoAct(cur.id));
+      this.schedule(total, { kind: 'autoAct', playerId: cur.id });
     }
     this.notify();
   }
@@ -292,11 +360,11 @@ export class GameController {
     const humansAlive = alive.some((p) => !this.meta.get(p.id)?.isAI);
     const wait = this.delay(summary && !summary.uncontested ? 6500 : 3800);
     if (alive.length < 2 || !humansAlive) {
-      this.schedule(wait, () => this.finishGame());
+      this.schedule(wait, { kind: 'finishGame' });
       this.nextHandAt = null;
     } else {
       this.nextHandAt = Date.now() + wait;
-      this.schedule(wait, () => this.beginHand());
+      this.schedule(wait, { kind: 'beginHand' });
     }
   }
 
@@ -311,6 +379,8 @@ export class GameController {
     this.gameOver = { rankings, winnerId: rankings[0]?.playerId ?? '' };
     this.nextHandAt = null;
     this.turnDeadline = null;
+    this.pending = null;
+    this.arm();
     this.notify();
   }
 
@@ -326,7 +396,7 @@ export class GameController {
     if (!connected && this.engine.currentPlayer?.id === playerId && !this.engine.pendingAdvance) {
       this.turnDeadline = Date.now() + this.opts.offlineTurnMs;
       this.turnTotalMs = this.opts.offlineTurnMs;
-      this.schedule(this.opts.offlineTurnMs, () => this.autoAct(playerId));
+      this.schedule(this.opts.offlineTurnMs, { kind: 'autoAct', playerId });
     }
     this.notify();
   }
@@ -360,6 +430,38 @@ export class GameController {
 
   getMeta(id: string) {
     return this.meta.get(id);
+  }
+
+  /** 保存完整牌局状态 */
+  toState(): ControllerState {
+    return {
+      engine: this.engine.toState(),
+      meta: [...this.meta.values()],
+      pending: this.pending,
+      turnDeadline: this.turnDeadline,
+      turnTotalMs: this.turnTotalMs,
+      nextHandAt: this.nextHandAt,
+      bustOrder: this.bustOrder,
+      gameOver: this.gameOver,
+      paused: this.paused,
+      opts: this.opts,
+    };
+  }
+
+  /** 从保存的状态恢复牌局（默认不自动推进，由外部调用 tick） */
+  static fromState(s: ControllerState, extra: Pick<ControllerOptions, 'autoRun' | 'aiRng' | 'rng'> = {}): GameController {
+    const c = new GameController([], { ...s.opts, autoRun: extra.autoRun ?? false, aiRng: extra.aiRng, rng: extra.rng });
+    c.engine = PokerEngine.fromState(s.engine, extra.rng);
+    c.meta = new Map(s.meta.map((m) => [m.id, m]));
+    c.pending = s.pending;
+    c.turnDeadline = s.turnDeadline;
+    c.turnTotalMs = s.turnTotalMs;
+    c.nextHandAt = s.nextHandAt;
+    c.bustOrder = s.bustOrder;
+    c.gameOver = s.gameOver;
+    c.paused = s.paused;
+    c.arm();
+    return c;
   }
 
   getView(viewerId: string): TableView {

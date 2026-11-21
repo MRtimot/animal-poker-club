@@ -59,6 +59,18 @@ export class Deck {
     return this.cards.length;
   }
 
+  /** 保存牌堆状态（用于多台服务器之间共享牌局；只在服务器内部使用，从不发给客户端） */
+  toState(): { cards: Card[]; dealt: Card[] } {
+    return { cards: [...this.cards], dealt: [...this.dealt] };
+  }
+
+  static fromState(s: { cards: Card[]; dealt: Card[] }, rng: RNG = secureRandom): Deck {
+    const d = new Deck(rng);
+    d.cards = [...s.cards];
+    d.dealt = [...s.dealt];
+    return d;
+  }
+
   get dealtCount(): number {
     return this.dealt.length;
   }

@@ -14,7 +14,7 @@ export function isSplitDeployment() {
 export function serverHttpBase(): string {
   const raw = useSettings.getState().serverUrl.trim() || BUILT_IN_SERVER;
   if (!raw) return '';
-  let u = raw.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/?$/, '').replace(/\/$/, '');
+  let u = raw.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/(api\/)?ws\/?$/, '').replace(/\/$/, '');
   if (!/^https?:\/\//.test(u)) u = (location.protocol === 'https:' ? 'https://' : 'http://') + u;
   return u;
 }
@@ -22,7 +22,8 @@ export function serverHttpBase(): string {
 /** WebSocket 地址 */
 export function serverWsUrl(): string {
   const base = serverHttpBase();
-  if (base) return base.replace(/^http/, 'ws') + '/ws';
+  // /api/ws：Vercel 上是实时连接函数的路径；本地服务器 / Render 也提供同一路径
+  if (base) return base.replace(/^http/, 'ws') + '/api/ws';
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${location.host}/ws`;
+  return `${proto}://${location.host}/api/ws`;
 }

@@ -24,6 +24,29 @@ export interface EngineConfig {
 
 export class PokerError extends Error {}
 
+/** 牌桌引擎的完整状态（可 JSON 序列化，用于多台服务器共享牌局） */
+export interface EngineState {
+  players: EnginePlayer[];
+  board: Card[];
+  phase: Phase;
+  handNumber: number;
+  dealerSeat: number;
+  sbSeat: number;
+  bbSeat: number;
+  currentIndex: number;
+  currentBet: number;
+  lastRaiseSize: number;
+  pendingAdvance: boolean;
+  events: GameEvent[];
+  lastSummary: HandSummary | null;
+  revealed: string[];
+  shownHands: ShownHand[];
+  smallBlind: number;
+  bigBlind: number;
+  deck: { cards: Card[]; dealt: Card[] };
+  seq: number;
+}
+
 /**
  * 德州扑克牌桌状态机（权威逻辑）。
  * - 不含任何计时器 / 网络 / UI：由外部控制器调用 startHand / act / advance。
@@ -56,6 +79,52 @@ export class PokerEngine {
     this.smallBlind = cfg.smallBlind;
     this.bigBlind = cfg.bigBlind;
     this.deck = new Deck(cfg.rng ?? secureRandom);
+  }
+
+  toState(): EngineState {
+    return {
+      players: this.players,
+      board: this.board,
+      phase: this.phase,
+      handNumber: this.handNumber,
+      dealerSeat: this.dealerSeat,
+      sbSeat: this.sbSeat,
+      bbSeat: this.bbSeat,
+      currentIndex: this.currentIndex,
+      currentBet: this.currentBet,
+      lastRaiseSize: this.lastRaiseSize,
+      pendingAdvance: this.pendingAdvance,
+      events: this.events,
+      lastSummary: this.lastSummary,
+      revealed: [...this.revealed],
+      shownHands: this.shownHands,
+      smallBlind: this.smallBlind,
+      bigBlind: this.bigBlind,
+      deck: this.deck.toState(),
+      seq: this.seq,
+    };
+  }
+
+  static fromState(s: EngineState, rng: RNG = secureRandom): PokerEngine {
+    const e = new PokerEngine({ smallBlind: s.smallBlind, bigBlind: s.bigBlind, rng });
+    e.players = s.players;
+    e.board = s.board;
+    e.phase = s.phase;
+    e.handNumber = s.handNumber;
+    e.dealerSeat = s.dealerSeat;
+    e.sbSeat = s.sbSeat;
+    e.bbSeat = s.bbSeat;
+    e.currentIndex = s.currentIndex;
+    e.currentBet = s.currentBet;
+    e.lastRaiseSize = s.lastRaiseSize;
+    e.pendingAdvance = s.pendingAdvance;
+    e.events = s.events;
+    e.lastSummary = s.lastSummary;
+    e.revealed = new Set(s.revealed);
+    e.shownHands = s.shownHands;
+    e.deck = Deck.fromState(s.deck, rng);
+    e.seq = s.seq;
+    return e;
   }
 
   // ───────────── 玩家管理 ─────────────

@@ -64,9 +64,13 @@ class NetClient {
       const q = this.queue;
       this.queue = [];
       q.forEach((m) => this.raw(m));
-      this.raw({ t: 'ping', time: Date.now() });
-      this.pingTimer = window.setInterval(() => this.raw({ t: 'ping', time: Date.now() }), 20000);
+      this.startPing();
     };
+    this.bind(ws);
+  }
+
+  /** 绑定一条已经成为“当前连接”的 WebSocket 的消息与关闭处理 */
+  private bind(ws: WebSocket) {
     ws.onmessage = (ev) => {
       let msg: ServerMessage;
       try {
@@ -77,14 +81,79 @@ class NetClient {
       this.handle(msg);
     };
     ws.onclose = () => {
+      if (this.ws !== ws) return;
       if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = null;
-      if (this.ws === ws) this.ws = null;
+      if (this.rotateTimer) clearTimeout(this.rotateTimer);
+      this.rotateTimer = null;
+      this.ws = null;
       useGame.getState().set({ conn: 'disconnected' });
       if (this.wanted) this.scheduleReconnect();
     };
     ws.onerror = () => {
       /* onclose 会处理 */
+    };
+  }
+
+  private startPing() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.raw({ t: 'ping', time: Date.now() });
+    this.pingTimer = window.setInterval(() => this.raw({ t: 'ping', time: Date.now() }), 20000);
+  }
+
+  // ───────────── 无缝换连接（Vercel 免费方案每条连接最长 300 秒） ─────────────
+
+  private rotateTimer: number | null = null;
+
+  private scheduleRotate(maxMs: number) {
+    if (this.rotateTimer) clearTimeout(this.rotateTimer);
+    // 在平台强制断开前 30 秒，先建立新连接再关闭旧连接，玩家感觉不到
+    this.rotateTimer = window.setTimeout(() => this.rotate(maxMs), Math.max(10_000, maxMs - 30_000));
+  }
+
+  private rotate(maxMs: number) {
+    this.rotateTimer = null;
+    const old = this.ws;
+    if (!old || old.readyState !== WebSocket.OPEN || !this.wanted) return;
+    let next: WebSocket;
+    try {
+      next = new WebSocket(this.url());
+    } catch {
+      return;
+    }
+    let swapped = false;
+    const giveUp = window.setTimeout(() => {
+      if (!swapped) next.close();
+    }, 10_000);
+    next.onopen = () => next.send(JSON.stringify({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), rotate: true } satisfies ClientMessage));
+    next.onmessage = (ev) => {
+      let msg: ServerMessage;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!swapped && msg.t === 'welcome') {
+        if (this.ws !== old) {
+          // 期间旧连接已经断开并重新连接过：放弃这条
+          next.close();
+          return;
+        }
+        swapped = true;
+        clearTimeout(giveUp);
+        this.ws = next;
+        this.bind(next);
+        old.onclose = null;
+        old.onmessage = null;
+        old.close();
+        this.startPing();
+      }
+      this.handle(msg);
+    };
+    next.onclose = () => {
+      clearTimeout(giveUp);
+      // 换连接失败：稍后再试（旧连接仍然可用）
+      if (!swapped && this.ws === old) this.scheduleRotate(Math.min(maxMs, 90_000));
     };
   }
 
@@ -139,6 +208,7 @@ class NetClient {
     switch (msg.t) {
       case 'welcome': {
         tabStorage()?.setItem(SESSION_KEY, msg.sessionId);
+        if (msg.rotateInMs) this.scheduleRotate(msg.rotateInMs);
         g.set({ conn: 'connected', playerId: msg.playerId, pendingAction: null, serverRestarting: false });
         // 服务器重启后旧会话不存在：房间已经消失，友好地告诉玩家（房间只在服务器运行期间存在）
         const lastRoom = tabStorage()?.getItem(LAST_ROOM_KEY);

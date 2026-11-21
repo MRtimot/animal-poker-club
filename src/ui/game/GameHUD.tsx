@@ -450,13 +450,20 @@ export function GameHUD({ view }: { view: TableView }) {
   const mode = useGame((s) => s.mode);
   const conn = useGame((s) => s.conn);
   const restarting = useGame((s) => s.serverRestarting);
+  // 短暂的换连接 / 网络抖动（不到 1.5 秒）不显示横幅，避免频繁闪烁
+  const [connLost, setConnLost] = useState(false);
+  useEffect(() => {
+    if (conn === 'connected') return setConnLost(false);
+    const t = setTimeout(() => setConnLost(true), 1500);
+    return () => clearTimeout(t);
+  }, [conn]);
   const [rules, setRules] = useState(false);
   const [settings, setSettings] = useState(false);
 
   return (
     <div className="screen passthrough">
       <TopBar view={view} onRules={() => setRules(true)} onSettings={() => setSettings(true)} />
-      {mode === 'online' && conn !== 'connected' && (
+      {mode === 'online' && connLost && (
         <div className="conn-banner">{restarting ? '⚠️ 服务器正在重启，正在重新连接…' : '⚠️ 连接中断，正在重新连接…（你的座位会保留）'}</div>
       )}
       <ChatPanel />
