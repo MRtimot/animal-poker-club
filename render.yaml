@@ -1,0 +1,19 @@
+# Render 免费部署（Blueprint）：一个 Node 进程同时提供网页 + WebSocket 实时连接
+# 免费方案说明：
+#   - 闲置约 15 分钟会休眠，下一次访问会自动唤醒（约 1 分钟）
+#   - 每个工作区每月 750 小时免费实例时间，足够一个服务全天运行
+#   - 不绑定付款方式时，超出免费额度只会暂停服务，不会产生费用
+#   - 服务器重启 / 重新部署后，在线房间会消失（房间只保存在内存中）
+#   - 不需要任何密钥；默认不使用数据库（玩家进度保存在各自浏览器中）
+services:
+  - type: web
+    name: animal-poker-club
+    runtime: node
+    plan: free
+    autoDeploy: false
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"

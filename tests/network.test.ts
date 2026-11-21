@@ -73,7 +73,7 @@ describe('在线房间', () => {
     a.send({ t: 'createRoom', settings: { maxPlayers: 4, startingChips: 1000, smallBlind: 10, bigBlind: 20, turnSeconds: 30 } });
     await a.until(() => !!a.room);
     const code = a.room!.code;
-    expect(code).toMatch(/^[A-Z0-9]{5}$/);
+    expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
     b.send({ t: 'joinRoom', code: code.toLowerCase() });
     c.send({ t: 'joinRoom', code });

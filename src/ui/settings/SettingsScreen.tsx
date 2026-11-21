@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { QUALITY_NAME, Quality, ROOM_NAME, RoomTheme, useSettings } from '../../store/settingsStore';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
+import { SaveError, applySave, exportSave, parseSave, readFileText, type SaveFile } from '../../save/saveFile';
+import { levelFromXp } from '../../progress/progression';
 import { useAccount } from '../../store/accountStore';
 import { BackButton, Btn, Modal, Seg } from '../common/ui';
 import { net } from '../../net/netClient';
@@ -58,6 +60,7 @@ export function SettingsScreen() {
   const setS = useSettings((s) => s.set);
   const resetAll = useProfile((s) => s.resetAll);
   const signedIn = useAccount((s) => s.status === 'signedIn');
+  const canLogin = useAccount((s) => !!s.config && s.config.accounts !== false && (!!s.config.googleClientId || s.config.devLogin));
   const [url, setUrl] = useState(serverUrl);
   const [confirm, setConfirm] = useState(false);
 
@@ -86,6 +89,7 @@ export function SettingsScreen() {
             </Btn>
           </div>
         </div>
+        <SaveBackup signedIn={signedIn} />
         <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
           <Btn
             kind="ghost"
@@ -108,7 +112,7 @@ export function SettingsScreen() {
         </div>
         <div className="grow" />
         <p className="small muted" style={{ marginTop: 16, lineHeight: 1.7 }}>
-          《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。{signedIn ? '你的游戏进度保存在云端服务器，设置会自动同步到你的其他设备。' : '游客数据只保存在这台设备的浏览器中，登录后可以保存到云端。'}
+          《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。{signedIn ? '你的游戏进度保存在云端服务器，设置会自动同步到你的其他设备。' : canLogin ? '游客数据只保存在这台设备的浏览器中，登录后可以保存到云端。' : '你的进度只保存在这台设备的浏览器中，可以在上方导出存档备份。在线房间只在服务器运行期间存在。'}
           <br />
           创始人：<b className="gold">Timothy Ong</b>（Founder of APEX）
         </p>
@@ -136,6 +140,75 @@ export function SettingsScreen() {
           }
         >
           <p className="muted">等级、经验、成就、统计和保存的角色都会被清除，且无法恢复。</p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** 存档备份：导出 / 导入 animal-poker-save.json（游客进度只保存在本机浏览器） */
+function SaveBackup({ signedIn }: { signedIn: boolean }) {
+  const toast = useGame((s) => s.toast);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [pendingSave, setPendingSave] = useState<SaveFile | null>(null);
+
+  const onFile = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      setPendingSave(parseSave(await readFileText(f)));
+    } catch (e) {
+      toast(e instanceof SaveError ? e.message : '无法读取存档文件', 'error');
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="field save-backup" style={{ marginTop: 14 }}>
+      <label>💾 存档备份</label>
+      <div className="small muted" style={{ marginBottom: 8, lineHeight: 1.6 }}>
+        {signedIn
+          ? '你的进度保存在云端账号中。也可以导出一份副本留作纪念。'
+          : '游客进度只保存在这台设备的浏览器里（清除浏览器数据会丢失）。导出存档可以备份，或在另一台设备上导入。'}
+      </div>
+      <div className="row" style={{ gap: 10 }}>
+        <Btn kind="ghost" size="sm" onClick={() => (exportSave(), toast('存档已导出：animal-poker-save.json', 'success'))}>
+          导出存档
+        </Btn>
+        {!signedIn && (
+          <Btn kind="ghost" size="sm" onClick={() => fileRef.current?.click()}>
+            导入存档
+          </Btn>
+        )}
+        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => onFile(e.target.files?.[0])} />
+      </div>
+      {pendingSave && (
+        <Modal
+          title="导入存档？"
+          onClose={() => setPendingSave(null)}
+          actions={
+            <>
+              <Btn kind="ghost" onClick={() => setPendingSave(null)}>
+                取消
+              </Btn>
+              <Btn
+                onClick={() => {
+                  applySave(pendingSave);
+                  setPendingSave(null);
+                  toast('存档已导入', 'success');
+                }}
+              >
+                导入并替换
+              </Btn>
+            </>
+          }
+        >
+          <p>
+            存档：<b>{pendingSave.profile.name}</b> · Lv.{levelFromXp(pendingSave.profile.xp)} · 已玩 {pendingSave.profile.stats.handsPlayed} 手 · 成就{' '}
+            {Object.keys(pendingSave.profile.achievements).length} 个
+          </p>
+          <p className="muted small">导出时间：{new Date(pendingSave.exportedAt).toLocaleString('zh-CN')}</p>
+          <p className="muted small">这会替换本机当前的游客进度。</p>
         </Modal>
       )}
     </div>

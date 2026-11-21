@@ -2696,3 +2696,7 @@ h1, h2, h3 {
     transform: translateX(-50%);
   }
 }
+
+.mt8 {
+  margin-top: 8px;
+}

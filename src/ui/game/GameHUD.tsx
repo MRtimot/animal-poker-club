@@ -119,6 +119,9 @@ function ActionBar({ view }: { view: TableView }) {
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [amount, setAmount] = useState(0);
   const [pending, setPending] = useState(false);
+  // 在线对局：动作已发出、等待服务器确认
+  const netPending = useGame((s) => s.pendingAction);
+  const busy = pending || !!netPending;
 
   useEffect(() => {
     setRaiseOpen(false);
@@ -127,7 +130,7 @@ function ActionBar({ view }: { view: TableView }) {
   }, [legal?.minRaiseTo, legal?.maxRaiseTo, view.currentPlayerId, view.handNumber]); // eslint-disable-line
 
   const act = (type: 'fold' | 'check' | 'call' | 'raise' | 'allin', amt?: number) => {
-    if (!legal || pending) return;
+    if (!legal || busy) return;
     setPending(true);
     session.action({ type, amount: amt });
     setTimeout(() => setPending(false), 1200);
@@ -161,6 +164,15 @@ function ActionBar({ view }: { view: TableView }) {
     return (
       <div className="panel actions">
         <div className="waiting">{text}</div>
+      </div>
+    );
+  }
+
+  if (netPending) {
+    const label: Record<string, string> = { fold: '弃牌', check: '过牌', call: '跟注', raise: '加注', allin: '全押' };
+    return (
+      <div className="panel actions">
+        <div className="waiting">{label[netPending.type] ?? '下注'}中…</div>
       </div>
     );
   }
@@ -437,13 +449,16 @@ export function GameHUD({ view }: { view: TableView }) {
   const set = useGame((s) => s.set);
   const mode = useGame((s) => s.mode);
   const conn = useGame((s) => s.conn);
+  const restarting = useGame((s) => s.serverRestarting);
   const [rules, setRules] = useState(false);
   const [settings, setSettings] = useState(false);
 
   return (
     <div className="screen passthrough">
       <TopBar view={view} onRules={() => setRules(true)} onSettings={() => setSettings(true)} />
-      {mode === 'online' && conn !== 'connected' && <div className="conn-banner">⚠️ 与服务器的连接已断开，正在重新连接…</div>}
+      {mode === 'online' && conn !== 'connected' && (
+        <div className="conn-banner">{restarting ? '⚠️ 服务器正在重启，正在重新连接…' : '⚠️ 连接中断，正在重新连接…（你的座位会保留）'}</div>
+      )}
       <ChatPanel />
       <div className="hud-bottom">
         <MyHand view={view} />

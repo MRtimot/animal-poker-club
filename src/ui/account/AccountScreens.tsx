@@ -124,17 +124,82 @@ function GoogleG() {
 
 // ───────────── 登录页 ─────────────
 
+/** 游客：进入游戏前输入昵称（不需要注册、邮箱或密码） */
+function GuestNickname({ onBack }: { onBack?: () => void }) {
+  const setScreen = useGame((s) => s.setScreen);
+  const name = useProfile((s) => s.name);
+  const setName = useProfile((s) => s.setName);
+  const [nick, setNick] = useState(name);
+  const err = nicknameError(nick);
+  const enter = () => {
+    if (err) return;
+    setName(nick.trim());
+    chooseGuest();
+    sound.play('pop');
+    setScreen('home');
+  };
+  return (
+    <>
+      <div className="field" style={{ textAlign: 'left' }}>
+        <label>请输入你的游戏昵称</label>
+        <input
+          className="input"
+          autoFocus
+          value={nick}
+          maxLength={NICKNAME_MAX + 4}
+          placeholder="例如：Tomato"
+          onChange={(e) => setNick(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && enter()}
+        />
+        <div className={`small ${err ? 'err-text' : 'muted'}`} style={{ marginTop: 6 }}>
+          {err ?? '昵称会显示在牌桌和房间里'}
+        </div>
+      </div>
+      <Btn block onClick={enter} disabled={!!err}>
+        进入游戏
+      </Btn>
+      {onBack && (
+        <Btn kind="ghost" block size="sm" className="mt8" onClick={onBack}>
+          返回
+        </Btn>
+      )}
+      <p className="login-note">
+        不需要注册、邮箱或密码。你的等级、动物和成就保存在这台设备的浏览器中，
+        <br />
+        可以随时在「设置」里导出存档备份。只使用虚拟筹码，没有任何真钱交易。
+      </p>
+    </>
+  );
+}
+
 export function LoginScreen() {
   const setScreen = useGame((s) => s.setScreen);
   const config = useAccount((s) => s.config);
   const status = useAccount((s) => s.status);
   const loginError = useAccount((s) => s.loginError);
   const [devName, setDevName] = useState('测试玩家');
+  const [guestStep, setGuestStep] = useState(false);
   const busy = status === 'signingIn' || status === 'loading';
+  const canLogin = !!config && config.accounts !== false && (!!config.googleClientId || config.devLogin);
 
   useEffect(() => {
     if (status === 'signedIn') setScreen('home');
   }, [status, setScreen]);
+
+  if (!canLogin || guestStep) {
+    return (
+      <div className="screen login-screen">
+        <div className="login-card panel">
+          <div className="login-crest" aria-hidden>
+            ♠ ♥ ♣ ♦
+          </div>
+          <h1 className="login-title">动物扑克俱乐部</h1>
+          <p className="login-sub">和朋友在线实时打一局德州扑克</p>
+          <GuestNickname onBack={canLogin ? () => setGuestStep(false) : undefined} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="screen login-screen">
@@ -178,15 +243,7 @@ export function LoginScreen() {
         <div className="login-or">
           <span>或</span>
         </div>
-        <Btn
-          kind="ghost"
-          block
-          disabled={busy}
-          onClick={() => {
-            chooseGuest();
-            setScreen('home');
-          }}
-        >
+        <Btn kind="ghost" block disabled={busy} onClick={() => setGuestStep(true)}>
           以游客身份继续
         </Btn>
         <p className="login-note">
@@ -288,6 +345,7 @@ export function AccountChip() {
   const name = useProfile((s) => s.name);
   const animal = useProfile((s) => s.animal);
   const stats = useProfile((s) => s.stats);
+  const canLogin = useAccount((s) => !!s.config && s.config.accounts !== false && (!!s.config.googleClientId || s.config.devLogin));
 
   if (status === 'signedIn' && account) {
     return (
@@ -314,9 +372,15 @@ export function AccountChip() {
         <div className="small muted" style={{ marginTop: 4 }}>
           已玩 {stats.handsPlayed} 局 · 赢 {stats.handsWon} 局
         </div>
-        <button className="guest-save" onClick={() => setScreen('login')} disabled={status === 'checking'}>
-          登录以保存游戏进度 →
-        </button>
+        {canLogin ? (
+          <button className="guest-save" onClick={() => setScreen('login')} disabled={status === 'checking'}>
+            登录以保存游戏进度 →
+          </button>
+        ) : (
+          <button className="guest-save" onClick={() => setScreen('settings')}>
+            进度保存在本机 · 导出存档备份 →
+          </button>
+        )}
       </div>
     </div>
   );

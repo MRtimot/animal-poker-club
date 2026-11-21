@@ -1,6 +1,6 @@
 // 在线房间管理（与传输层无关，便于测试）。服务器是唯一的权威游戏状态。
 import { GameController } from '../src/core/game/controller';
-import type { SeatConfig } from '../src/core/game/view';
+import type { SeatConfig, TableView } from '../src/core/game/view';
 import {
   BLIND_OPTIONS,
   CHIP_OPTIONS,
@@ -18,6 +18,8 @@ import type { AccountState, ProgressEvent } from '../src/core/account/types';
 import { effectiveBet, type GameFacts, type HandFacts } from '../src/progress/rewards';
 import type { SoloSettings } from '../src/core/protocol';
 import { randomId, randomRoomCode } from '../src/core/utils/random';
+import { nicknameError } from '../src/core/account/types';
+import { connectionLimiter } from './rateLimit';
 
 export interface Connection {
   send(msg: ServerMessage): void;
@@ -41,11 +43,15 @@ interface Session {
   conn: Connection | null;
   roomCode: string | null;
   disconnectedAt: number | null;
+  /** 上一次发给这条连接的牌局状态（用于只发送新增事件） */
+  sent?: { c: GameController; conn: Connection; hand: number; seq: number; profiles: Map<string, string> };
 }
 
 interface Member extends LobbyMember {
   sessionId?: string;
   userId?: string | null;
+  /** 最近处理过的动作 ID → 结果（重复发送时直接返回同样的结果，不再执行） */
+  recentActions?: Map<string, string | null>;
 }
 
 interface Room {
@@ -95,6 +101,12 @@ export class RoomServer {
     this.sweepTimer = setInterval(() => this.sweep(), 5000);
   }
 
+  /** 服务器即将重启：通知所有在线玩家（房间只在服务器运行期间存在） */
+  notifyShutdown() {
+    for (const s of this.sessions.values())
+      s.conn?.send({ t: 'notice', kind: 'shutdown', message: '服务器正在重启，当前房间将会失效。请稍后重新创建房间。' });
+  }
+
   dispose() {
     clearInterval(this.sweepTimer);
     for (const r of this.rooms.values()) r.controller?.stop();
@@ -112,6 +124,7 @@ export class RoomServer {
   connect(conn: Connection, ctx: { userId?: string | null } = {}) {
     let session: Session | null = null;
     const userId = ctx.userId ?? null;
+    const limiter = connectionLimiter();
     return {
       onMessage: (raw: string) => {
         let msg: ClientMessage;
@@ -121,6 +134,19 @@ export class RoomServer {
           return conn.send({ t: 'error', message: '消息格式错误' });
         }
         if (!msg || typeof msg !== 'object' || typeof (msg as any).t !== 'string') return;
+        // 限流：建房 / 加入、聊天、牌局动作、重连分别计数；明显刷屏直接断开
+        const verdict = limiter.check(msg.t);
+        if (verdict === 'flood') {
+          conn.send({ t: 'error', message: '请求过于频繁，连接已断开' });
+          conn.close?.();
+          return;
+        }
+        if (verdict === 'limited') {
+          if (msg.t === 'action' && typeof (msg as any).actionId === 'string')
+            conn.send({ t: 'ack', actionId: String((msg as any).actionId).slice(0, 40), ok: false, message: '操作太频繁，请稍后再试' });
+          else if (limiter.shouldWarn()) conn.send({ t: 'error', message: '操作太频繁，请稍后再试' });
+          return;
+        }
         if (msg.t === 'hello') {
           session = this.hello(conn, msg.sessionId, msg.profile, userId);
           return;
@@ -148,9 +174,10 @@ export class RoomServer {
   private hello(conn: Connection, sessionId: string | undefined, profileIn: any, userId: string | null): Session {
     // 登录玩家：昵称、动物、等级、头像全部来自服务器数据库，忽略客户端发来的资料
     const profile = this.profileFor(userId, profileIn);
-    let s = sessionId ? this.sessions.get(sessionId) : undefined;
+    let s = typeof sessionId === 'string' && sessionId.length <= 64 ? this.sessions.get(sessionId) : undefined;
     // 会话属于另一个账号（或账号已退出）时不能复用，防止冒用他人的座位
     if (s && s.userId && s.userId !== userId) s = undefined;
+    const resumed = !!s;
     if (s) {
       s.userId = userId;
       // 断线重连：替换旧连接
@@ -177,7 +204,7 @@ export class RoomServer {
       };
       this.sessions.set(s.sessionId, s);
     }
-    conn.send({ t: 'welcome', sessionId: s.sessionId, playerId: s.playerId });
+    conn.send({ t: 'welcome', sessionId: s.sessionId, playerId: s.playerId, resumed });
     if (userId && this.accounts) {
       try {
         conn.send({ t: 'account', state: this.accounts.getState(userId) });
@@ -197,7 +224,7 @@ export class RoomServer {
       this.system(room, `${member.profile.name} 重新连接了`);
       conn.send({ t: 'chatHistory', messages: room.chat });
       this.broadcastRoom(room);
-      if (room.controller) conn.send({ t: 'state', view: room.controller.getView(member.id) });
+      if (room.controller) this.sendState(s, room.controller, member.id, true);
     } else {
       s.roomCode = null;
       conn.send({ t: 'room', room: null });
@@ -253,6 +280,8 @@ export class RoomServer {
     const clean = this.cleanProfile(p);
     // 游客不能显示头像，也不能自称高等级
     clean.level = Math.min(clean.level ?? 1, 10);
+    // 游客昵称同样不能冒充系统 / 管理员或包含不当内容
+    if (nicknameError(clean.name)) clean.name = '玩家' + Math.floor(1000 + Math.random() * 9000);
     return clean;
   }
 
@@ -309,7 +338,7 @@ export class RoomServer {
           existing.connected = true;
           s.roomCode = code;
           this.broadcastRoom(target);
-          if (target.controller) s.conn?.send({ t: 'state', view: target.controller.getView(s.playerId) });
+          if (target.controller) this.sendState(s, target.controller, s.playerId, true);
           return;
         }
         if (target.status !== 'lobby') return err('游戏已经开始，暂时无法加入');
@@ -357,14 +386,31 @@ export class RoomServer {
         return;
       }
       case 'action': {
-        if (!room?.controller || !me) return err('当前没有进行中的游戏');
+        const actionId = typeof msg.actionId === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(msg.actionId) ? msg.actionId : null;
+        const reply = (message: string | null, duplicate = false) => {
+          if (actionId) s.conn?.send({ t: 'ack', actionId, ok: !message, ...(message ? { message } : {}), ...(duplicate ? { duplicate } : {}) });
+          else if (message) err(message);
+        };
+        if (!room?.controller || !me) return reply('当前没有进行中的游戏');
+        // 重复发送同一个动作：返回第一次的结果，不再执行
+        if (actionId && me.recentActions?.has(actionId)) return reply(me.recentActions.get(actionId) ?? null, true);
+        const remember = (r: string | null) => {
+          if (!actionId) return;
+          me.recentActions ??= new Map();
+          me.recentActions.set(actionId, r);
+          if (me.recentActions.size > 50) me.recentActions.delete(me.recentActions.keys().next().value!);
+        };
         const a = msg.action;
-        if (!a || !['fold', 'check', 'call', 'raise', 'allin'].includes(a.type)) return err('无效操作');
-        const e = room.controller.handleAction(me.id, {
-          type: a.type,
-          amount: typeof a.amount === 'number' && isFinite(a.amount) ? Math.floor(a.amount) : undefined,
-        });
-        if (e) err(e);
+        let result: string | null;
+        if (!a || !['fold', 'check', 'call', 'raise', 'allin'].includes(a.type)) result = '无效操作';
+        else if (typeof msg.hand === 'number' && msg.hand !== room.controller.engine.handNumber) result = '这一手牌已经结束';
+        else
+          result = room.controller.handleAction(me.id, {
+            type: a.type,
+            amount: typeof a.amount === 'number' && isFinite(a.amount) ? Math.floor(a.amount) : undefined,
+          });
+        remember(result);
+        reply(result);
         return;
       }
       case 'chat': {
@@ -423,6 +469,10 @@ export class RoomServer {
         if (room.status === 'playing' && !room.controller?.isGameOver()) return err('游戏仍在进行中');
         for (const m of room.members) m.chips = room.settings.startingChips;
         this.startGame(room);
+        return;
+      }
+      case 'resync': {
+        if (room?.controller && me) this.sendState(s, room.controller, me.id, true);
         return;
       }
       case 'pause': {
@@ -737,8 +787,33 @@ export class RoomServer {
     for (const m of room.members) {
       if (m.isAI) continue;
       const s = m.sessionId ? this.sessions.get(m.sessionId) : undefined;
-      if (s?.conn) s.conn.send({ t: 'state', view: c.getView(m.id) });
+      if (s?.conn) this.sendState(s, c, m.id);
     }
+  }
+
+  /**
+   * 发送某位玩家的牌局视图。同一手牌内只附带新增的事件（下注、发牌、摊牌…），
+   * 不重复发送整手牌的事件记录；也从不发送镜头、动画或 3D 数据。
+   */
+  private sendState(s: Session, c: GameController, id: string, full = false) {
+    if (!s.conn) return;
+    const view = c.getView(id);
+    const lastSeq = view.events.length ? view.events[view.events.length - 1].seq : (s.sent?.seq ?? 0);
+    const firstSeq = view.events[0]?.seq ?? 0;
+    const prev = s.sent;
+    const profiles = new Map(view.players.map((p) => [p.id, JSON.stringify(p.profile)]));
+    let out: TableView = view;
+    if (!full && prev && prev.c === c && prev.conn === s.conn && prev.hand === view.handNumber && prev.seq >= firstSeq - 1) {
+      out = {
+        ...view,
+        events: view.events.filter((e) => e.seq > prev.seq),
+        // 动物外观在牌局中几乎不变：没变化就不重复发送，客户端沿用上一次的
+        players: view.players.map((p) => (prev.profiles.get(p.id) === profiles.get(p.id) ? ({ ...p, profile: undefined } as unknown as typeof p) : p)),
+        eventsDelta: true,
+      };
+    }
+    s.sent = { c, conn: s.conn, hand: view.handNumber, seq: lastSeq, profiles };
+    s.conn.send({ t: 'state', view: out });
   }
 
   private pushChat(room: Room, partial: Omit<ChatMessage, 'id' | 'time'>) {

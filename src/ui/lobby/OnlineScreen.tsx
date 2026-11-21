@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useSettings } from '../../store/settingsStore';
 import { BLIND_OPTIONS, CHIP_OPTIONS } from '../../core/protocol';
+import { ROOM_CODE_LENGTH } from '../../core/utils/random';
 import { net } from '../../net/netClient';
 import { BackButton, Btn, Seg } from '../common/ui';
 import { formatChips } from '../../utils/format';
@@ -47,8 +48,8 @@ export function OnlineScreen() {
   };
   const join = () => {
     const c = code.trim().toUpperCase();
-    if (c.length !== 5) {
-      useGame.getState().toast('房间代码是 5 位字母或数字', 'error');
+    if (c.length !== ROOM_CODE_LENGTH) {
+      useGame.getState().toast(`房间代码是 ${ROOM_CODE_LENGTH} 位字母或数字`, 'error');
       return;
     }
     net.updateProfile();
@@ -96,7 +97,7 @@ export function OnlineScreen() {
               创建房间
             </Btn>
             <p className="small muted" style={{ lineHeight: 1.7 }}>
-              创建后会生成 5 位房间代码（例如 <b className="gold">A7K92</b>），把它发给朋友即可加入。人数不够时房主可以添加本地 AI。
+              创建后会生成 {ROOM_CODE_LENGTH} 位房间代码（例如 <b className="gold">ABCD12</b>），把它发给朋友即可加入。人数不够时房主可以添加本地 AI。
             </p>
           </>
         ) : (
@@ -105,8 +106,8 @@ export function OnlineScreen() {
               <label>房间代码</label>
               <input
                 className="input code-input"
-                maxLength={5}
-                placeholder="A7K92"
+                maxLength={ROOM_CODE_LENGTH}
+                placeholder="ABCD12"
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                 onKeyDown={(e) => e.key === 'Enter' && join()}

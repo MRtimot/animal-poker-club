@@ -11,7 +11,7 @@ export const session = {
       const err = localAction(a);
       if (err) g.toast(err, 'error');
     } else if (g.mode === 'online') {
-      net.action(a);
+      net.action(a, g.view?.handNumber);
     }
   },
   chat(text: string) {

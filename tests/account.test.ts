@@ -230,15 +230,15 @@ describe('Google 登录与玩家档案', () => {
     const me = await b.req('GET', '/api/player/me');
     const userId = (srv.accounts as any).db.prepare("SELECT user_id FROM auth_identities WHERE subject = 'dup-user'").get().user_id;
     const g = { place: 1, players: 4, hands: 10, finalChips: 4000, mode: 'local' as const };
-    const e1 = srv.accounts.recordGame(userId, 'room1:1', g);
-    const e2 = srv.accounts.recordGame(userId, 'room1:1', g);
+    const e1 = srv.accounts!.recordGame(userId, 'room1:1', g);
+    const e2 = srv.accounts!.recordGame(userId, 'room1:1', g);
     expect(e1).not.toBeNull();
     expect(e2).toBeNull();
     const h = { won: true, amount: 500, bet: 100, category: 1, allIn: false, folded: false, uncontested: false, species: 'cat' as const, online: false };
-    const h1 = srv.accounts.recordHand(userId, 'room1:1:1', h);
+    const h1 = srv.accounts!.recordHand(userId, 'room1:1:1', h);
     expect(h1).not.toBeNull();
-    expect(srv.accounts.recordHand(userId, 'room1:1:1', h)).toBeNull();
-    const s = srv.accounts.getState(userId);
+    expect(srv.accounts!.recordHand(userId, 'room1:1:1', h)).toBeNull();
+    const s = srv.accounts!.getState(userId);
     expect(s.stats.gamesPlayed).toBe(1);
     expect(s.stats.handsPlayed).toBe(1);
     expect(s.chips).toBe(me.body.state.chips + e1!.chipsGained + h1!.chipsGained);
@@ -330,7 +330,7 @@ describe('Google 登录与玩家档案', () => {
     expect(after.stats.handsWon).toBeLessThanOrEqual(after.stats.handsPlayed);
 
     // 数据库暂时不可用：返回通用提示，玩家数据保持不变
-    const orig = srv.accounts.getState.bind(srv.accounts);
+    const orig = srv.accounts!.getState.bind(srv.accounts);
     (srv.accounts as any).getState = () => {
       throw new Error('SQLITE_BUSY: database is locked at /secret/path.ts:42');
     };

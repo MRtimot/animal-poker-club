@@ -58,6 +58,8 @@ export interface TableView {
   nextHandAt: number | null;
   serverTime: number;
   paused: boolean;
+  /** 在线：events 只包含上次发送之后的新事件，客户端追加到本手已有事件后面（节省流量） */
+  eventsDelta?: boolean;
 }
 
 export interface SeatConfig {

@@ -136,7 +136,7 @@ export function createApi(o: ApiOptions) {
 
       switch (route) {
         case 'GET /api/auth/config':
-          send(res, 200, { googleClientId: o.google?.clientId ?? null, devLogin: o.devLogin });
+          send(res, 200, { googleClientId: o.google?.clientId ?? null, devLogin: o.devLogin, accounts: true });
           return true;
 
         case 'GET /api/auth/nonce': {

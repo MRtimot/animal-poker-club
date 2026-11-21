@@ -69,7 +69,8 @@ export type ClientMessage =
   | { t: 'addAI'; personality: AIPersonality; difficulty: AIDifficulty }
   | { t: 'removeMember'; id: string }
   | { t: 'startGame' }
-  | { t: 'action'; action: PlayerAction }
+  /** actionId：同一个动作重复发送只执行一次；hand：动作针对的手数，过期的动作会被拒绝 */
+  | { t: 'action'; action: PlayerAction; actionId?: string; hand?: number }
   | { t: 'chat'; text: string }
   | { t: 'emote'; emoji: string }
   | { t: 'updateProfile'; profile: PlayerProfile }
@@ -77,10 +78,17 @@ export type ClientMessage =
   | { t: 'startSolo'; settings: SoloSettings }
   | { t: 'restartSolo' }
   | { t: 'pause'; paused: boolean }
+  /** 客户端发现事件不连续时请求完整状态 */
+  | { t: 'resync' }
   | { t: 'ping'; time: number };
 
 export type ServerMessage =
-  | { t: 'welcome'; sessionId: string; playerId: string }
+  /** resumed：是否恢复了之前的会话（服务器重启后旧会话不存在，为 false） */
+  | { t: 'welcome'; sessionId: string; playerId: string; resumed?: boolean }
+  /** 牌局动作的确认：ok=false 时附带原因；duplicate=true 表示重复发送，已忽略 */
+  | { t: 'ack'; actionId: string; ok: boolean; message?: string; duplicate?: boolean }
+  /** 服务器通知（例如即将重启） */
+  | { t: 'notice'; kind: 'shutdown'; message: string }
   | { t: 'room'; room: RoomInfo | null }
   | { t: 'state'; view: TableView }
   | { t: 'chat'; message: ChatMessage }

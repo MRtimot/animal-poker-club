@@ -25,6 +25,10 @@ export interface GameState {
   modal: null | 'rules' | 'tutorial' | 'leave';
   clockOffset: number; // serverTime - localTime
   onlineTab: 'create' | 'join';
+  /** 已发送、等待服务器确认的牌局动作 */
+  pendingAction: { id: string; type: string; at: number } | null;
+  /** 收到“服务器即将重启”通知（之后的断线不是普通网络问题，房间会失效） */
+  serverRestarting: boolean;
 
   setScreen: (s: Screen) => void;
   setView: (v: TableView | null) => void;
@@ -51,6 +55,8 @@ export const useGame = create<GameState>()((set, get) => ({
   modal: null,
   clockOffset: 0,
   onlineTab: 'create',
+  pendingAction: null,
+  serverRestarting: false,
 
   setScreen: (screen) => set({ screen }),
   setView: (view) => {

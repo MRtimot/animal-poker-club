@@ -42,8 +42,10 @@ export function randomId(len = 12, rng: RNG = secureRandom): string {
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉易混淆的 0/O/1/I
+/** 房间代码长度，例如 ABCD12 */
+export const ROOM_CODE_LENGTH = 6;
 export function randomRoomCode(rng: RNG = secureRandom): string {
   let out = '';
-  for (let i = 0; i < 5; i++) out += CODE_CHARS[randInt(rng, CODE_CHARS.length)];
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) out += CODE_CHARS[randInt(rng, CODE_CHARS.length)];
   return out;
 }

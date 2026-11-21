@@ -21,7 +21,8 @@ export const LOAD_STEPS = ['身份', '玩家资料', '等级', '筹码', '动物
 interface AccountStore {
   status: AccountStatus;
   account: AccountState | null;
-  config: { googleClientId: string | null; devLogin: boolean } | null;
+  /** accounts=false：服务器没有开启账号系统（游客模式，进度只保存在本机） */
+  config: { googleClientId: string | null; devLogin: boolean; accounts?: boolean } | null;
   /** 当前显示的是离线缓存（服务器暂时无法连接） */
   cached: boolean;
   sync: SyncStatus;
@@ -287,7 +288,14 @@ async function refresh() {
 
 /** 打开网站时：先显示离线缓存，再向服务器确认登录状态并恢复最新数据 */
 export async function initAccount() {
-  void loadConfig();
+  await loadConfig();
+  const cfg = useAccount.getState().config;
+  if (cfg && cfg.accounts === false) {
+    // 服务器只提供游客模式：不请求任何账号接口
+    writeCache(null);
+    useAccount.getState().set({ status: 'guest' });
+    return;
+  }
   const cache = readCache();
   if (cache) {
     applying = true;
@@ -358,6 +366,12 @@ function loginFailed(e: unknown) {
   const msg = e instanceof ApiError && (e.status === 429 || e.status === 503) ? e.message : '登录失败，请重新尝试。';
   useAccount.getState().set({ status: 'guest', loginError: msg, loadStep: -1 });
   if (import.meta.env.DEV) console.warn('[登录] 失败', e);
+}
+
+/** 服务器是否提供登录（云端存档） */
+export function accountsAvailable() {
+  const c = useAccount.getState().config;
+  return !!c && c.accounts !== false && (!!c.googleClientId || c.devLogin);
 }
 
 export async function signInWithGoogle(credential: string) {
