@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { Burst, useFx } from '../../store/fxStore';
 import { emojiTexture } from '../textures';
 
+/** 爱心粒子不旋转：复用同一个单位四元数，避免每帧创建对象 */
+const IDENTITY_Q = new THREE.Quaternion();
+
 const confettiGeo = new THREE.PlaneGeometry(0.07, 0.11);
 const PALETTE = ['#ff5fa8', '#ffd84a', '#5fe1ff', '#7dff8a', '#b07bff', '#ff8a4a', '#ffffff'];
 
@@ -66,7 +69,7 @@ function BurstFx({ burst, count }: { burst: Burst; count: number }) {
         : burst.kind === 'poof' ? (1.5 + t * 4) * fade
         : 1.4 * fade;
       s.set(sc, sc, sc);
-      m.compose(p, burst.kind === 'hearts' ? new THREE.Quaternion() : q, s);
+      m.compose(p, burst.kind === 'hearts' ? IDENTITY_Q : q, s);
       ref.current.setMatrixAt(i, m);
     }
     ref.current.instanceMatrix.needsUpdate = true;

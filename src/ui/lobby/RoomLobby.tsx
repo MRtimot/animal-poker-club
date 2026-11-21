@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { net } from '../../net/netClient';
 import { AIDifficulty, AIPersonality, DIFFICULTY_NAME, PERSONALITIES } from '../../core/ai/ai';
-import { Avatar, Btn, Modal, Seg } from '../common/ui';
+import { Avatar, Btn, Modal, Seg, useBusy } from '../common/ui';
 import { ChatPanel } from '../game/ChatPanel';
 import { formatChips } from '../../utils/format';
 
@@ -21,6 +21,8 @@ export function RoomLobby() {
   const full = room.members.length >= room.settings.maxPlayers;
   const notReady = room.members.filter((m) => !m.isAI && !m.ready);
   const canStart = isHost && room.members.length >= 2 && notReady.length === 0;
+  // 防止重复点击“开始游戏”（房间状态改变或出现错误时恢复）
+  const [starting, markStarting] = useBusy(room.status);
 
   const copy = async () => {
     try {
@@ -108,7 +110,16 @@ export function RoomLobby() {
             </Btn>
           )}
           {isHost && (
-            <Btn kind="pink" size="lg" block onClick={() => net.startGame()} disabled={!canStart}>
+            <Btn
+              kind="pink"
+              size="lg"
+              block
+              onClick={() => {
+                if (!markStarting()) return;
+                net.startGame();
+              }}
+              disabled={!canStart || starting}
+            >
               🃏 开始游戏
             </Btn>
           )}

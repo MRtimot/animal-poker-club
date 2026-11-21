@@ -93,7 +93,16 @@ export function createServer(port: number, opts: ServerOptions = {}) {
       : guestOnlyApi;
   const sessionSweep = setInterval(() => sessions?.sweep(), 3600_000);
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => {
+    // 任何请求出错都只影响这一个请求，绝不能让整个服务器（所有房间）崩溃
+    handleRequest(req, res).catch((err) => {
+      console.error('[服务器] 处理请求出错', err);
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('服务器暂时不可用');
+    });
+  });
+
+  async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
       // 网页在其他网址（例如 Vercel）时：允许它读取接口（只限允许列表，不带登录 Cookie）
@@ -116,14 +125,24 @@ export function createServer(port: number, opts: ServerOptions = {}) {
       res.end(JSON.stringify({ ok: true, rooms: rooms.roomCount }));
       return;
     }
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(url.pathname);
+    } catch {
+      // 格式错误的网址（例如 /%E0%A4%A）：以前会让整个服务器崩溃
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('网址格式错误');
+      return;
+    }
     if (!fs.existsSync(DIST)) {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
       // 只部署了游戏服务器（网页在 Vercel 等其他地方），或开发模式（网页由 Vite 提供）
       res.end('🐾 动物扑克俱乐部游戏服务器运行中。请打开网页的网址开始游戏。');
       return;
     }
-    let file = path.join(DIST, decodeURIComponent(url.pathname));
-    if (!file.startsWith(DIST)) {
+    let file = path.join(DIST, decoded);
+    // 只允许 dist 目录里的文件（同时防止 /dist-xxx 这类同名前缀目录）
+    if (file !== DIST && !file.startsWith(DIST + path.sep)) {
       res.writeHead(403);
       res.end();
       return;
@@ -134,8 +153,10 @@ export function createServer(port: number, opts: ServerOptions = {}) {
       'content-type': MIME[ext] ?? 'application/octet-stream',
       'cache-control': file.includes(`${path.sep}assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache',
     });
-    fs.createReadStream(file).pipe(res);
-  });
+    fs.createReadStream(file)
+      .on('error', () => res.destroy())
+      .pipe(res);
+  }
 
   const wss = attachGameSockets(server, {
     rooms,

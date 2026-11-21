@@ -104,9 +104,47 @@ export const useProfile = create<ProfileState>()(
       version: 2,
       // v1 → v2：补齐新增的统计字段，旧存档不丢失
       migrate: (old: any) => ({ ...old, stats: normalizeStats(old?.stats) }),
+      // 读取本机存档时逐项校验：存档损坏或被手动修改（例如不存在的动物）不能让游戏崩溃
+      merge: (persisted, current) => ({ ...current, ...cleanGuestSave(persisted, current) }),
     },
   ),
 );
+
+/** 校验本机游客存档的每个字段；非法值回落到默认值，缺失字段自动补齐 */
+export function cleanGuestSave(raw: unknown, cur: ProfileState): Partial<ProfileState> {
+  const p: any = raw && typeof raw === 'object' ? raw : {};
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+  const achievements: Record<string, number> = {};
+  if (p.achievements && typeof p.achievements === 'object')
+    for (const [k, v] of Object.entries(p.achievements)) if (ACHIEVEMENTS.some((a) => a.id === k) && typeof v === 'number' && v > 0) achievements[k] = v;
+  return {
+    name: typeof p.name === 'string' && p.name.trim() ? sanitizeName(p.name) : cur.name,
+    animal: sanitizeAnimal(p.animal ?? cur.animal),
+    characters: Array.isArray(p.characters)
+      ? p.characters
+          .filter((c: any) => c && typeof c === 'object' && typeof c.id === 'string')
+          .slice(0, 12)
+          .map((c: any) => ({ id: c.id.slice(0, 24), name: sanitizeName(c.name), animal: sanitizeAnimal(c.animal), createdAt: num(c.createdAt) || Date.now() }))
+      : [],
+    xp: num(p.xp),
+    stats: normalizeStats(p.stats),
+    achievements,
+    recent: Array.isArray(p.recent)
+      ? p.recent
+          .filter((r: any) => r && typeof r === 'object')
+          .slice(0, 12)
+          .map((r: any) => ({
+            time: num(r.time),
+            mode: r.mode === 'online' ? 'online' : 'local',
+            place: Math.max(1, num(r.place)),
+            players: Math.max(2, num(r.players)),
+            hands: num(r.hands),
+            chips: num(r.chips),
+          }))
+      : [],
+    createdCharacter: !!p.createdCharacter,
+  };
+}
 
 /** 显示服务器上的账号数据（等级、经验、成就、统计全部以服务器为准） */
 export function showAccount(a: AccountState) {
@@ -114,7 +152,7 @@ export function showAccount(a: AccountState) {
   useProfile.setState({
     name: a.nickname,
     animal: sanitizeAnimal(a.animal),
-    characters: a.characters,
+    characters: (a.characters ?? []).map((c) => ({ ...c, animal: sanitizeAnimal(c.animal) })),
     xp: a.xp,
     stats: normalizeStats(a.stats),
     achievements: a.achievements,

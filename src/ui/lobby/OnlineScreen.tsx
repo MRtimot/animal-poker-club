@@ -5,7 +5,7 @@ import { BLIND_OPTIONS, CHIP_OPTIONS, MAX_ROOM_PLAYERS } from '../../core/protoc
 import { ROOM_CODE_LENGTH } from '../../core/utils/random';
 import { net } from '../../net/netClient';
 import { BUILT_IN_SERVER } from '../../net/serverAddress';
-import { BackButton, Btn, Seg } from '../common/ui';
+import { BackButton, Btn, Seg, useBusy } from '../common/ui';
 import { formatChips } from '../../utils/format';
 
 function ConnStatus() {
@@ -56,7 +56,11 @@ export function OnlineScreen() {
     net.connect();
   }, []);
 
+  // 防止连续点击创建多个房间 / 重复加入
+  const [busy, markBusy] = useBusy();
+
   const create = () => {
+    if (!markBusy()) return;
     const [sb, bb] = BLIND_OPTIONS[blinds];
     net.updateProfile();
     net.createRoom({ maxPlayers: players, startingChips: chips, smallBlind: sb, bigBlind: bb, turnSeconds: turn });
@@ -67,6 +71,7 @@ export function OnlineScreen() {
       useGame.getState().toast(`房间代码是 ${ROOM_CODE_LENGTH} 位字母或数字`, 'error');
       return;
     }
+    if (!markBusy()) return;
     net.updateProfile();
     net.joinRoom(c);
   };
@@ -108,7 +113,7 @@ export function OnlineScreen() {
               <label>每次行动时间</label>
               <Seg options={[15, 20, 30, 45, 60].map((n) => ({ value: n, label: `${n} 秒` }))} value={turn} onChange={setTurn} />
             </div>
-            <Btn kind="pink" size="lg" block onClick={create} disabled={conn !== 'connected'}>
+            <Btn kind="pink" size="lg" block onClick={create} disabled={conn !== 'connected' || busy}>
               创建房间
             </Btn>
             <p className="small muted" style={{ lineHeight: 1.7 }}>
@@ -129,7 +134,7 @@ export function OnlineScreen() {
                 autoFocus
               />
             </div>
-            <Btn kind="pink" size="lg" block onClick={join} disabled={conn !== 'connected'}>
+            <Btn kind="pink" size="lg" block onClick={join} disabled={conn !== 'connected' || busy}>
               加入房间
             </Btn>
           </>

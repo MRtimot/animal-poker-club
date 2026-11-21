@@ -415,6 +415,8 @@ function Tutorial() {
     };
   }, [done, mode, solo]);
   if (done) return null;
+  // 多人在线对局无法暂停：教程弹窗会挡住操作，而行动计时仍在继续（可能被自动弃牌），所以只在可以暂停的对局中显示
+  if (mode !== 'local' && !solo) return null;
   const s = TUTORIAL[step];
   const finish = () => {
     setS({ tutorialDone: true });

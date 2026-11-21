@@ -391,7 +391,9 @@ export class PokerEngine {
       }
       case 'raise': {
         if (!legal.canRaise) throw new PokerError('当前不能加注');
-        const to = Math.floor(action.amount ?? 0);
+        // NaN / Infinity / 非数字会让所有比较都为 false，必须在这里拦截，否则筹码会变成 NaN
+        if (typeof action.amount !== 'number' || !Number.isFinite(action.amount)) throw new PokerError('加注金额无效');
+        const to = Math.floor(action.amount);
         if (to > legal.maxRaiseTo) throw new PokerError('筹码不足');
         if (to < legal.minRaiseTo && to !== legal.maxRaiseTo) {
           throw new PokerError(`加注至少到 ${legal.minRaiseTo}`);

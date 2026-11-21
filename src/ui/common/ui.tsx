@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import type { Card } from '../../core/cards/card';
 import { SUIT_SYMBOL, isRed, rankLabel } from '../../core/cards/card';
 import { AnimalConfig, FUR_COLORS, SPECIES_MAP } from '../../core/player/profile';
@@ -111,6 +111,37 @@ export function furHex(a: AnimalConfig) {
 }
 
 /** 玩家头像：登录玩家显示 Google 公开头像，否则（或加载失败时）显示默认动物头像 */
+/**
+ * 防止重复点击：点击后进入“处理中”，直到服务器回应（出现新的错误提示、或组件状态变化）或超时。
+ * resetKey 变化（例如房间状态改变）时自动结束。
+ */
+export function useBusy(resetKey?: unknown, timeoutMs = 6000) {
+  const [busy, setBusy] = useState(false);
+  // ref 立即生效：同一瞬间的连续点击（状态还没来得及更新）也只会执行一次
+  const lock = useRef(false);
+  const lastError = useGame((s) => s.toasts.filter((t) => t.kind === 'error').at(-1)?.id);
+  useEffect(() => {
+    lock.current = false;
+    setBusy(false);
+  }, [lastError, resetKey]);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setTimeout(() => {
+      lock.current = false;
+      setBusy(false);
+    }, timeoutMs);
+    return () => clearTimeout(t);
+  }, [busy, timeoutMs]);
+  /** 返回 false 表示已经在处理中，本次点击应忽略 */
+  const begin = useCallback(() => {
+    if (lock.current) return false;
+    lock.current = true;
+    setBusy(true);
+    return true;
+  }, []);
+  return [busy, begin] as const;
+}
+
 export function Avatar({ animal, size, src }: { animal: AnimalConfig; size?: 'sm' | 'lg'; src?: string | null }) {
   const [broken, setBroken] = useState(false);
   useEffect(() => setBroken(false), [src]);

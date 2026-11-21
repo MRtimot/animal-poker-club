@@ -133,6 +133,8 @@ class Tx {
   sess = new Map<string, string | null>();
   ctrl: GameController | null = null;
   collision = false;
+  /** 请求者已经不在房间里 */
+  notMember = false;
 
   constructor(
     public room: RoomRec | null,
@@ -169,7 +171,7 @@ class Tx {
 export class RoomServer {
   private sessions = new Map<string, Session>();
   /** 本机缓存的房间记录（以共享存储为准） */
-  private cache = new Map<string, { v: number; room: RoomRec }>();
+  private cache = new Map<string, { v: number; room: RoomRec; seen?: number }>();
   private locks = new Map<string, Promise<void>>();
   private wake = new Map<string, ReturnType<typeof setTimeout>>();
   private opts: Required<Omit<RoomServerOptions, 'accounts' | 'store' | 'maxConnectionMs'>> & { maxConnectionMs: number | null };
@@ -193,6 +195,8 @@ export class RoomServer {
     this.ownsStore = !opts.store;
     this.store = opts.store ?? new MemoryHub().store('local-' + randomId(6));
     this.store.subscribe((e) => this.onEvent(e));
+    // 订阅断线期间可能错过了房间事件：丢弃缓存，之后从共享存储读取最新数据
+    this.store.onReconnect?.(() => this.cache.clear());
     this.sweepTimer = setInterval(() => this.sweep(), Math.min(5000, Math.max(200, this.opts.lobbyGraceMs / 2)));
   }
 
@@ -276,6 +280,11 @@ export class RoomServer {
   }
 
   // ───────────── 共享存储：读取 / 修改 / 事件 ─────────────
+
+  /** 后台修改（定时清理、断线标记等）：出错只记录，绝不能变成未处理的 Promise 拒绝而让进程崩溃 */
+  private background(p: Promise<unknown>, label: string) {
+    p.catch((err) => console.error(`[房间] ${label}出错`, err));
+  }
 
   private async getRoomRec(code: string): Promise<{ v: number; room: RoomRec } | null> {
     const c = this.cache.get(code);
@@ -369,6 +378,15 @@ export class RoomServer {
   }
 
   private onEvent(raw: string) {
+    try {
+      this.applyEvent(raw);
+    } catch (err) {
+      // 事件处理出错（例如数据损坏）只影响这一条事件，不能让服务器崩溃
+      console.error('[房间] 处理房间事件出错', err);
+    }
+  }
+
+  private applyEvent(raw: string) {
     if (this.disposed) return;
     let ev: RoomEvent;
     try {
@@ -537,7 +555,7 @@ export class RoomServer {
       return session;
     }
     // 告诉其他服务器：这名玩家已经重新连上（取消它们的“断线”处理）
-    if (resumed) void this.store.publish(JSON.stringify({ k: 'here', code, sessionId: session.sessionId, by: this.store.instanceId } satisfies RoomEvent));
+    if (resumed) this.background(this.store.publish(JSON.stringify({ k: 'here', code, sessionId: session.sessionId, by: this.store.instanceId } satisfies RoomEvent)), '发送重新连接通知');
     const needsUpdate = !member.connected || member.userId !== userId || (rec.room.status === 'lobby' && JSON.stringify(member.profile) !== JSON.stringify(profile));
     if (needsUpdate) {
       await this.mutate(code, session, (tx) => {
@@ -602,24 +620,30 @@ export class RoomServer {
     const now = Date.now();
     for (const [code, rec] of this.cache) {
       const room = rec.room;
+      // 本机没有玩家、也很久没有变化的房间：从缓存中移除（以共享存储为准，需要时再读取）
+      const seen = rec.seen ?? (rec.seen = now);
+      if (now - seen > 30 * 60_000 && ![...this.sessions.values()].some((s) => s.roomCode === code) && !this.wake.has(code)) {
+        this.cache.delete(code);
+        continue;
+      }
       if (room.emptySince && now - room.emptySince > this.opts.emptyRoomMs) {
-        void this.mutate(code, null, (tx) => {
+        this.background(this.mutate(code, null, (tx) => {
           if (tx.room?.emptySince && Date.now() - tx.room.emptySince > this.opts.emptyRoomMs) {
             tx.deleted = true;
             tx.touch();
           }
-        });
+        }), '清理房间');
         continue;
       }
       if (room.status === 'lobby' && room.members.some((m) => !m.isAI && !m.connected && m.offlineSince && now - m.offlineSince > this.opts.lobbyGraceMs)) {
-        void this.mutate(code, null, (tx) => {
+        this.background(this.mutate(code, null, (tx) => {
           if (!tx.room || tx.room.status !== 'lobby') return;
           for (const m of [...tx.room.members]) {
             if (m.isAI || m.connected || !m.offlineSince || Date.now() - m.offlineSince <= this.opts.lobbyGraceMs) continue;
             this.removeMember(tx, m.id, '长时间离线，已移出房间');
             if (tx.deleted) break;
           }
-        });
+        }), '清理房间');
       }
     }
   }
@@ -677,6 +701,9 @@ export class RoomServer {
         const target = await this.getRoomRec(code);
         if (!target || (target.room.solo && !target.room.members.some((m) => m.id === s.playerId))) return err('房间不存在，请检查房间代码');
         if (s.roomCode && s.roomCode !== code) await this.leave(s);
+        // 必须在修改之前清空：房间事件可能比 mutate 返回得更早处理，之后再清空就会漏发房间信息
+        s.lastRoomJson = undefined;
+        s.sent = undefined;
         await this.mutate(code, s, (tx) => {
           const room = tx.room;
           if (!room) return tx.error('房间不存在，请检查房间代码');
@@ -697,8 +724,6 @@ export class RoomServer {
           tx.system(`${s.profile.name} 加入了房间`);
           tx.to(s.sessionId, { t: 'chatHistory', messages: room.chat });
         });
-        s.lastRoomJson = undefined;
-        if (s.roomCode === code) this.forceRoomInfo(s);
         return;
       }
       case 'leaveRoom':
@@ -736,13 +761,15 @@ export class RoomServer {
         return;
     }
 
-    await this.mutate(code, s, (tx) => {
+    const result = await this.mutate(code, s, (tx) => {
       const room = tx.room;
       const me = room?.members.find((m) => m.id === s.playerId);
       const isHost = !!room && room.hostId === s.playerId;
       if (!room || !me) {
+        // 已经不在这个房间（被移出 / 房间已关闭）：告诉客户端，并清掉本机记录
         if (msg.t === 'action' && typeof msg.actionId === 'string') tx.direct.push({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
-        tx.sess.set(s.sessionId, null);
+        tx.direct.push({ t: 'room', room: null });
+        tx.notMember = true;
         return;
       }
       switch (msg.t) {
@@ -857,10 +884,17 @@ export class RoomServer {
         }
       }
     });
+    if (result.notMember && s.roomCode === code) {
+      s.roomCode = null;
+      s.lastRoomJson = undefined;
+      void this.saveSession(s);
+    }
   }
 
   /** 服务器生成房间代码；与已有房间重复时重新生成 */
   private async createRoom(s: Session, settings: RoomSettings, solo: SoloSettings | null) {
+    s.lastRoomJson = undefined;
+    s.sent = undefined;
     for (let i = 0; i < 20; i++) {
       const code = randomRoomCode();
       const tx = await this.mutate(code, s, (t) => {
@@ -894,17 +928,9 @@ export class RoomServer {
           t.to(s.sessionId, { t: 'chatHistory', messages: room.chat });
         }
       });
-      if (!tx.collision) {
-        if (s.roomCode === code) this.forceRoomInfo(s);
-        return;
-      }
+      if (!tx.collision) return;
     }
     s.conn?.send({ t: 'error', message: '暂时无法创建房间，请重试' });
-  }
-
-  /** 请求者刚进入房间：确保他收到完整的房间信息 */
-  private forceRoomInfo(s: Session) {
-    s.lastRoomJson = undefined;
   }
 
   private cleanSettings(s: any): RoomSettings | null {
@@ -1118,9 +1144,9 @@ export class RoomServer {
     }
     for (const [code, rec] of this.cache) {
       if (!rec.room.members.some((m) => m.userId === userId)) continue;
-      void this.mutate(code, null, (tx) => {
+      this.background(this.mutate(code, null, (tx) => {
         for (const m of tx.room?.members ?? []) if (m.userId === userId) (m.userId = null), tx.touch();
-      });
+      }), '解除账号绑定');
     }
   }
 
@@ -1137,13 +1163,13 @@ export class RoomServer {
       s.profile = profile;
       const code = s.roomCode;
       if (!code) continue;
-      void this.mutate(code, null, (tx) => {
+      this.background(this.mutate(code, null, (tx) => {
         const m = tx.room?.members.find((x) => x.id === s.playerId);
         if (tx.room?.status === 'lobby' && m) {
           m.profile = profile;
           tx.touch();
         }
-      });
+      }), '解除账号绑定');
     }
   }
 

@@ -350,9 +350,12 @@ function DealerButton({ layout }: { layout?: SeatLayout }) {
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   }, []);
+  // 离开牌桌时释放显存（每进入一次牌桌都会创建一张新贴图）
+  useEffect(() => () => tex.dispose(), [tex]);
+  const target = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
     if (!layout || !ref.current) return;
-    ref.current.position.lerp(new THREE.Vector3(...layout.button), 0.08);
+    ref.current.position.lerp(target.set(...layout.button), 0.08);
   });
   if (!layout) return null;
   return (

@@ -19,6 +19,8 @@ export interface SharedStore {
   publish(event: string): Promise<void>;
   /** 订阅所有房间事件（包括自己发布的） */
   subscribe(handler: (event: string) => void): void;
+  /** 订阅连接断开后重新连上时调用（期间的事件可能丢失，需要丢弃本机缓存） */
+  onReconnect?(handler: () => void): void;
   close(): Promise<void>;
 }
 
@@ -44,7 +46,13 @@ export class MemoryHub {
         return d.value;
       },
       async set(key, value, ttlMs) {
-        hub.data.set(key, { value, exp: Date.now() + ttlMs });
+        const now = Date.now();
+        hub.data.set(key, { value, exp: now + ttlMs });
+        // 定期清理过期数据（单台服务器长时间运行时不会无限增长）
+        if (hub.data.size > 1000 && hub.data.size % 100 === 0) {
+          for (const [k, d] of hub.data) if (d.exp < now) hub.data.delete(k);
+          for (const [k, r] of hub.rooms) if (r.exp < now) hub.rooms.delete(k);
+        }
       },
       async loadRoom(code) {
         const r = hub.rooms.get(code);

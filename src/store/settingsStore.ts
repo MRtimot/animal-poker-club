@@ -74,6 +74,25 @@ export const useSettings = create<SettingsState>()(
       storage: persistStorage,
       version: 2,
       migrate: (old: any) => ({ ...old, autoQuality: true, room: 'casino' }),
+      // 逐项校验：损坏或手动修改的设置不能让 3D 画面或界面崩溃
+      merge: (persisted: any, current) => {
+        const p = persisted && typeof persisted === 'object' ? persisted : {};
+        const vol = (v: unknown, d: number) => (typeof v === 'number' && v >= 0 && v <= 1 ? v : d);
+        const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
+        return {
+          ...current,
+          quality: (['low', 'medium', 'high', 'ultra'] as const).includes(p.quality) ? p.quality : current.quality,
+          autoQuality: bool(p.autoQuality, current.autoQuality),
+          room: (['casino', 'penthouse', 'cabin'] as const).includes(p.room) ? p.room : current.room,
+          musicVolume: vol(p.musicVolume, current.musicVolume),
+          sfxVolume: vol(p.sfxVolume, current.sfxVolume),
+          ambientVolume: vol(p.ambientVolume, current.ambientVolume),
+          autoCamera: bool(p.autoCamera, current.autoCamera),
+          showFps: bool(p.showFps, current.showFps),
+          serverUrl: typeof p.serverUrl === 'string' ? p.serverUrl.slice(0, 200) : current.serverUrl,
+          tutorialDone: bool(p.tutorialDone, current.tutorialDone),
+        };
+      },
     },
   ),
 );

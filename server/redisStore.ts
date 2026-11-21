@@ -52,7 +52,13 @@ export function createRedisStore(instanceId: string, makeClient: () => RedisClie
   const cmd = makeClient();
   const sub = makeClient();
   let handler: ((e: string) => void) | null = null;
+  let reconnectHandler: (() => void) | null = null;
   let subscribed: Promise<unknown> | null = null;
+  let readyCount = 0;
+  // 第一次连上不算；之后每次重新连上都说明可能错过了事件
+  sub.on('ready', () => {
+    if (readyCount++ > 0) reconnectHandler?.();
+  });
   sub.on('message', (channel: string, message: string) => {
     if (channel === CHANNEL && handler) handler(message);
   });
@@ -85,6 +91,9 @@ export function createRedisStore(instanceId: string, makeClient: () => RedisClie
     subscribe(fn) {
       handler = fn;
       subscribed = sub.subscribe(CHANNEL);
+    },
+    onReconnect(fn) {
+      reconnectHandler = fn;
     },
     async close() {
       handler = null;

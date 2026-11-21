@@ -273,6 +273,11 @@ class NetClient {
           }
           const base = prev && prev.handNumber === view.handNumber ? prev.events : [];
           const prevProfiles = new Map(prev?.players.map((p) => [p.id, p.profile]) ?? []);
+          // 增量更新省略了没变化的外观；如果本地也没有这名玩家的外观，就请求完整状态，不能显示一只“没有外观”的动物
+          if (view.players.some((p) => !p.profile && !prevProfiles.get(p.id))) {
+            this.send({ t: 'resync' });
+            break;
+          }
           view = {
             ...view,
             events: [...base, ...view.events.filter((e) => e.seq > prevLast)],
