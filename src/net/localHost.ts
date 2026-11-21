@@ -1,15 +1,16 @@
 // 本地对战：在浏览器中运行同一套游戏控制器 + 本地 AI（完全离线）
 import { GameController } from '../core/game/controller';
 import { AI_LINES, AI_NAMES, PERSONALITIES, type AIDifficulty, type AIPersonality } from '../core/ai/ai';
-import { randomAnimal } from '../core/player/profile';
+import { randomAnimal, sanitizeAnimal, sanitizeName, type AnimalConfig } from '../core/player/profile';
 import type { PlayerAction } from '../core/table/types';
 import type { SeatConfig } from '../core/game/view';
 import { randomId, pick } from '../core/utils/random';
 import { useGame } from '../store/gameStore';
+import type { DialogueRef } from '../core/character/dialogue';
 import { currentProfile } from '../store/profileStore';
 
 export interface LocalGameSettings {
-  opponents: { personality: AIPersonality; difficulty: AIDifficulty }[];
+  opponents: { personality: AIPersonality; difficulty: AIDifficulty; character?: { name: string; animal: AnimalConfig } }[];
   startingChips: number;
   smallBlind: number;
   bigBlind: number;
@@ -21,8 +22,8 @@ let controller: GameController | null = null;
 let lastSettings: LocalGameSettings | null = null;
 let unsub: (() => void) | null = null;
 
-function chat(from: string, name: string, text: string, kind: 'chat' | 'emote' | 'system') {
-  useGame.getState().addChat({ id: randomId(8), from, name, text, kind, time: Date.now() });
+function chat(from: string, name: string, text: string, kind: 'chat' | 'emote' | 'system', dialogue?: DialogueRef) {
+  useGame.getState().addChat({ id: randomId(8), from, name, text, kind, time: Date.now(), ...(dialogue ? { dialogue } : {}) });
 }
 
 export function startLocalGame(settings: LocalGameSettings) {
@@ -33,11 +34,13 @@ export function startLocalGame(settings: LocalGameSettings) {
   const seats: SeatConfig[] = [{ id: LOCAL_PLAYER_ID, profile: me, chips: settings.startingChips, isAI: false }];
   settings.opponents.forEach((o, i) => {
     const names = AI_NAMES[o.personality];
-    const name = names.find((n) => !used.has(n)) ?? `${PERSONALITIES[o.personality].name}${i + 1}`;
+    // 玩家保存的角色作为对手：使用它的名字、外观、声音和口头禅
+    let name = o.character ? sanitizeName(o.character.name) : (names.find((n) => !used.has(n)) ?? `${PERSONALITIES[o.personality].name}${i + 1}`);
+    if (used.has(name)) name = `${name}${i + 1}`;
     used.add(name);
     seats.push({
       id: 'ai' + i,
-      profile: { name, animal: randomAnimal(Math.random, [PERSONALITIES[o.personality].species]), level: 1 },
+      profile: { name, animal: o.character ? sanitizeAnimal(o.character.animal) : randomAnimal(Math.random, [PERSONALITIES[o.personality].species]), level: 1 },
       chips: settings.startingChips,
       isAI: true,
       aiPersonality: o.personality,
@@ -46,9 +49,9 @@ export function startLocalGame(settings: LocalGameSettings) {
   });
   const c = new GameController(seats, { smallBlind: settings.smallBlind, bigBlind: settings.bigBlind, turnTimeMs: 45000 });
   controller = c;
-  c.onChat = (playerId, kind, text) => {
+  c.onChat = (playerId, kind, text, dialogue) => {
     const m = c.getMeta(playerId);
-    if (m) chat(playerId, m.profile.name, text, kind);
+    if (m) chat(playerId, m.profile.name, text, kind, dialogue);
   };
   const g = useGame.getState();
   g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null });

@@ -1,9 +1,13 @@
 import { PokerEngine, PokerError, type EngineState } from '../table/engine';
-import { PlayerAction, ActionType } from '../table/types';
-import { AI_LINES, decideAction, AIPersonality, AIDifficulty } from '../ai/ai';
-import { RNG, secureRandom, pick } from '../utils/random';
+import { PlayerAction } from '../table/types';
+import { decideAction, AIPersonality, AIDifficulty } from '../ai/ai';
+import { RNG, secureRandom } from '../utils/random';
 import type { GameOverInfo, SeatConfig, SeatView, TableView } from './view';
 import type { PlayerProfile } from '../player/profile';
+import { DEFAULT_DIALOGUE_RULES, DialogueDirector, type DialogueContext, type DialogueEvent, type DialogueRef, type DirectorState } from '../character/dialogue';
+import { estimateEquity, preflopStrength } from '../ai/equity';
+import { resolveVoiceProfile } from '../character/voice';
+import { HandCategory } from '../poker/handEvaluator';
 
 export interface ControllerOptions {
   smallBlind: number;
@@ -43,6 +47,8 @@ export interface ControllerState {
   gameOver: GameOverInfo | null;
   paused: boolean;
   opts: { smallBlind: number; bigBlind: number; turnTimeMs: number; offlineTurnMs: number; pace: number };
+  /** 台词导演的冷却状态（多台服务器接手牌局时也保持冷却） */
+  dialogue?: DirectorState;
 }
 
 interface SeatMeta {
@@ -54,7 +60,8 @@ interface SeatMeta {
   connected: boolean;
 }
 
-export type ChatEmitter = (playerId: string, kind: 'chat' | 'emote', text: string) => void;
+/** dialogue：角色台词（由这里决定说什么，客户端只负责显示与播放语音） */
+export type ChatEmitter = (playerId: string, kind: 'chat' | 'emote', text: string, dialogue?: DialogueRef) => void;
 
 /**
  * 游戏控制器：驱动牌桌引擎的节奏（发牌动画等待、AI 思考、行动计时、下一手）。
@@ -88,6 +95,7 @@ export class GameController {
 
   private opts: ControllerState['opts'];
   private aiRng: RNG;
+  private director!: DialogueDirector;
 
   constructor(seats: SeatConfig[], opts: ControllerOptions) {
     this.opts = {
@@ -99,6 +107,7 @@ export class GameController {
     };
     this.aiRng = opts.aiRng ?? Math.random;
     this.autoRun = opts.autoRun ?? true;
+    this.director = this.makeDirector();
     this.engine = new PokerEngine({ smallBlind: opts.smallBlind, bigBlind: opts.bigBlind, rng: opts.rng ?? secureRandom });
     seats.forEach((s, i) => {
       this.engine.addPlayer(s.id, s.profile.name, s.chips, i);
@@ -204,6 +213,11 @@ export class GameController {
     }
     this.nextHandAt = null;
     this.engine.startHand();
+    if (this.engine.handNumber === 1) {
+      // 开局：一只 AI 动物打个招呼
+      const ais = this.engine.players.filter((p) => this.meta.get(p.id)?.isAI);
+      if (ais.length) this.say(ais[Math.floor(this.aiRng() * ais.length) % ais.length].id, 'greet');
+    }
     const n = this.engine.players.filter((p) => p.inHand).length;
     // 发牌动画：每张牌约 0.16 秒
     this.afterChange(this.delay(900 + n * 2 * 160));
@@ -241,6 +255,9 @@ export class GameController {
       const legal = e.getLegalActions(cur.id);
       const facing = legal && legal.toCall > 0 ? Math.min(1, legal.toCall / Math.max(1, cur.chips)) : 0;
       const hesitate = facing > 0.3 ? 600 + this.aiRng() * 1400 * facing : 0;
+      // 面对大注 / 全押：AI 可能先“嗯……让我想想”（有独立冷却，不会每次都说）
+      const someoneAllIn = e.players.some((p) => p.id !== cur.id && p.inHand && !p.folded && p.allIn);
+      if (legal && legal.toCall > 0 && (someoneAllIn || legal.toCall >= Math.max(e.bigBlind * 4, e.totalPot * 0.35))) this.say(cur.id, 'think');
       const think = this.delay(pace[0] + this.aiRng() * pace[1] + hesitate + extraDelay);
       this.turnTotalMs = think;
       this.schedule(think, { kind: 'runAI', playerId: cur.id });
@@ -291,24 +308,78 @@ export class GameController {
       decision = { action: { type: legal.canCheck ? 'check' : 'fold' } as PlayerAction };
     }
     this.applyAction(playerId, decision.action);
-    this.maybeAIChat(playerId, decision.action.type);
+    const done = this.engine.events.filter((ev) => ev.type === 'action' && ev.playerId === playerId).pop();
+    const acted = done && done.type === 'action' ? done.action : decision.action.type;
+    if (acted === 'raise' || acted === 'allin' || acted === 'call' || acted === 'check' || acted === 'fold') {
+      // 台词知道自己的牌力：牌好、牌差、诈唬时说的话不一样（牌力只在这里用，不会发给其他玩家）
+      const eq = typeof decision.equity === 'number' ? decision.equity : 0.5;
+      this.say(playerId, acted, {
+        strength: strengthOf(eq),
+        bluff: (acted === 'raise' || acted === 'allin') && eq < 0.36,
+        bigPot: e.totalPot >= e.bigBlind * 20,
+      });
+    }
   }
 
-  private maybeAIChat(playerId: string, action: ActionType | 'win' | 'lose') {
-    if (!this.onChat) return;
-    const r = this.aiRng();
-    const table: Record<string, { p: number; lines: string[]; emote?: string[] }> = {
-      raise: { p: 0.18, lines: AI_LINES.raise, emote: ['😎', '🔥'] },
-      allin: { p: 0.6, lines: AI_LINES.allin, emote: ['🔥', '😎'] },
-      fold: { p: 0.08, lines: AI_LINES.fold, emote: ['💀', '😱'] },
-      call: { p: 0.07, lines: AI_LINES.call },
-      win: { p: 0.45, lines: AI_LINES.win, emote: ['😂', '😎', '👏', '🤣'] },
-      lose: { p: 0.2, lines: AI_LINES.lose, emote: ['😱', '💀'] },
-    };
-    const entry = table[action];
-    if (!entry || r > entry.p) return;
-    if (entry.emote && this.aiRng() < 0.45) this.onChat(playerId, 'emote', pick(this.aiRng, entry.emote));
-    else this.onChat(playerId, 'chat', pick(this.aiRng, entry.lines));
+  /** 快速估算一只 AI 动物现在的牌力（用于挑选反应台词） */
+  private quickStrength(playerId: string): DialogueContext['strength'] {
+    const e = this.engine;
+    const p = e.getPlayer(playerId);
+    if (!p || p.hole.length < 2) return undefined;
+    try {
+      const opponents = Math.max(1, e.players.filter((x) => x.inHand && !x.folded && x.id !== playerId).length);
+      const eq = e.board.length ? estimateEquity(p.hole, e.board, opponents, 120, this.aiRng) : preflopStrength(p.hole) * 0.8 + 0.1;
+      return strengthOf(eq);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private makeDirector(state?: DirectorState) {
+    const pace = this.opts.pace;
+    return new DialogueDirector(
+      this.aiRng,
+      {
+        minIntervalMs: DEFAULT_DIALOGUE_RULES.minIntervalMs * pace,
+        perSpeakerMs: DEFAULT_DIALOGUE_RULES.perSpeakerMs * pace,
+        maxPerHand: DEFAULT_DIALOGUE_RULES.maxPerHand,
+        thinkMs: (DEFAULT_DIALOGUE_RULES.thinkMs ?? 20000) * pace,
+      },
+      state,
+    );
+  }
+
+  /** 让一只动物按性格说一句台词（是否开口、说什么由台词导演决定：冷却、每手上限、优先级） */
+  private say(playerId: string, event: DialogueEvent, ctx: DialogueContext = {}): boolean {
+    if (!this.onChat) return false;
+    const m = this.meta.get(playerId);
+    if (!m) return false;
+    const animal = m.profile.animal;
+    const line = this.director.consider(
+      { id: playerId, species: animal.species, style: resolveVoiceProfile(animal).style, catchphrase: animal.catchphrase, isAI: m.isAI },
+      event,
+      this.engine.handNumber,
+      Date.now(),
+      ctx,
+    );
+    if (!line) return false;
+    this.onChat(playerId, 'chat', line.text, line.ref);
+    return true;
+  }
+
+  /** 真人玩家加注 / 全押时，桌上的一只 AI 动物可能会做出反应 */
+  private reactToHuman(playerId: string) {
+    const last = this.engine.events.filter((ev) => ev.type === 'action' && ev.playerId === playerId).pop();
+    if (!last || last.type !== 'action') return;
+    const event: DialogueEvent | null = last.action === 'allin' ? 'react_allin' : last.action === 'raise' ? 'react_raise' : null;
+    if (!event) return;
+    const ais = this.engine.players.filter((p) => p.id !== playerId && p.inHand && !p.folded && this.meta.get(p.id)?.isAI);
+    if (ais.length) {
+      const who = ais[Math.floor(this.aiRng() * ais.length) % ais.length];
+      if (this.say(who.id, event, { strength: this.quickStrength(who.id), bigPot: this.engine.totalPot >= this.engine.bigBlind * 20 })) return;
+    }
+    // 没有 AI 回应时，全押的玩家自己的动物喊一声（重大时刻）
+    if (event === 'react_allin') this.say(playerId, 'allin');
   }
 
   private applyAction(playerId: string, action: PlayerAction) {
@@ -335,6 +406,7 @@ export class GameController {
       if (err instanceof PokerError) return err.message;
       return '操作失败';
     }
+    this.reactToHuman(playerId);
     this.afterChange();
     return null;
   }
@@ -342,14 +414,23 @@ export class GameController {
   private handleHandComplete() {
     const e = this.engine;
     const summary = e.lastSummary;
-    // AI 赢/输台词
+    // 赢 / 输 / 诈唬成功 / 同花顺：动物按性格说话
     if (summary && this.onChat) {
-      const winners = new Set(summary.winners.map((w) => w.playerId));
-      for (const p of e.players) {
-        const m = this.meta.get(p.id);
-        if (!m?.isAI || !p.inHand) continue;
-        if (winners.has(p.id)) this.maybeAIChat(p.id, 'win');
-        else if (!p.folded && p.totalBet > e.bigBlind * 4) this.maybeAIChat(p.id, 'lose');
+      const amounts = new Map(summary.winners.map((w) => [w.playerId, w.amount]));
+      const shown = new Map(summary.shown.map((h) => [h.playerId, h.category]));
+      const raised = new Set(e.events.filter((ev) => ev.type === 'action' && (ev.action === 'raise' || ev.action === 'allin')).map((ev) => (ev as { playerId: string }).playerId));
+      const order = [...e.players].sort((a, b) => (amounts.get(b.id) ?? 0) - (amounts.get(a.id) ?? 0));
+      for (const p of order) {
+        if (!p.inHand) continue;
+        const won = amounts.get(p.id);
+        const cat = shown.get(p.id) ?? -1;
+        let event: DialogueEvent | null = null;
+        if (won && cat >= HandCategory.StraightFlush) event = 'big_hand';
+        else if (won && summary.uncontested && raised.has(p.id)) event = 'bluff_win';
+        else if (won && won >= e.bigBlind * 25) event = 'win_big';
+        else if (won) event = 'win';
+        else if (!p.folded && p.totalBet > e.bigBlind * 4) event = 'lose';
+        if (event) this.say(p.id, event);
       }
     }
     for (const p of e.players) {
@@ -445,6 +526,7 @@ export class GameController {
       gameOver: this.gameOver,
       paused: this.paused,
       opts: this.opts,
+      dialogue: this.director.toState(),
     };
   }
 
@@ -460,6 +542,7 @@ export class GameController {
     c.bustOrder = s.bustOrder;
     c.gameOver = s.gameOver;
     c.paused = s.paused;
+    c.director = c.makeDirector(s.dialogue);
     c.arm();
     return c;
   }
@@ -525,4 +608,9 @@ export class GameController {
       paused: this.paused,
     };
   }
+}
+
+/** 胜率 → 牌力档位（台词情境用） */
+function strengthOf(eq: number): DialogueContext['strength'] {
+  return eq >= 0.62 ? 'strong' : eq <= 0.36 ? 'weak' : 'medium';
 }

@@ -45,8 +45,31 @@ export interface Bubble {
   id: number;
   playerId: string;
   text: string;
-  kind: 'chat' | 'emote';
+  kind: 'chat' | 'emote' | 'dialogue';
   until: number;
+  /** 角色台词：显示“🐺 狼”这样的说话者 */
+  speaker?: string;
+}
+
+/** 角色说话状态：驱动嘴巴、头、耳朵、眼睛的说话动画 */
+export interface SpeechState {
+  /** idle → thinking（AI 在想）→ speaking → finished */
+  phase: 'speaking' | 'finished';
+  emotion: string;
+  start: number; // performance.now()
+  until: number; // 预计结束时间（真实语音结束时会更新）
+  /** 最近一次词边界（语音合成的 boundary 事件），口型在这时张得更大 */
+  pulse: number;
+  /** 是否真的在播放语音（否则只有字幕和口型） */
+  voiced: boolean;
+  /** 语速：影响口型节奏 */
+  rate: number;
+  /** 没有真实语音时：按语调规划估算的“正在说话”时间段（绝对时间），段与段之间嘴巴闭上 */
+  windows?: [number, number][];
+  /** 有真实语音时：当前处在两段之间的停顿（嘴巴闭上、头部有个小停顿） */
+  gap?: boolean;
+  /** 当前这一段是犹豫词（“嗯……”）：嘴巴张得小、眼神移开 */
+  hesitating?: boolean;
 }
 
 export interface CameraCue {
@@ -71,6 +94,10 @@ interface FxState {
   bursts: Burst[];
   coolUntil: Record<string, number>;
   moods: Record<string, Mood>;
+  speech: Record<string, SpeechState>;
+  speakStart: (playerId: string, s: Omit<SpeechState, 'phase' | 'pulse' | 'start'> & { start?: number }) => void;
+  speakUpdate: (playerId: string, patch: Partial<SpeechState>) => void;
+  speakEnd: (playerId: string) => void;
   /** 镜头震动 */
   shake: { amp: number; start: number };
   /** 桌面灯光增强（0~1） */
@@ -86,7 +113,7 @@ interface FxState {
   boostLight: (level: number, ms: number) => void;
   play: (playerId: string, name: AnimName) => void;
   flyChips: (f: Omit<ChipFlight, 'id' | 'start'> & { delay?: number }) => void;
-  bubble: (playerId: string, text: string, kind: Bubble['kind']) => void;
+  bubble: (playerId: string, text: string, kind: Bubble['kind'], extra?: { speaker?: string; ms?: number }) => void;
   setCue: (c: Omit<CameraCue, 'start'> | null) => void;
   burst: (position: [number, number, number], kind: Burst['kind']) => void;
   setCool: (playerId: string, ms: number) => void;
@@ -104,6 +131,20 @@ export const useFx = create<FxState>()((set, get) => ({
   bursts: [],
   coolUntil: {},
   moods: {},
+  speech: {},
+  speakStart: (playerId, sp) => {
+    const now = performance.now();
+    set({ speech: { ...get().speech, [playerId]: { ...sp, start: sp.start ?? now, phase: 'speaking', pulse: 0 } } });
+  },
+  speakUpdate: (playerId, patch) => {
+    const cur = get().speech[playerId];
+    if (cur) set({ speech: { ...get().speech, [playerId]: { ...cur, ...patch } } });
+  },
+  speakEnd: (playerId) => {
+    const cur = get().speech[playerId];
+    // 结束时留 250 毫秒让嘴巴自然合上
+    if (cur) set({ speech: { ...get().speech, [playerId]: { ...cur, phase: 'finished', until: Math.min(cur.until, performance.now() + 250) } } });
+  },
   announce: null,
   shout: (text, kind) => set({ announce: { id: fid++, text, kind, start: performance.now() } }),
   shake: { amp: 0, start: 0 },
@@ -126,8 +167,15 @@ export const useFx = create<FxState>()((set, get) => ({
     const flight: ChipFlight = { ...f, id: fid++, start: performance.now() + delay };
     set({ flights: [...get().flights, flight].slice(-40) });
   },
-  bubble: (playerId, text, kind) => {
-    const b: Bubble = { id: fid++, playerId, text, kind, until: Date.now() + (kind === 'emote' ? 2600 : 4200) };
+  bubble: (playerId, text, kind, extra) => {
+    const b: Bubble = {
+      id: fid++,
+      playerId,
+      text,
+      kind,
+      until: Date.now() + (extra?.ms ?? (kind === 'emote' ? 2600 : 4200)),
+      ...(extra?.speaker ? { speaker: extra.speaker } : {}),
+    };
     set({ bubbles: [...get().bubbles.filter((x) => x.playerId !== playerId), b] });
   },
   setCue: (c) => set({ cue: c ? { ...c, start: performance.now() } : null }),
@@ -142,13 +190,23 @@ export const useFx = create<FxState>()((set, get) => ({
     const bursts = s.bursts.filter((b) => now - b.start < 3500);
     const moodIds = Object.keys(s.moods);
     const liveMoods = moodIds.filter((k) => s.moods[k].until > now);
-    if (flights.length !== s.flights.length || bubbles.length !== s.bubbles.length || bursts.length !== s.bursts.length || liveMoods.length !== moodIds.length) {
+    const speechIds = Object.keys(s.speech);
+    const liveSpeech = speechIds.filter((k) => s.speech[k].until > now);
+    if (
+      flights.length !== s.flights.length ||
+      bubbles.length !== s.bubbles.length ||
+      bursts.length !== s.bursts.length ||
+      liveMoods.length !== moodIds.length ||
+      liveSpeech.length !== speechIds.length
+    ) {
       const moods: Record<string, Mood> = {};
       for (const k of liveMoods) moods[k] = s.moods[k];
-      set({ flights, bubbles, bursts, moods });
+      const speech: Record<string, SpeechState> = {};
+      for (const k of liveSpeech) speech[k] = s.speech[k];
+      set({ flights, bubbles, bursts, moods, speech });
     }
   },
-  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, announce: null, tension: 0, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
+  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, speech: {}, announce: null, tension: 0, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
 }));
 
 if (typeof window !== 'undefined') {

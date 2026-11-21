@@ -71,6 +71,12 @@ const RESERVED_EXACT = ['gm', 'mod', 'root', 'staff', 'support', 'ai', 'bot'];
 const RESERVED_CONTAINS = ['系统', '管理员', '官方', '客服', '版主', '运营', 'admin', 'system', 'moderator', 'official', '动物扑克俱乐部'];
 const BANNED = ['操你', '傻逼', '傻b', '煞笔', '妈的', '去死', '婊', '贱人', 'fuck', 'shit', 'bitch', 'nazi', '纳粹', '赌博网', '代充'];
 
+/** 是否包含不当内容（昵称、口头禅共用） */
+export function containsBannedWords(text: string): boolean {
+  const lower = text.normalize('NFKC').toLowerCase().replace(/[\s_\-·.]/g, '');
+  return BANNED.some((b) => lower.includes(b));
+}
+
 export const NICKNAME_MIN = 2;
 export const NICKNAME_MAX = 12;
 

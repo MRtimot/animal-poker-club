@@ -1,5 +1,6 @@
 // 动物程序化动画：根据动画名称与时间计算骨骼姿态（与渲染无关的纯数学）
 import { ANIM_DURATION, AnimName } from '../store/fxStore';
+import type { Species } from '../core/player/profile';
 
 export interface Pose {
   y: number; // 身体整体抬升
@@ -415,3 +416,68 @@ export const EMOTE_ANIM: Record<string, AnimName> = {
   '❤️': 'love',
   '🤣': 'laugh',
 };
+
+// ───────────── 说话动画（角色语音） ─────────────
+
+/** 不同动物说话时的身体语言 */
+const SPEECH_STYLE: Partial<Record<Species, { head: number; ear: number; tail: number; bob: number }>> = {
+  wolf: { head: 0.5, ear: 0.6, tail: 0.2, bob: 0.3 }, // 冷静：头几乎不动，耳朵前倾
+  rabbit: { head: 1.4, ear: 1.8, tail: 0.6, bob: 1.4 }, // 紧张：耳朵乱抖、身体小幅晃
+  cat: { head: 0.9, ear: 1.2, tail: 1.6, bob: 0.6 }, // 傲娇：尾巴摆动
+  dog: { head: 1.3, ear: 1, tail: 1.8, bob: 1.1 }, // 热情：摇尾巴、点头
+  bear: { head: 0.6, ear: 0.4, tail: 0.3, bob: 0.5 },
+  panda: { head: 0.7, ear: 0.5, tail: 0.3, bob: 0.6 },
+  lion: { head: 0.8, ear: 0.4, tail: 0.8, bob: 0.4 },
+  tiger: { head: 1, ear: 0.6, tail: 1, bob: 0.6 },
+  monkey: { head: 1.5, ear: 0.8, tail: 1.4, bob: 1.5 },
+  frog: { head: 1.2, ear: 0, tail: 0, bob: 1.6 },
+};
+
+const noise = (x: number) => Math.sin(x * 1.7) * 0.5 + Math.sin(x * 3.13 + 1.3) * 0.3 + Math.sin(x * 5.71 + 2.1) * 0.2;
+
+/**
+ * 根据说话状态计算口型与身体语言（叠加在当前姿势上）。
+ * 浏览器语音合成拿不到音频波形，所以按音节节奏 + 词边界事件模拟口型，并加入随机时间让动作不机械。
+ */
+export function speechMotion(
+  nowMs: number,
+  sp: { start: number; until: number; pulse: number; rate: number; emotion: string; windows?: [number, number][]; gap?: boolean; hesitating?: boolean },
+  seed: number,
+  species: Species,
+): { mouth: number; headX: number; headY: number; headZ: number; ear: number; tail: number; y: number; blink: boolean; gazeX: number; gazeY: number } | null {
+  if (nowMs < sp.start || nowMs > sp.until + 200) return null;
+  const t = (nowMs - sp.start) / 1000;
+  const fadeIn = Math.min(1, t / 0.08);
+  const fadeOut = Math.max(0, Math.min(1, (sp.until - nowMs) / 180));
+  const env = fadeIn * fadeOut;
+  const st = SPEECH_STYLE[species] ?? { head: 1, ear: 1, tail: 0.8, bob: 0.8 };
+  const energy = sp.emotion === 'excited' || sp.emotion === 'angry' ? 1.35 : sp.emotion === 'sad' ? 0.6 : sp.emotion === 'nervous' ? 1.2 : 1;
+  // 每秒约 5 个音节，随语速变化；偶尔停顿（模拟逗号）
+  const syl = t * 5.2 * sp.rate * Math.PI + seed;
+  // 停顿：有真实语音时跟着“段与段之间”的停顿；没有语音时按语调规划的时间轴；都没有时才随机停一下
+  let talking = 1;
+  if (sp.gap) talking = 0;
+  else if (sp.windows?.length) {
+    const w = sp.windows.find(([a, b]) => nowMs >= a - 40 && nowMs <= b + 60);
+    talking = w ? Math.min(1, (nowMs - (w[0] - 40)) / 80, (w[1] + 60 - nowMs) / 100) : 0;
+  } else if (noise(t * 1.3 + seed * 3) > 0.62) talking = 0.25;
+  const hes = sp.hesitating ? 0.45 : 1; // “嗯……”：嘴只微微张开
+  const open = Math.pow(Math.max(0, Math.sin(syl)), 0.6) * (0.55 + 0.45 * Math.abs(noise(t * 4 + seed)));
+  const pulse = nowMs - sp.pulse < 140 ? 0.35 * (1 - (nowMs - sp.pulse) / 140) : 0;
+  const mouth = Math.min(1, (0.06 + 0.06 * talking + open * 0.75 * talking * hes + pulse * talking) * env * (sp.emotion === 'sad' ? 0.7 : 1));
+  // 停顿 / 犹豫时：眼神移开一下、头微微歪（像在想），说话时看回对方
+  const thinkingBeat = (1 - talking) * env + (sp.hesitating ? 0.6 * env : 0);
+  const gazeY = thinkingBeat * 0.22 * (Math.sin(seed * 7.3) > 0 ? 1 : -1);
+  const gazeX = -thinkingBeat * 0.12;
+  // 头：说话时轻微点头、偏头；看向对方
+  const headX = (Math.sin(t * 3.1 + seed) * 0.035 + noise(t * 2.2 + seed) * 0.03) * st.head * energy * env;
+  const headY = noise(t * 0.9 + seed * 2) * 0.06 * st.head * env;
+  const headZ = Math.sin(t * 1.7 + seed) * 0.04 * st.head * env + thinkingBeat * 0.06 * (sp.emotion === 'confused' ? 1.6 : 1);
+  // 耳朵：说到重点时动一下
+  const ear = (Math.abs(Math.sin(t * (sp.emotion === 'nervous' ? 9 : 4.5) + seed)) * 0.4 + pulse) * st.ear * env;
+  const tail = Math.sin(t * 2.4 + seed) * 0.5 * st.tail * env;
+  const y = Math.abs(Math.sin(syl * 0.5)) * 0.012 * st.bob * energy * env;
+  // 说话中偶尔眨眼（随机时间）
+  const blink = noise(t * 0.7 + seed * 5) > 0.93;
+  return { mouth, headX: headX * (0.4 + 0.6 * talking), headY, headZ, ear, tail, y: y * talking, blink, gazeX, gazeY };
+}

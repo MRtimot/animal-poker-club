@@ -118,6 +118,9 @@ type Change = { kind: 'species' | 'outfit' | 'random'; start: number };
  * 创建器里的动物：
  * 换动物：缩小旋转 → 粒子 → 新动物弹出；换衣服：转一圈；随机生成：快速旋转 → 突然停住
  */
+/** 动物创建器里的动物：试听声音时用这个 ID 播放说话动画 */
+export const CREATOR_SPEAKER = '__creator';
+
 function CreatorAnimal({ config, anim }: { config: AnimalConfig; anim: { name: AnimName; start: number } | null }) {
   const [shown, setShown] = useState(config);
   const prev = useRef(config);
@@ -188,7 +191,7 @@ function CreatorAnimal({ config, anim }: { config: AnimalConfig; anim: { name: A
   });
   return (
     <group ref={g} position={[0, 0.36, 0]}>
-      <AnimalModel config={shown} anim={anim} seed={3} />
+      <AnimalModel config={shown} anim={anim} seed={3} animKey={CREATOR_SPEAKER} />
     </group>
   );
 }

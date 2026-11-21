@@ -1,4 +1,6 @@
 // 动物角色配置 —— 客户端与服务器共享的数据结构（不含任何 3D 代码）
+import { sanitizeVoiceSettings, type AnimalVoiceSettings } from '../character/voice';
+import { containsBannedWords } from '../account/types';
 
 export type Species =
   | 'cat' | 'dog' | 'fox' | 'panda' | 'rabbit' | 'bear' | 'raccoon' | 'frog'
@@ -163,6 +165,10 @@ export interface AnimalConfig {
   hat: (typeof HATS)[number]['id'];
   glasses: (typeof GLASSES)[number]['id'];
   accessory: (typeof ACCESSORIES)[number]['id'];
+  /** 角色声音（动物创建器中设置；没有则按物种自动选择） */
+  voice?: AnimalVoiceSettings;
+  /** 口头禅（AI 对手偶尔会说） */
+  catchphrase?: string;
 }
 
 export interface PlayerProfile {
@@ -198,6 +204,15 @@ export function sanitizeName(name: unknown, fallback = '神秘动物'): string {
   return n || fallback;
 }
 
+/** 口头禅：最多 24 个字，去掉控制字符与尖括号，不允许不当内容 */
+export function sanitizeCatchphrase(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const t = v.replace(/[\u0000-\u001f<>]/g, '').trim();
+  const out = [...t].slice(0, 24).join('');
+  if (!out || containsBannedWords(out)) return undefined;
+  return out;
+}
+
 /** 校验来自网络的角色配置，非法字段回落到默认值 */
 export function sanitizeAnimal(a: any): AnimalConfig {
   const out: AnimalConfig = { ...DEFAULT_ANIMAL };
@@ -218,6 +233,10 @@ export function sanitizeAnimal(a: any): AnimalConfig {
   out.hat = pickFrom(a.hat, HATS, 'none');
   out.glasses = pickFrom(a.glasses, GLASSES, 'none');
   out.accessory = pickFrom(a.accessory, ACCESSORIES, 'none');
+  const voice = sanitizeVoiceSettings(a.voice);
+  if (voice) out.voice = voice;
+  const cp = sanitizeCatchphrase(a.catchphrase);
+  if (cp) out.catchphrase = cp;
   return out;
 }
 

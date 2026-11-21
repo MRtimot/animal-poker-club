@@ -308,9 +308,9 @@ export class RoomServer {
   private wire(tx: Tx, c: GameController) {
     const room = tx.room!;
     const gameKey = `${room.instanceId}:${room.gameSeq}`;
-    c.onChat = (playerId, kind, text) => {
+    c.onChat = (playerId, kind, text, dialogue) => {
       const m = room.members.find((x) => x.id === playerId);
-      if (m) tx.chat({ from: playerId, name: m.profile.name, text, kind });
+      if (m) tx.chat({ from: playerId, name: m.profile.name, text, kind, ...(dialogue ? { dialogue } : {}) });
     };
     c.onHandComplete = () => this.settleHand(room, c, gameKey);
   }
@@ -919,7 +919,7 @@ export class RoomServer {
         t.room = room;
         this.addHuman(t, s);
         if (solo) {
-          for (const o of solo.opponents) this.pushAI(room, o.personality, o.difficulty);
+          for (const o of solo.opponents) this.pushAI(room, o.personality, o.difficulty, o.character);
           t.system(`欢迎来到动物扑克俱乐部！本局盲注 ${solo.smallBlind}/${solo.bigBlind}，祝你好运 🍀`);
           t.to(s.sessionId, { t: 'chatHistory', messages: room.chat });
           this.startGame(t);
@@ -952,16 +952,19 @@ export class RoomServer {
     const opponents = x.opponents.map((o: any) => ({
       personality: (o?.personality in PERSONALITIES ? o.personality : 'smartCat') as AIPersonality,
       difficulty: (DIFFS.includes(o?.difficulty) ? o.difficulty : 'easy') as AIDifficulty,
+      // 玩家保存的角色：名字与外观都在服务器端重新校验
+      ...(o?.character && typeof o.character === 'object' ? { character: { name: this.profileFor(null, { name: o.character.name }).name, animal: sanitizeAnimal(o.character.animal) } } : {}),
     }));
     return { opponents, startingChips, smallBlind: blinds[0], bigBlind: blinds[1] };
   }
 
-  private pushAI(room: RoomRec, p: any, d: any) {
+  private pushAI(room: RoomRec, p: any, d: any, character?: { name: string; animal: PlayerProfile['animal'] }) {
     const personality: AIPersonality = p in PERSONALITIES ? p : 'smartCat';
     const difficulty: AIDifficulty = DIFFS.includes(d) ? d : 'normal';
     const used = new Set(room.members.map((m) => m.profile.name));
-    const name = AI_NAMES[personality].find((n) => !used.has(n)) ?? PERSONALITIES[personality].name + room.members.length;
-    const animal = randomAnimal(Math.random, [PERSONALITIES[personality].species]);
+    let name = character?.name ?? AI_NAMES[personality].find((n) => !used.has(n)) ?? PERSONALITIES[personality].name + room.members.length;
+    if (used.has(name)) name = name + room.members.length;
+    const animal = character?.animal ?? randomAnimal(Math.random, [PERSONALITIES[personality].species]);
     room.members.push({
       id: 'ai_' + randomId(8),
       profile: { name, animal, level: 1 },

@@ -28,6 +28,8 @@ export function HubScreen() {
   const [difficulty, setDifficulty] = useState<AIDifficulty>('easy');
   const [chips, setChips] = useState(1000);
   const [blinds, setBlinds] = useState(0);
+  const characters = useProfile((s) => s.characters);
+  const [picked, setPicked] = useState<(string | undefined)[]>([]);
   const [mix, setMix] = useState<AIPersonality[]>(['aggressiveFox', 'cautiousPanda', 'crazyFrog', 'smartCat', 'luckyRabbit', 'smartCat', 'aggressiveFox']);
 
   const signedIn = useAccount((s) => s.status === 'signedIn');
@@ -37,7 +39,10 @@ export function HubScreen() {
   const start = async () => {
     const [sb, bb] = BLIND_OPTIONS[blinds];
     const settings = {
-      opponents: mix.slice(0, count).map((p) => ({ personality: p, difficulty })),
+      opponents: mix.slice(0, count).map((p, i) => {
+        const c = characters.find((x) => x.id === picked[i]);
+        return { personality: p, difficulty, ...(c ? { character: { name: c.name, animal: c.animal } } : {}) };
+      }),
       startingChips: chips,
       smallBlind: sb,
       bigBlind: bb,
@@ -106,8 +111,28 @@ export function HubScreen() {
                       </option>
                     ))}
                   </select>
+                  {characters.length > 0 && (
+                    <select
+                      className="select"
+                      value={picked[i] ?? ''}
+                      title="使用你在动物创建器中保存的角色（外观、声音、口头禅）"
+                      onChange={(e) => {
+                        const next = [...picked];
+                        next[i] = e.target.value || undefined;
+                        setPicked(next);
+                      }}
+                    >
+                      <option value="">随机动物</option>
+                      {characters.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {SPECIES_MAP[c.animal.species].emoji} {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               ))}
+              {characters.length > 0 && <div className="small muted">可以让你保存的角色作为 AI 对手出场，它们会用自己的声音和口头禅说话。</div>}
             </div>
             <div className="field">
               <label>初始筹码</label>

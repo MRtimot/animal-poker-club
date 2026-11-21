@@ -2724,3 +2724,108 @@ h1, h2, h3 {
 .conn-lost {
   color: #f0c27a;
 }
+
+/* 角色台词气泡：说话者 + 台词 + 🔊 */
+.bubble-dialogue {
+  max-width: 220px;
+  padding: 6px 12px 8px;
+  text-align: left;
+  background: rgba(255, 252, 244, 0.97);
+  border: 1px solid rgba(214, 178, 110, 0.55);
+}
+.bd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7a5a24;
+  margin-bottom: 2px;
+}
+.bd-voice {
+  animation: bdPulse 0.9s ease-in-out infinite;
+}
+@keyframes bdPulse {
+  50% { opacity: 0.35; }
+}
+.bd-text {
+  font-size: 14px;
+  line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .bubble-dialogue {
+    max-width: 160px;
+  }
+  .bd-text {
+    font-size: 12.5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bd-voice {
+    animation: none;
+  }
+}
+
+.voice-settings {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(214, 178, 110, 0.16);
+}
+.vs-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.voice-line {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+.voice-debug {
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(120, 255, 160, 0.35);
+  background: rgba(0, 0, 0, 0.25);
+  display: grid;
+  gap: 6px;
+}
+.vd-title {
+  font: 700 11px 'SF Mono', Menlo, Consolas, monospace;
+  color: #b8f5c8;
+  letter-spacing: 1px;
+}
+.vd-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 8px;
+  font: 11px 'SF Mono', Menlo, Consolas, monospace;
+  color: rgba(233, 220, 198, 0.75);
+}
+.vd-info {
+  font: 11px/1.6 'SF Mono', Menlo, Consolas, monospace;
+  color: rgba(233, 220, 198, 0.8);
+  word-break: break-all;
+}
+.vd-seg {
+  display: block;
+  padding-left: 8px;
+  color: #b8f5c8;
+}
+.vd-info a {
+  color: #8fd3ff;
+}
+.vs-quality {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+.vs-quality .small {
+  margin-top: 2px;
+  line-height: 1.5;
+}

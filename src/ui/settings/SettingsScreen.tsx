@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QUALITY_NAME, Quality, ROOM_NAME, RoomTheme, useSettings } from '../../store/settingsStore';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
@@ -7,6 +7,7 @@ import { levelFromXp } from '../../progress/progression';
 import { useAccount } from '../../store/accountStore';
 import { BackButton, Btn, Modal, Seg } from '../common/ui';
 import { net } from '../../net/netClient';
+import { voice } from '../../audio/voice';
 
 export function QuickSettings() {
   const s = useSettings();
@@ -41,6 +42,7 @@ export function QuickSettings() {
       {slider('🎵 背景音乐', 'musicVolume')}
       {slider('🔊 音效', 'sfxVolume')}
       {slider('🌃 环境声音', 'ambientVolume')}
+      <VoiceSettings />
       <label className="toggle">
         <span>🎥 自动镜头（下注、全押、摊牌、获胜时自动移动）</span>
         <input type="checkbox" checked={s.autoCamera} onChange={(e) => s.set({ autoCamera: e.target.checked })} />
@@ -50,6 +52,69 @@ export function QuickSettings() {
         <input type="checkbox" checked={s.showFps} onChange={(e) => s.set({ showFps: e.target.checked })} />
       </label>
     </>
+  );
+}
+
+/** 🎙️ 角色语音设置（浏览器自带语音合成，免费、无需联网 API） */
+function VoiceSettings() {
+  const s = useSettings();
+  const [status, setStatus] = useState(voice.status());
+  useEffect(() => {
+    // 部分浏览器的语音列表是异步加载的
+    const t = setInterval(() => setStatus(voice.status()), 800);
+    return () => clearInterval(t);
+  }, []);
+  const zh = status === 'ok' ? voice.chineseVoices().length : 0;
+  return (
+    <div className="voice-settings">
+      <div className="vs-title">🎙️ 角色语音</div>
+      <div className="small muted" style={{ marginBottom: 6 }}>
+        {status === 'unsupported'
+          ? '🔇 当前设备不支持角色语音，只显示台词字幕'
+          : status === 'no-chinese-voice'
+            ? '🔇 当前设备没有中文语音，只显示台词字幕'
+            : status === 'loading'
+              ? '正在检测设备上的语音…'
+              : `使用设备自带的语音合成（检测到 ${zh} 个中文语音），每只动物的音高、语速和语气不同`}
+      </div>
+      <div className="vs-quality">
+        声音质量：<b>{voice.quality === 'system' ? '系统语音（System Voice）' : '无（只显示字幕）'}</b>
+        <div className="small muted">音色来自你的设备 / 浏览器，不是真人级 AI 语音；不同设备听起来会不一样。台词的停顿、语调、情绪由游戏控制。</div>
+      </div>
+      <label className="toggle">
+        <span>角色语音</span>
+        <input type="checkbox" checked={s.voiceEnabled} onChange={(e) => s.set({ voiceEnabled: e.target.checked })} />
+      </label>
+      <label className="toggle">
+        <span>自然语调（停顿、语气变化）</span>
+        <input type="checkbox" checked={s.voiceNatural} disabled={!s.voiceEnabled} onChange={(e) => s.set({ voiceNatural: e.target.checked })} />
+      </label>
+      <div className="field">
+        <label>语音音量：{Math.round(s.voiceVolume * 100)}%</label>
+        <input className="range" type="range" min={0} max={1} step={0.05} value={s.voiceVolume} disabled={!s.voiceEnabled} onChange={(e) => s.set({ voiceVolume: Number(e.target.value) })} />
+      </div>
+      <div className="field">
+        <label>语速：{s.voiceRate.toFixed(1)} 倍</label>
+        <input className="range" type="range" min={0.6} max={1.6} step={0.1} value={s.voiceRate} disabled={!s.voiceEnabled} onChange={(e) => s.set({ voiceRate: Number(e.target.value) })} />
+      </div>
+      <label className="toggle">
+        <span>AI 动物说话</span>
+        <input type="checkbox" checked={s.aiTalk} onChange={(e) => s.set({ aiTalk: e.target.checked })} />
+      </label>
+      <label className="toggle">
+        <span>扑克垃圾话（挑衅台词）</span>
+        <input type="checkbox" checked={s.trashTalk} disabled={!s.aiTalk} onChange={(e) => s.set({ trashTalk: e.target.checked })} />
+      </label>
+      <label className="toggle">
+        <span>台词字幕</span>
+        <input type="checkbox" checked={s.subtitles} disabled={!s.aiTalk} onChange={(e) => s.set({ subtitles: e.target.checked })} />
+      </label>
+      {s.voiceEnabled && (
+        <Btn kind="ghost" size="sm" onClick={() => s.set({ voiceEnabled: false })}>
+          🔇 静音全部角色
+        </Btn>
+      )}
+    </div>
   );
 }
 

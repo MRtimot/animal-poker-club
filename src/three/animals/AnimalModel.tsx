@@ -5,7 +5,7 @@ import { AnimalConfig, EYE_COLORS, FUR_COLORS, SPECIES_MAP } from '../../core/pl
 import { GEO, GOLD, mat, shade, type Surface } from './materials';
 import { irisTexture } from '../realism';
 import { LOOKS, TailType } from './species';
-import { animatePose, basePose } from '../../animation/animalAnimations';
+import { animatePose, basePose, speechMotion } from '../../animation/animalAnimations';
 import { AnimName, useFx } from '../../store/fxStore';
 import { damp, ease } from '../../animation/motion';
 
@@ -531,6 +531,25 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
       if (mood.face === 'wide') pose.lean -= 0.1 * w;
       if (mood.face === 'sad') pose.headX += 0.25 * w;
     }
+    // 说话：嘴巴、头、耳朵、尾巴、眨眼（角色语音 / 台词字幕播放期间）
+    const sp = animKey ? useFx.getState().speech[animKey] : undefined;
+    let speechGazeX = 0;
+    let speechGazeY = 0;
+    if (sp) {
+      const m = speechMotion(nowMs, sp, seed, config.species);
+      if (m) {
+        speechGazeX = m.gazeX;
+        speechGazeY = m.gazeY;
+        pose.mouth = Math.max(pose.mouth, m.mouth);
+        pose.headX += m.headX;
+        pose.headY += m.headY;
+        pose.headZ += m.headZ;
+        pose.ear += m.ear;
+        pose.tail += m.tail;
+        pose.y += m.y;
+        if (m.blink) pose.eyeOpen = Math.min(pose.eyeOpen, 0.1);
+      }
+    }
     // 看向正在行动的玩家（平滑转头）
     const lt = lookRef.current == null || folded ? 0 : Math.max(-0.75, Math.min(0.75, lookRef.current));
     lookCur.current = damp(lookCur.current, lt, 3.2, dt);
@@ -542,8 +561,8 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
       gz.tx = (Math.random() - 0.5) * 0.36;
       gz.ty = (Math.random() - 0.5) * 0.18;
     }
-    const wantY = gz.tx + (lookRef.current == null ? 0 : Math.max(-0.4, Math.min(0.4, lookRef.current * 0.5)));
-    const wantX = gz.ty + (seated ? (thinking ? 0.32 : 0.16) : 0) + (folded ? 0.2 : 0);
+    const wantY = gz.tx + (lookRef.current == null ? 0 : Math.max(-0.4, Math.min(0.4, lookRef.current * 0.5))) + speechGazeY;
+    const wantX = gz.ty + (seated ? (thinking ? 0.32 : 0.16) : 0) + (folded ? 0.2 : 0) + speechGazeX;
     gz.x = damp(gz.x, wantX, 22, dt);
     gz.y = damp(gz.y, wantY, 22, dt);
     for (const g of gazeRefs.current) if (g) g.rotation.set(gz.x, gz.y, 0);

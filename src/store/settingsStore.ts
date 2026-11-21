@@ -21,6 +21,19 @@ export interface SettingsState {
   showFps: boolean;
   serverUrl: string;
   tutorialDone: boolean;
+  /** 🎙️ 角色语音 */
+  voiceEnabled: boolean;
+  voiceVolume: number;
+  /** 语速倍率 0.6 ~ 1.6 */
+  voiceRate: number;
+  /** 自然语调：分段停顿、音高 / 语速自然变化（关闭则整句平直地读） */
+  voiceNatural: boolean;
+  /** 角色（AI 动物）说话：关闭后不显示也不播放台词 */
+  aiTalk: boolean;
+  /** 挑衅 / 垃圾话台词 */
+  trashTalk: boolean;
+  /** 台词字幕（气泡） */
+  subtitles: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -67,6 +80,13 @@ export const useSettings = create<SettingsState>()(
       showFps: false,
       serverUrl: '',
       tutorialDone: false,
+      voiceEnabled: true,
+      voiceVolume: 0.9,
+      voiceRate: 1,
+      voiceNatural: true,
+      aiTalk: true,
+      trashTalk: true,
+      subtitles: true,
       set: (patch) => set(patch),
     }),
     {
@@ -91,6 +111,13 @@ export const useSettings = create<SettingsState>()(
           showFps: bool(p.showFps, current.showFps),
           serverUrl: typeof p.serverUrl === 'string' ? p.serverUrl.slice(0, 200) : current.serverUrl,
           tutorialDone: bool(p.tutorialDone, current.tutorialDone),
+          voiceEnabled: bool(p.voiceEnabled, current.voiceEnabled),
+          voiceVolume: vol(p.voiceVolume, current.voiceVolume),
+          voiceRate: typeof p.voiceRate === 'number' && p.voiceRate >= 0.6 && p.voiceRate <= 1.6 ? p.voiceRate : current.voiceRate,
+          voiceNatural: bool(p.voiceNatural, current.voiceNatural),
+          aiTalk: bool(p.aiTalk, current.aiTalk),
+          trashTalk: bool(p.trashTalk, current.trashTalk),
+          subtitles: bool(p.subtitles, current.subtitles),
         };
       },
     },

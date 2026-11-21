@@ -9,6 +9,7 @@ import type { Species } from '../core/player/profile';
 import { evaluateHand, HandCategory } from '../core/poker/handEvaluator';
 import { computeLayout, POT_POS, SeatLayout, V3 } from '../three/layout';
 import { sound } from '../audio/sound';
+import { dialogueAllowed, playDialogue } from './dialoguePlayback';
 import { useGame } from '../store/gameStore';
 import { EMOTE_ANIM } from './animalAnimations';
 import type { ChatMessage } from '../core/protocol';
@@ -338,8 +339,19 @@ export function useChatReactions(view: TableView | null) {
     const fresh: ChatMessage[] = idx >= 0 ? chat.slice(idx + 1) : [last];
     seen.current = last.id;
     const fx = useFx.getState();
+    const g = useGame.getState();
     for (const m of fresh) {
       if (m.kind === 'system') continue;
+      // 角色台词：由服务器决定，所有客户端同步播放（本地语音 + 说话动画）
+      if (m.dialogue) {
+        // 重连 / 收到历史记录时不重播旧台词
+        const age = Date.now() + (g.mode === 'online' ? g.clockOffset : 0) - m.time;
+        if (age > 6000 || !dialogueAllowed(m.dialogue)) continue;
+        const seat = view?.players.find((p) => p.id === m.from);
+        if (!seat) continue;
+        void playDialogue(m.from, m.text, m.dialogue, seat.profile.animal, { name: m.name });
+        continue;
+      }
       fx.bubble(m.from, m.text, m.kind === 'emote' ? 'emote' : 'chat');
       sound.play('pop');
       if (m.kind === 'emote') {

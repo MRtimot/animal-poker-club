@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
 import {
   ACCESSORIES, AnimalConfig, DEFAULT_ANIMAL, EAR_STYLES, EXPRESSIONS, EYEBROWS, EYE_COLORS, FACE_SHAPES, FUR_COLORS,
-  GLASSES, HATS, MOUTHS, NAME_IDEAS, OUTFITS, OUTFIT_COLORS, RARITY_COLOR, RARITY_NAME, SPECIES, SPECIES_MAP, randomAnimal,
+  GLASSES, HATS, MOUTHS, NAME_IDEAS, OUTFITS, OUTFIT_COLORS, RARITY_COLOR, RARITY_NAME, SPECIES, SPECIES_MAP, randomAnimal, type Species,
 } from '../../core/player/profile';
 import { isSpeciesUnlocked, levelFromXp, unlockText } from '../../progress/progression';
 import { BackButton, Btn, Seg } from '../common/ui';
@@ -11,9 +11,15 @@ import type { AnimName } from '../../store/fxStore';
 import { net } from '../../net/netClient';
 import { sound } from '../../audio/sound';
 import { useAccount } from '../../store/accountStore';
+import { EMOTIONS, EMOTION_NAME, PERSONALITIES_BY_SPECIES, VOICE_PRESETS, resolveVoiceProfile, type AnimalEmotion, type VoicePresetId } from '../../core/character/voice';
+import { DIALOGUE_EVENT_NAME, pickLine, type DialogueEvent } from '../../core/character/dialogue';
+import { planSpeech } from '../../core/character/prosody';
+import { playDialogue } from '../../animation/dialoguePlayback';
+import { voice } from '../../audio/voice';
+import { CREATOR_SPEAKER } from '../../three/scenes/ShowcaseScenes';
 import { nicknameError } from '../../core/account/types';
 
-type Tab = 'species' | 'look' | 'face' | 'outfit' | 'hat' | 'glasses' | 'acc';
+type Tab = 'species' | 'look' | 'face' | 'outfit' | 'hat' | 'glasses' | 'acc' | 'voice';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'species', label: '动物' },
   { id: 'look', label: '外观' },
@@ -22,6 +28,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'hat', label: '帽子' },
   { id: 'glasses', label: '眼镜' },
   { id: 'acc', label: '配件' },
+  { id: 'voice', label: '声音' },
 ];
 
 const PREVIEW_ANIMS: { name: AnimName; label: string }[] = [
@@ -202,6 +209,7 @@ export function CreatorScreen({ onAnim }: { onAnim: (a: { name: AnimName; start:
                 {options(ACCESSORIES, 'accessory')}
               </div>
             )}
+            {tab === 'voice' && <VoiceTab animal={animal} name={name} onChange={(a) => setAnimal(a)} />}
           </div>
         </div>
 
@@ -279,5 +287,164 @@ export function CreatorScreen({ onAnim }: { onAnim: (a: { name: AnimName; start:
       </div>
       <div className="creator-hint">🖱️ 拖动旋转 · 滚轮缩放 · 360° 查看</div>
     </>
+  );
+}
+
+// ───────────── 角色声音（动物创建器） ─────────────
+
+const SHOW_VOICE_DEBUG = import.meta.env.DEV || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug'));
+
+function VoiceTab({ animal, name, onChange }: { animal: AnimalConfig; name: string; onChange: (a: AnimalConfig) => void }) {
+  const v = animal.voice ?? { preset: 'auto' as VoicePresetId, pitch: 0, rate: 0 };
+  const profile = resolveVoiceProfile(animal);
+  const persona = PERSONALITIES_BY_SPECIES[animal.species];
+  const [line, setLine] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const setVoice = (patch: Partial<typeof v>) => onChange({ ...animal, voice: { ...v, ...patch } });
+
+  const tryVoice = async () => {
+    const sample = pickLine({ id: CREATOR_SPEAKER, species: animal.species, style: profile.style, catchphrase: animal.catchphrase, isAI: true }, animal.catchphrase ? 'catchphrase' : 'greet', Math.random);
+    if (!sample) return;
+    setLine(sample.text);
+    const r = await playDialogue(CREATOR_SPEAKER, sample.text, sample.ref, animal, { name: name || persona.name, bubble: false });
+    setResult(r === 'spoken' ? null : r === 'text-only' ? voiceUnavailableText() : r === 'off' ? '角色语音已在设置中关闭，只播放了说话动画' : null);
+  };
+
+  return (
+    <>
+      <div className="field">
+        <label>声音风格</label>
+        <Seg options={VOICE_PRESETS.map((p) => ({ value: p.id, label: p.name }))} value={v.preset} onChange={(preset) => setVoice({ preset })} />
+      </div>
+      <div className="field">
+        <label>音高微调：{v.pitch > 0 ? '+' : ''}{v.pitch.toFixed(2)}</label>
+        <input className="range" type="range" min={-0.5} max={0.5} step={0.05} value={v.pitch} onChange={(e) => setVoice({ pitch: Number(e.target.value) })} />
+      </div>
+      <div className="field">
+        <label>语速微调：{v.rate > 0 ? '+' : ''}{v.rate.toFixed(2)}</label>
+        <input className="range" type="range" min={-0.5} max={0.5} step={0.05} value={v.rate} onChange={(e) => setVoice({ rate: Number(e.target.value) })} />
+      </div>
+      <div className="field">
+        <label>口头禅（AI 对手偶尔会说，最多 24 个字）</label>
+        <input
+          className="input"
+          value={animal.catchphrase ?? ''}
+          maxLength={24}
+          placeholder={persona.catchphrases[0]}
+          onChange={(e) => onChange({ ...animal, catchphrase: e.target.value || undefined })}
+        />
+      </div>
+      <div className="small muted" style={{ marginBottom: 8, lineHeight: 1.6 }}>
+        性格：{persona.personalityTraits.join('、')} · 说话方式：{profile.personality.speakingStyle}
+      </div>
+      <Btn kind="cyan" onClick={tryVoice}>
+        ▶ 试听
+      </Btn>
+      {line && <div className="voice-line">“{line}”</div>}
+      {result && <div className="small muted" style={{ marginTop: 4 }}>{result}</div>}
+      {SHOW_VOICE_DEBUG && <VoiceDebug animal={animal} />}
+    </>
+  );
+}
+
+function voiceUnavailableText() {
+  const st = voice.status();
+  if (st === 'unsupported') return '🔇 当前设备不支持角色语音，只显示字幕与说话动画';
+  if (st === 'no-chinese-voice') return '🔇 当前设备没有中文语音，只显示字幕与说话动画';
+  return '浏览器需要先点击页面才能发声（自动播放限制），请再点一次试听';
+}
+
+/** 开发者调试：任意动物 × 情绪 × 牌局事件，测试语音 / 动画 / 完整台词 */
+function VoiceDebug({ animal }: { animal: AnimalConfig }) {
+  const [species, setSpecies] = useState<Species>(animal.species);
+  const [emotion, setEmotion] = useState<AnimalEmotion>('confident');
+  const [event, setEvent] = useState<DialogueEvent>('react_allin');
+  const [out, setOut] = useState('');
+  const test = { ...animal, species, voice: undefined };
+  const profile = resolveVoiceProfile(test);
+  const [strength, setStrength] = useState<'' | 'strong' | 'weak' | 'bluff'>('');
+  const [variant, setVariant] = useState(0);
+  const ctx = strength === 'bluff' ? { bluff: true } : strength ? { strength } : {};
+  const line = useMemo(() => pickLine({ id: CREATOR_SPEAKER, species, isAI: true }, event, Math.random, ctx), [species, event, strength, variant]); // eslint-disable-line
+  const text = line?.text ?? '……';
+  const plan = useMemo(() => planSpeech(text, profile, emotion, Math.random), [text, profile.voiceId, emotion, variant]); // eslint-disable-line
+  const picked = voice.status() === 'ok' ? voice.pickVoice(profile) : null;
+  return (
+    <div className="voice-debug">
+      <div className="vd-title">AI VOICE DEBUG</div>
+      <div className="vd-row">
+        <span>Character</span>
+        <select className="select" value={species} onChange={(e) => setSpecies(e.target.value as Species)}>
+          {SPECIES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.emoji} {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="vd-row">
+        <span>Emotion</span>
+        <select className="select" value={emotion} onChange={(e) => setEmotion(e.target.value as AnimalEmotion)}>
+          {EMOTIONS.map((e) => (
+            <option key={e} value={e}>
+              {EMOTION_NAME[e]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="vd-row">
+        <span>Event</span>
+        <select className="select" value={event} onChange={(e) => setEvent(e.target.value as DialogueEvent)}>
+          {(Object.keys(DIALOGUE_EVENT_NAME) as DialogueEvent[]).map((k) => (
+            <option key={k} value={k}>
+              {DIALOGUE_EVENT_NAME[k]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="vd-row">
+        <span>Context</span>
+        <select className="select" value={strength} onChange={(e) => setStrength(e.target.value as typeof strength)}>
+          <option value="">普通</option>
+          <option value="strong">牌好</option>
+          <option value="weak">牌差</option>
+          <option value="bluff">诈唬</option>
+        </select>
+      </div>
+      <div className="vd-info">
+        Voice: {picked ? `${picked.name} (${picked.lang})` : `无可用中文语音（${voice.status()}）`} · Quality: System Voice
+        <br />
+        Pitch {profile.pitch.toFixed(2)} · Rate {profile.speed.toFixed(2)} · Style {profile.style}
+        <br />
+        Dialogue: “{text}”{' '}
+        <a href="#" onClick={(e) => (e.preventDefault(), setVariant((x) => x + 1))}>
+          换一句
+        </a>
+        <br />
+        Prosody: 开口前 {plan.leadInMs}ms
+        {plan.segments.map((g, i) => (
+          <span key={i} className="vd-seg">
+            {' '}
+            [{g.kind === 'hesitation' ? '犹豫' : g.kind === 'stutter' ? '结巴' : '句'}] “{g.text}” p{g.pitch.toFixed(2)} r{g.rate.toFixed(2)} v{g.volume.toFixed(2)}
+            {g.pauseAfterMs ? ` → 停 ${g.pauseAfterMs}ms` : ''}
+          </span>
+        ))}
+      </div>
+      <div className="row wrap" style={{ gap: 6 }}>
+        <Btn size="sm" kind="ghost" onClick={async () => setOut(await voice.speak(text, profile, { emotion, priority: 3, plan }))}>
+          ▶ Test Voice（自然）
+        </Btn>
+        <Btn size="sm" kind="ghost" onClick={async () => setOut(await voice.speak(text, profile, { emotion, priority: 3, natural: false }))}>
+          ▶ 对比：平直念稿
+        </Btn>
+        <Btn size="sm" kind="ghost" onClick={async () => setOut(await playDialogue(CREATOR_SPEAKER, text, { emotion, event }, test, { name: '调试', withVoice: false, bubble: false }))}>
+          ▶ Test Animation
+        </Btn>
+        <Btn size="sm" kind="ghost" onClick={async () => setOut(await playDialogue(CREATOR_SPEAKER, text, { emotion, event }, test, { name: '调试', bubble: false }))}>
+          ▶ Test Full Dialogue
+        </Btn>
+      </div>
+      {out && <div className="vd-info">结果：{out}</div>}
+    </div>
   );
 }

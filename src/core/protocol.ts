@@ -4,6 +4,7 @@ import type { PlayerProfile } from './player/profile';
 import type { TableView } from './game/view';
 import type { AIDifficulty, AIPersonality } from './ai/ai';
 import type { AccountState, ProgressEvent } from './account/types';
+import type { DialogueRef } from './character/dialogue';
 
 export interface RoomSettings {
   maxPlayers: number; // 2~8
@@ -48,7 +49,8 @@ export interface RoomInfo {
 
 /** 与 AI 对战的设置（登录玩家的对局在服务器上运行，奖励由服务器计算） */
 export interface SoloSettings {
-  opponents: { personality: AIPersonality; difficulty: AIDifficulty }[];
+  /** character：玩家在动物创建器中保存的角色（外观 + 声音 + 口头禅），作为 AI 对手出场 */
+  opponents: { personality: AIPersonality; difficulty: AIDifficulty; character?: { name: string; animal: PlayerProfile['animal'] } }[];
   startingChips: number;
   smallBlind: number;
   bigBlind: number;
@@ -61,6 +63,11 @@ export interface ChatMessage {
   text: string;
   kind: 'chat' | 'emote' | 'system';
   time: number;
+  /**
+   * 角色台词（由服务器决定，所有客户端看到同一句）：客户端据此用本地语音合成播放，
+   * 服务器只同步这个小小的事件，从不发送音频文件。
+   */
+  dialogue?: DialogueRef;
 }
 
 export type ClientMessage =

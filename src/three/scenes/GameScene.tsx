@@ -97,7 +97,20 @@ function MoodBadge({ playerId }: { playerId: string }) {
 
 function Bubble({ playerId }: { playerId: string }) {
   const b = useFx((s) => s.bubbles.find((x) => x.playerId === playerId));
+  // 正在播放真实语音时显示 🔊
+  const voiced = useFx((s) => !!s.speech[playerId]?.voiced && s.speech[playerId]?.phase === 'speaking');
   if (!b) return null;
+  if (b.kind === 'dialogue') {
+    return (
+      <div key={b.id} className="bubble bubble-dialogue">
+        <div className="bd-head">
+          <span>{b.speaker}</span>
+          {voiced && <span className="bd-voice" aria-label="正在说话">🔊</span>}
+        </div>
+        <div className="bd-text">“{b.text}”</div>
+      </div>
+    );
+  }
   return (
     <div key={b.id} className={`bubble ${b.kind === 'emote' ? 'bubble-emote' : ''}`}>
       {b.text}

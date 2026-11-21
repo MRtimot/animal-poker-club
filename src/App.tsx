@@ -21,6 +21,7 @@ import { Btn, Toasts } from './ui/common/ui';
 import { useChatReactions, useTableDirector } from './animation/director';
 import { useProgressTracker } from './progress/tracker';
 import { net } from './net/netClient';
+import { voice } from './audio/voice';
 import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge, WelcomeBanner } from './ui/account/AccountScreens';
 import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import { NetDebugPanel } from './ui/debug/NetDebugPanel';
@@ -212,6 +213,11 @@ function Directors() {
   useTableDirector(active);
   useChatReactions(active);
   useProgressTracker(view, mode);
+  // 离开牌桌 / 关闭角色语音：立刻停止所有角色说话（不留下排队中的台词）
+  const voiceOn = useSettings((s) => s.voiceEnabled);
+  useEffect(() => {
+    if (screen !== 'game' || !voiceOn) voice.stop();
+  }, [screen, voiceOn]);
   return null;
 }
 
