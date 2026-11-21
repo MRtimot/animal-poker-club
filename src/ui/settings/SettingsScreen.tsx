@@ -73,7 +73,7 @@ export function SettingsScreen() {
         </div>
         <QuickSettings />
         <div className="field" style={{ marginTop: 10 }}>
-          <label>在线服务器地址（留空 = 使用当前网站自带的服务器）</label>
+          <label>在线服务器地址（留空 = 使用默认的游戏服务器）</label>
           <div className="row">
             <input className="input" placeholder="例如 ws://192.168.1.8:3001" value={url} onChange={(e) => setUrl(e.target.value)} />
             <Btn

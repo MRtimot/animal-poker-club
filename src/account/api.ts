@@ -1,6 +1,6 @@
 // 账号接口客户端：所有请求都带上 HttpOnly 会话 Cookie（前端读不到令牌本身）
 import type { AccountState } from '../core/account/types';
-import { useSettings } from '../store/settingsStore';
+import { serverHttpBase } from '../net/serverAddress';
 
 export class ApiError extends Error {
   constructor(
@@ -16,14 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-/** 自定义服务器地址时，账号接口也使用同一台服务器 */
-function base(): string {
-  const custom = useSettings.getState().serverUrl.trim();
-  if (!custom) return '';
-  let u = custom.replace(/^ws/, 'http').replace(/\/ws$/, '').replace(/\/$/, '');
-  if (!/^https?:\/\//.test(u)) u = 'http://' + u;
-  return u;
-}
+/** 账号接口与游戏服务器在同一个地址（自定义服务器 / Vercel + Render 分开部署时也一样） */
+const base = serverHttpBase;
 
 export async function api<T = any>(method: string, path: string, body?: unknown, timeoutMs = 10000): Promise<T> {
   const ctrl = new AbortController();
@@ -32,7 +26,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   try {
     res = await fetch(base() + path, {
       method,
-      credentials: 'include',
+      // 只向同一个网站发送登录 Cookie（网页与服务器分开部署时，只使用游客模式）
+      credentials: 'same-origin',
       headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,

@@ -4,11 +4,19 @@ import { useSettings } from '../../store/settingsStore';
 import { BLIND_OPTIONS, CHIP_OPTIONS } from '../../core/protocol';
 import { ROOM_CODE_LENGTH } from '../../core/utils/random';
 import { net } from '../../net/netClient';
+import { BUILT_IN_SERVER } from '../../net/serverAddress';
 import { BackButton, Btn, Seg } from '../common/ui';
 import { formatChips } from '../../utils/format';
 
 function ConnStatus() {
   const conn = useGame((s) => s.conn);
+  // 免费服务器闲置后会休眠：连接超过几秒还没成功，告诉玩家正在唤醒
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (conn === 'connected') return setSlow(false);
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, [conn]);
   const map = {
     idle: ['未连接', 'off'],
     connecting: ['正在连接服务器…', 'off'],
@@ -17,9 +25,16 @@ function ConnStatus() {
   } as const;
   const [text, cls] = map[conn];
   return (
-    <div className="row small" style={{ marginBottom: 14 }}>
-      <span className={`dot ${cls}`} />
-      <span className="muted">{text}</span>
+    <div style={{ marginBottom: 14 }}>
+      <div className="row small">
+        <span className={`dot ${cls}`} />
+        <span className="muted">{text}</span>
+      </div>
+      {slow && conn !== 'connected' && (
+        <div className="small muted" style={{ marginTop: 6, lineHeight: 1.6 }}>
+          ⏳ 游戏服务器可能正在唤醒（免费服务器闲置一段时间后会休眠），通常需要不到 1 分钟，请稍候…
+        </div>
+      )}
     </div>
   );
 }
@@ -122,7 +137,7 @@ export function OnlineScreen() {
 
         <div className="grow" />
         <p className="small muted" style={{ lineHeight: 1.7, marginTop: 16 }}>
-          服务器：{serverUrl || '当前网站自带的游戏服务器'}
+          服务器：{serverUrl || (BUILT_IN_SERVER ? '官方游戏服务器' : '当前网站自带的游戏服务器')}
           <br />
           联机由自建 WebSocket 服务器完成，不使用任何第三方服务。可在「设置」中修改服务器地址。
         </p>

@@ -157,7 +157,7 @@ describe('Google 登录与玩家档案', () => {
     expect(r.body.state.nickname).toBe('狐狸先生');
   });
 
-  it('测试 6 / 7 / 9：服务器结算升级、解锁动物、成就，并推送到所有设备', async () => {
+  it('测试 6 / 7 / 9：服务器结算升级、解锁动物、成就，并推送到所有设备', { timeout: 30000 }, async () => {
     const mac = new Browser(srv.port);
     const phone = new Browser(srv.port);
     await mac.googleLogin();

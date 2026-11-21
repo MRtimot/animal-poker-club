@@ -35,22 +35,37 @@ npm start          # 一个进程同时提供网页 + WebSocket（默认端口 3
 如果网页和游戏服务器不在同一个地址，可以在「设置 → 在线服务器地址」里填写，例如 `wss://poker.example.com/ws`。
 使用 HTTPS 时请在前面加一层反向代理（如 Nginx / Caddy）并转发 `/ws` 的 WebSocket。
 
-### 免费部署（RM0）：Render
+### 免费部署（RM0）：网页放 Vercel + 游戏服务器放 Render
 
-项目自带 `render.yaml`。在 [Render](https://render.com) 用 GitHub 登录 → New → Blueprint → 选择本仓库 → Apply。
-构建完成后会得到一个免费的 `https://xxx.onrender.com` 网址（自带 HTTPS），把网址发给朋友即可一起玩。
+Vercel 只能托管网页，不能运行一直在线的 WebSocket 服务器（多人房间需要它），所以分成两部分，都用免费方案：
+
+**第 1 步：在 Render 部署游戏服务器**
+
+1. 打开 [Render](https://render.com)，用 GitHub 登录（**不要绑定信用卡**）→ New → Blueprint → 选择本仓库 → Apply（使用项目自带的 `render.yaml`）。
+2. 部署完成后记下服务器网址，例如 `https://animal-poker-club.onrender.com`。
+3. 在 Render 面板 → Environment 里把 `APC_ALLOWED_ORIGINS` 设为你的 Vercel 网址，例如 `https://animal-poker.vercel.app`（只允许你的网页连接这台服务器；多个网址用逗号分隔）。
+
+**第 2 步：在 Vercel 部署网页**
+
+1. Vercel → Add New → Project → 导入本仓库（项目自带 `vercel.json`，会自动识别为 Vite 项目）。
+2. 在 Settings → Environment Variables 添加 `VITE_GAME_SERVER` = 第 1 步的 Render 网址（这是公开地址，不是密钥）。
+3. Deploy（修改环境变量后需要重新部署一次才会生效）。
+
+玩家打开你的 Vercel 网址就能玩，网页会自动连接 Render 上的游戏服务器。
+只用 Render 也可以：直接打开 Render 网址，网页和服务器都在同一个地方。
 
 | 项目 | 成本 | 说明 |
 | --- | --- | --- |
-| 网页 + 游戏服务器 | 免费 | Render 免费 Web 服务：一个 Node 进程同时提供网页和 WebSocket |
+| 网页 | 免费 | Vercel（Hobby 免费方案）托管静态网页 |
+| 游戏服务器 | 免费 | Render 免费 Web 服务：Node 进程提供 WebSocket 实时连接 |
 | 实时通信 | 免费 | 自建 WebSocket（`ws` 开源库），不使用任何付费多人联机服务 |
 | 数据库 | 不需要 | 在线房间保存在服务器内存；玩家进度保存在各自浏览器，可导出 / 导入 |
-| HTTPS | 免费 | Render 自带证书 |
+| HTTPS | 免费 | Vercel 与 Render 都自带证书 |
 | 密钥 / API Key | 无 | 默认配置不需要任何密钥 |
 
 免费方案的限制（以 Render 官方文档为准，部署前请再核对一次）：
 
-- 闲置约 15 分钟会休眠；下一次有人打开网址或建立 WebSocket 连接时自动唤醒，约需 1 分钟
+- Render 服务器闲置约 15 分钟会休眠；下一次有人连接时自动唤醒，约需 1 分钟（网页会显示“服务器正在唤醒”）
 - 每个工作区每月 750 小时免费实例时间；用完后免费服务会暂停到下个月
 - **不要绑定信用卡**：没有付款方式时，超出免费额度只会暂停服务，不会自动扣费
 - 重新部署 / 重启时在线房间会消失（玩家会看到友好提示）；服务器磁盘不会永久保存数据，所以默认不开启账号系统
@@ -75,7 +90,8 @@ GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com npm start
 | --- | --- |
 | `GOOGLE_CLIENT_ID` | Google OAuth 客户端 ID；不设置则不显示 Google 登录 |
 | `APC_DB_PATH` | 玩家数据库文件位置，默认 `data/apc.sqlite`（请定期备份；已加入 .gitignore） |
-| `APC_ALLOWED_ORIGINS` | 网页与服务器不同域名时，允许的网页来源（逗号分隔） |
+| `APC_ALLOWED_ORIGINS` | （服务器）允许连接的网页地址，例如你的 Vercel 网址；支持 `https://*.vercel.app` 通配（会允许所有 Vercel 网站，不推荐）。不设置则不限制来源 |
+| `VITE_GAME_SERVER` | （网页构建时）游戏服务器地址，例如 `https://xxx.onrender.com`；不设置则连接网页所在的网址 |
 | `APC_DEV_LOGIN=1` | 仅开发环境：显示「测试登录」，不需要 Google 即可测试账号功能；正式环境（`NODE_ENV=production`）永远关闭 |
 
 正式环境请使用 HTTPS（反向代理需转发 `X-Forwarded-Proto`），登录 Cookie 会自动带上 `Secure`。

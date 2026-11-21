@@ -6,6 +6,7 @@ import { AccountError, type AccountService } from './account/accounts';
 import { GoogleVerifier, TokenError } from './auth/google';
 import { NONCE_COOKIE, SESSION_COOKIE, SESSION_TTL_MS, cookie, isSecureRequest, parseCookies, type SessionStore } from './auth/sessions';
 import type { AccountState } from '../src/core/account/types';
+import { inAllowList, isSameSite } from './origins';
 
 export interface ApiOptions {
   accounts: AccountService;
@@ -91,13 +92,7 @@ export function createApi(o: ApiOptions) {
   function sameOrigin(req: http.IncomingMessage) {
     const origin = req.headers.origin;
     if (!origin) return true; // 非浏览器客户端（测试、命令行）
-    try {
-      const host = req.headers['x-forwarded-host'] ?? req.headers.host;
-      const extra = (process.env.APC_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-      return new URL(origin).host === host || extra.includes(origin);
-    } catch {
-      return false;
-    }
+    return isSameSite(req, origin) || inAllowList(origin);
   }
 
   function currentUser(req: http.IncomingMessage) {

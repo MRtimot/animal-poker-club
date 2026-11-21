@@ -11,8 +11,8 @@ import { SessionStore, SESSION_COOKIE, parseCookies } from './auth/sessions';
 import { GoogleVerifier, type GoogleVerifierOptions } from './auth/google';
 import { createApi } from './api';
 import { RateLimiter } from './rateLimit';
+import { inAllowList, isSameSite, originAllowed } from './origins';
 
-const MAX_CONNS_PER_IP = 12;
 
 /** 未开启账号系统时的接口：只告诉前端“没有登录功能”，其他一律 404 */
 async function guestOnlyApi(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -46,6 +46,8 @@ export interface ServerOptions extends Omit<RoomServerOptions, 'accounts'> {
   google?: GoogleVerifierOptions | null;
   devLogin?: boolean;
   production?: boolean;
+  /** 每个 IP 的并发连接上限与每分钟新建连接上限（防刷连接；同一网络下的多名玩家共用一个 IP） */
+  connLimits?: { perIp?: number; perMinute?: number };
 }
 
 export function createServer(port: number, opts: ServerOptions = {}) {
@@ -84,14 +86,27 @@ export function createServer(port: number, opts: ServerOptions = {}) {
   const sessionSweep = setInterval(() => sessions?.sweep(), 3600_000);
   // 每个 IP 的并发连接数与新建连接频率（防止恶意刷连接）
   const ipConns = new Map<string, number>();
-  const ipConnects = new RateLimiter(30, 60_000);
+  const maxConnsPerIp = opts.connLimits?.perIp ?? 20;
+  const ipConnects = new RateLimiter(opts.connLimits?.perMinute ?? 60, 60_000);
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
+      // 网页在其他网址（例如 Vercel）时：允许它读取接口（只限允许列表，不带登录 Cookie）
+      const origin = req.headers.origin;
+      if (origin && !isSameSite(req, origin) && inAllowList(origin)) {
+        res.setHeader('access-control-allow-origin', origin);
+        res.setHeader('vary', 'Origin');
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, { 'access-control-allow-methods': 'GET', 'access-control-max-age': '86400' });
+          res.end();
+          return;
+        }
+      }
       await api(req, res);
       return;
     }
+
     if (url.pathname === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, rooms: rooms.roomCount }));
@@ -99,7 +114,8 @@ export function createServer(port: number, opts: ServerOptions = {}) {
     }
     if (!fs.existsSync(DIST)) {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('动物扑克俱乐部服务器运行中。开发模式请访问 Vite 地址（默认 http://localhost:5173）。');
+      // 只部署了游戏服务器（网页在 Vercel 等其他地方），或开发模式（网页由 Vite 提供）
+      res.end('🐾 动物扑克俱乐部游戏服务器运行中。请打开网页的网址开始游戏。');
       return;
     }
     let file = path.join(DIST, decodeURIComponent(url.pathname));
@@ -121,7 +137,7 @@ export function createServer(port: number, opts: ServerOptions = {}) {
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
     const open = ipConns.get(ip) ?? 0;
-    if (open >= MAX_CONNS_PER_IP || !ipConnects.allow(ip)) {
+    if (open >= maxConnsPerIp || !ipConnects.allow(ip)) {
       ws.close(1013, 'too many connections');
       return;
     }
@@ -133,15 +149,14 @@ export function createServer(port: number, opts: ServerOptions = {}) {
     });
     let alive = true;
     // 只有来自本站页面的连接才会带上登录身份（防止跨站 WebSocket 冒用 Cookie）
-    const origin = req.headers.origin;
-    let sameSite = true;
-    if (origin) {
-      try {
-        sameSite = new URL(origin).host === req.headers.host || (process.env.APC_ALLOWED_ORIGINS ?? '').split(',').includes(origin);
-      } catch {
-        sameSite = false;
-      }
+    // 只允许本站或允许列表中的网页连接（APC_ALLOWED_ORIGINS，例如你的 Vercel 网址）
+    if (!originAllowed(req)) {
+      ws.close(1008, 'origin not allowed');
+      return;
     }
+    // 只有来自同一个网站的连接才会带上登录身份（防止跨站 WebSocket 冒用 Cookie）
+    const origin = req.headers.origin;
+    const sameSite = !origin || isSameSite(req, origin) || inAllowList(origin);
     let userId: string | null = null;
     try {
       userId = sameSite && sessions ? sessions.resolve(parseCookies(req.headers.cookie)[SESSION_COOKIE]) : null;

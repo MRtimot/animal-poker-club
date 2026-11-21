@@ -9,7 +9,8 @@ import { ROOM_CODE_LENGTH } from '../src/core/utils/random';
 
 let srv: Awaited<ReturnType<typeof createServer>>;
 beforeAll(async () => {
-  srv = await createServer(0, { pace: 0.02, turnTimeMs: 600, lobbyGraceMs: 2000 });
+  // 所有测试客户端来自同一个 IP，放宽连接限制（IP 限制在下面单独测试）
+  srv = await createServer(0, { pace: 0.02, turnTimeMs: 600, lobbyGraceMs: 2000, connLimits: { perIp: 1000, perMinute: 10000 } });
 });
 afterAll(async () => {
   await srv.close();
@@ -218,6 +219,26 @@ describe('限流', () => {
     for (const p of ps) p.close();
   });
 
+  it('同一 IP 的并发连接数受限', async () => {
+    const small = await createServer(0, { connLimits: { perIp: 3, perMinute: 100 } });
+    try {
+      const states = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          new Promise<WebSocket>((resolve) => {
+            const ws = new WebSocket(`ws://localhost:${small.port}/ws`);
+            ws.on('open', () => setTimeout(() => resolve(ws), 150));
+            ws.on('error', () => resolve(ws));
+          }),
+        ),
+      );
+      const openCount = states.filter((w) => w.readyState === WebSocket.OPEN).length;
+      expect(openCount).toBe(3);
+      states.forEach((w) => w.close());
+    } finally {
+      await small.close();
+    }
+  });
+
   it('建房频率受限', async () => {
     const p = new Player('建房狂');
     await p.connect();
@@ -265,4 +286,45 @@ describe('负载：2 / 4 / 6 人牌局', () => {
       for (const p of ps) p.close();
     });
   }
+});
+
+import { inAllowList } from '../server/origins';
+
+describe('网页与服务器分开部署（Vercel + Render）', () => {
+  it('允许列表：精确网址与通配子域名', () => {
+    const list = ['https://animal-poker.vercel.app', 'https://*.preview.example.com'];
+    expect(inAllowList('https://animal-poker.vercel.app', list)).toBe(true);
+    expect(inAllowList('https://evil.vercel.app', list)).toBe(false);
+    expect(inAllowList('http://animal-poker.vercel.app', list)).toBe(false);
+    expect(inAllowList('https://pr-12.preview.example.com', list)).toBe(true);
+    expect(inAllowList('https://preview.example.com.evil.io', list)).toBe(false);
+    expect(inAllowList('not a url', list)).toBe(false);
+  });
+
+  it('设置允许列表后：允许的网页可以连接并读取配置，其他网站被拒绝', async () => {
+    const prev = process.env.APC_ALLOWED_ORIGINS;
+    process.env.APC_ALLOWED_ORIGINS = 'https://animal-poker.vercel.app';
+    try {
+      const open = (origin: string) =>
+        new Promise<'open' | 'closed'>((resolve) => {
+          const ws = new WebSocket(`ws://localhost:${srv.port}/ws`, { headers: { origin } });
+          ws.on('message', () => {
+            ws.close();
+            resolve('open');
+          });
+          ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', profile: { name: '测试', animal: DEFAULT_ANIMAL } })));
+          ws.on('close', () => resolve('closed'));
+          ws.on('error', () => resolve('closed'));
+        });
+      expect(await open('https://animal-poker.vercel.app')).toBe('open');
+      expect(await open('https://evil.example')).toBe('closed');
+      const ok = await fetch(`http://localhost:${srv.port}/api/auth/config`, { headers: { origin: 'https://animal-poker.vercel.app' } });
+      expect(ok.headers.get('access-control-allow-origin')).toBe('https://animal-poker.vercel.app');
+      const bad = await fetch(`http://localhost:${srv.port}/api/auth/config`, { headers: { origin: 'https://evil.example' } });
+      expect(bad.headers.get('access-control-allow-origin')).toBeNull();
+    } finally {
+      if (prev === undefined) delete process.env.APC_ALLOWED_ORIGINS;
+      else process.env.APC_ALLOWED_ORIGINS = prev;
+    }
+  });
 });

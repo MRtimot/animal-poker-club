@@ -4,9 +4,9 @@ import { onIdentityChanged, onServerAccount, onServerProgress } from '../store/a
 import type { PlayerAction } from '../core/table/types';
 import type { AIDifficulty, AIPersonality } from '../core/ai/ai';
 import { useGame } from '../store/gameStore';
-import { useSettings } from '../store/settingsStore';
 import { currentProfile } from '../store/profileStore';
 import { safeStorage } from '../utils/format';
+import { serverWsUrl } from './serverAddress';
 
 const SESSION_KEY = 'apc-session';
 const LAST_ROOM_KEY = 'apc-last-room';
@@ -37,15 +37,7 @@ class NetClient {
   private pingTimer: number | null = null;
 
   url(): string {
-    const custom = useSettings.getState().serverUrl.trim();
-    if (custom) {
-      let u = custom.replace(/^http/, 'ws');
-      if (!/^wss?:\/\//.test(u)) u = 'ws://' + u;
-      if (!u.endsWith('/ws')) u = u.replace(/\/$/, '') + '/ws';
-      return u;
-    }
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws`;
+    return serverWsUrl();
   }
 
   get sessionId(): string | undefined {
