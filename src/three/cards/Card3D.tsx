@@ -305,3 +305,18 @@ export function Card3D({
     </>
   );
 }
+
+/**
+ * 卡牌本体（不含发牌动画）：与牌桌上的卡牌共用同一套几何体与材质（不会重复创建资源）。
+ * 牌面朝 +Y；父级负责位置与翻面（绕 Z 轴旋转 π 即背面朝上）。首页的滚动展示使用它。
+ */
+export function CardBody({ card }: { card: Card }) {
+  const faceMat = getFace(card);
+  return (
+    <>
+      <mesh geometry={faceGeo} material={faceMat} castShadow receiveShadow />
+      <mesh geometry={backGeo} material={getBack()} castShadow />
+      <mesh geometry={edgeGeo} material={edgeMats} />
+    </>
+  );
+}

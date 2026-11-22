@@ -90,15 +90,25 @@ export function SceneLights({ quality }: { quality: Quality }) {
       {/* 暖色补光：模拟壁灯反射，避免暗部死黑 */}
       <pointLight position={[7, 4.2, 6]} intensity={14} color={C.fill} distance={16} decay={2} />
       <pointLight position={[-7, 4.2, 5]} intensity={8} color={C.fill} distance={14} decay={2} />
-      {quality !== 'low' && (
-        // 本地生成的环境反射（不加载任何外部 HDR 文件）：给金属、漆面、玻璃和眼睛提供真实的反射
-        <Environment resolution={quality === 'medium' ? 64 : 256} frames={1}>
-          <Lightformer intensity={2.2} color="#ffe2b8" position={[0, 6, 0]} rotation-x={Math.PI / 2} scale={[5, 5, 1]} form="circle" />
-          <Lightformer intensity={0.5} color="#ffb070" position={[-8, 2.5, 0]} rotation-y={Math.PI / 2} scale={[10, 2, 1]} />
-          <Lightformer intensity={0.45} color="#ffb070" position={[8, 2.5, 0]} rotation-y={-Math.PI / 2} scale={[10, 2, 1]} />
-          <Lightformer intensity={0.3} color={room === 'penthouse' ? '#8fa8ff' : '#ffcf90'} position={[0, 3, -9]} scale={[14, 4, 1]} />
-        </Environment>
-      )}
     </>
+  );
+}
+
+/**
+ * 本地生成的环境反射（不加载任何外部 HDR 文件）：给金属、漆面、玻璃和眼睛提供真实的反射。
+ * 在整个画布里只挂载一次（App 中），切换场景时不会重新生成——
+ * 之前每个场景各自挂载一份，每次切换页面都会在显卡上残留约 2 张贴图（内存泄漏）。
+ */
+export function SharedEnvironment() {
+  const quality = useSettings((s) => s.quality);
+  const room = useSettings((s) => s.room);
+  if (quality === 'low') return null;
+  return (
+    <Environment resolution={quality === 'medium' ? 64 : 256} frames={1}>
+      <Lightformer intensity={2.2} color="#ffe2b8" position={[0, 6, 0]} rotation-x={Math.PI / 2} scale={[5, 5, 1]} form="circle" />
+      <Lightformer intensity={0.5} color="#ffb070" position={[-8, 2.5, 0]} rotation-y={Math.PI / 2} scale={[10, 2, 1]} />
+      <Lightformer intensity={0.45} color="#ffb070" position={[8, 2.5, 0]} rotation-y={-Math.PI / 2} scale={[10, 2, 1]} />
+      <Lightformer intensity={0.3} color={room === 'penthouse' ? '#8fa8ff' : '#ffcf90'} position={[0, 3, -9]} scale={[14, 4, 1]} />
+    </Environment>
   );
 }

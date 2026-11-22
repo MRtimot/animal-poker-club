@@ -9,6 +9,8 @@ import { cameraFocus } from './three/camera/CameraRig';
 import { useProfile } from './store/profileStore';
 import { GameScene } from './three/scenes/GameScene';
 import { CreatorScene, HomeScene, LobbyScene } from './three/scenes/ShowcaseScenes';
+import { HomeWorld } from './three/scenes/HomeWorld';
+import { SharedEnvironment } from './three/scenes/SceneLights';
 import { HomeScreen } from './ui/home/HomeScreen';
 import { HubScreen } from './ui/home/HubScreen';
 import { OnlineScreen } from './ui/lobby/OnlineScreen';
@@ -124,6 +126,7 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
 
   let content: ReactNode;
   if (screen === 'game' && view) content = <GameScene view={view} />;
+  else if (screen === 'home') content = <HomeWorld />;
   else if (screen === 'creator' || screen === 'onboarding') content = <CreatorScene config={animal} anim={creatorAnim} />;
   else if (screen === 'room' && room) content = <LobbyScene members={room.members} playerId={playerId} />;
   else content = <HomeScene config={animal} />;
@@ -132,6 +135,7 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
     <>
       <color attach="background" args={['#120a20']} />
       {screen !== 'creator' && screen !== 'onboarding' && <fog attach="fog" args={['#1a0f22', 16, 34]} />}
+      <SharedEnvironment />
       {content}
       {screen === 'game' && cameraMode === 'free' && <OrbitControls target={[0, 1, 0]} maxPolarAngle={Math.PI * 0.48} minDistance={3} maxDistance={16} enableDamping makeDefault />}
       <PostFX quality={quality} game={screen === 'game'} />
