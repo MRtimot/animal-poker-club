@@ -3965,3 +3965,43 @@ h1, h2, h3 {
     white-space: nowrap;
   }
 }
+/* 键盘可访问性 */
+.home-scroll:focus {
+  outline: none;
+}
+.hn-links button:focus-visible,
+.hn-icon:focus-visible,
+.hn-brand:focus-visible,
+.hn-menu:focus-visible,
+.hn-sheet button:focus-visible,
+.hf-links button:focus-visible {
+  outline: 2px solid #fff3c8;
+  outline-offset: 2px;
+}
+/* 3D 无法显示时：静态背景 + 不挡住页面的小提示 */
+.webgl-fallback {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 80% at 60% 45%, #3a2416 0%, #1a0f14 55%, #0b070c 100%);
+}
+.webgl-fallback-note {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 200;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: min(560px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(12, 9, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  color: var(--muted);
+}
+.webgl-fallback-note b {
+  color: var(--text);
+}

@@ -52,6 +52,11 @@ class NetClient {
     return tabStorage()?.getItem(SESSION_KEY) ?? undefined;
   }
 
+  /** 这个标签页刷新前是否在某个房间里（是的话打开页面时自动重连回座位） */
+  get wasInRoom(): boolean {
+    return !!tabStorage()?.getItem(LAST_ROOM_KEY);
+  }
+
   connect() {
     this.wanted = true;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
@@ -397,6 +402,16 @@ class NetClient {
     tabStorage()?.removeItem(LAST_ROOM_KEY);
     const g = useGame.getState();
     g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
+  }
+
+  /**
+   * 回到首页且不在任何房间里：断开连接并停止重连（首页不需要多人服务器；
+   * 例如服务器离线时从在线页返回首页，不能在后台一直重试）。正在等待离开确认时由确认流程负责断开。
+   */
+  releaseIfIdle() {
+    const g = useGame.getState();
+    if (this.leavingRoom || g.room || g.mode === 'online') return;
+    if (this.ws || this.retryTimer || this.wanted) this.disconnect();
   }
 
   /** 玩家开始新的房间操作：不要在离开确认后断开连接 */

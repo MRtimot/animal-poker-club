@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { forestWindowTexture } from '../textures';
@@ -235,6 +235,8 @@ function Dust({ count }: { count: number }) {
     return { geo: g, seeds };
   }, [count]);
   const base = useMemo(() => (geo.getAttribute('position').array as Float32Array).slice(), [geo]);
+  // 通过 props 传入的几何体不会被自动释放：离开场景时手动释放（否则每次进出牌桌都会残留一份）
+  useEffect(() => () => geo.dispose(), [geo]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     const arr = geo.getAttribute('position').array as Float32Array;

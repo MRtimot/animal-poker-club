@@ -133,6 +133,33 @@ describe('在线房间：牌局 → 返回首页 → 再进入', () => {
   }, 30000);
 });
 
+describe('首页不保持多人连接', () => {
+  it('服务器连不上时从在线页回到首页：停止重连，不在后台一直重试', async () => {
+    const realUrl = net.url.bind(net);
+    (net as any).url = () => 'ws://127.0.0.1:1/api/ws'; // 不存在的服务器
+    try {
+      net.connect();
+      await until(() => !!timers().retry, 5000);
+      expect(useGame.getState().conn).toBe('disconnected');
+      useGame.getState().setScreen('home');
+      net.releaseIfIdle();
+      expect(timers()).toEqual({ ws: null, ping: null, rotate: null, retry: null, queue: 0 });
+      await wait(1200);
+      expect(timers().ws).toBeNull(); // 没有再次尝试连接
+    } finally {
+      (net as any).url = realUrl;
+    }
+  });
+
+  it('在房间里时 releaseIfIdle 不会断开（不影响正在进行的在线对局）', async () => {
+    await createAndStart();
+    net.releaseIfIdle();
+    expect(timers().ws).toBeTruthy();
+    session.leave('home');
+    await until(() => !timers().ws);
+  }, 30000);
+});
+
 describe('本地 AI 对战：结束 → 返回首页 → 再来', () => {
   it('离开后 AI 停止（不再更新牌桌、不再说话），可以反复开始新的一局', async () => {
     const settings = { opponents: [{ personality: 'crazyFrog' as const, difficulty: 'easy' as const }, { personality: 'aggressiveFox' as const, difficulty: 'easy' as const }], startingChips: 1000, smallBlind: 10, bigBlind: 20 };

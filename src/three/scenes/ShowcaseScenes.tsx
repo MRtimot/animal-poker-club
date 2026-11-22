@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { ContactShadows, Environment, Html, Lightformer, OrbitControls } from '@react-three/drei';
+import { Html, OrbitControls } from '@react-three/drei';
+import { shadowGeo, shadowMaterial } from '../realism';
 import * as THREE from 'three';
 import { AnimalModel } from '../animals/AnimalModel';
 import { AnimalConfig, randomAnimal } from '../../core/player/profile';
@@ -212,18 +213,14 @@ export function CreatorScene({ config, anim }: { config: AnimalConfig; anim: { n
       <spotLight position={[3, 6, 4]} angle={0.5} penumbra={0.8} intensity={110} color="#fff1e0" castShadow={quality !== 'low'} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
       <pointLight position={[-4, 2.4, 2]} intensity={14} color="#e8eef8" />
       <directionalLight position={[0, 4, -6]} intensity={1.4} color="#dfe8ff" />
-      {quality !== 'low' && (
-        <Environment resolution={128} frames={1}>
-          <Lightformer intensity={2} color="#fff4e6" position={[3, 5, 4]} scale={[4, 4, 1]} />
-          <Lightformer intensity={0.8} color="#e6eeff" position={[-5, 2, 1]} rotation-y={Math.PI / 2} scale={[6, 3, 1]} />
-        </Environment>
-      )}
+      {/* 环境反射使用全局共享的一份（SharedEnvironment），不在这里单独生成，避免每次进入创建器都残留显卡贴图 */}
       <group>
         <Pedestal position={[0, -0.3, 0]} r={1.2} />
         <CreatorAnimal config={config} anim={anim} />
       </group>
       <Bursts density={quality === 'low' ? 0.5 : 1} />
-      <ContactShadows position={[0, -0.29, 0]} opacity={0.45} scale={6} blur={2.4} far={3} />
+      {/* 柔和的接触阴影：使用共享的阴影贴图（drei 的 ContactShadows 每次挂载都会残留两个渲染目标，造成显存泄漏） */}
+      <mesh geometry={shadowGeo} material={shadowMaterial('circle', 0.5)} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.295, 0]} scale={2.6} renderOrder={1} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.31, 0]} receiveShadow>
         <circleGeometry args={[12, 48]} />
         <meshStandardMaterial color="#1c1a1d" roughness={0.7} />

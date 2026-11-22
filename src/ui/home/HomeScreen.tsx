@@ -28,6 +28,8 @@ export function HomeScreen() {
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    // 键盘滚动（PageUp / PageDown / 空格 / Home / End / 方向键）：让滚动容器获得焦点（不改变滚动位置）
+    el.focus({ preventScroll: true });
     const nav = document.querySelector<HTMLElement>('[data-nav]');
     const links = nav ? [...nav.querySelectorAll<HTMLElement>('[data-nav-link]')] : [];
     let lastActive = '';
@@ -78,7 +80,7 @@ export function HomeScreen() {
     <HomeActionsContext.Provider value={actions}>
       <div className="screen home-premium">
         <HomeNav />
-        <div className="home-scroll" ref={scroller}>
+        <div className="home-scroll" ref={scroller} tabIndex={-1}>
           <div className="home-track">
             <HeroSection />
             <TableSection />

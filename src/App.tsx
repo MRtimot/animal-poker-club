@@ -151,17 +151,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: string |
     return { error: e.message };
   }
   render() {
+    // 3D 失败时不挡住页面：首页文字、按钮、设置等仍然可以使用（显示一张静态背景 + 小提示）
     if (this.state.error)
       return (
-        <div className="loading-screen">
-          <div className="animals">😿</div>
-          <h2 style={{ margin: '12px 0' }}>3D 场景加载失败</h2>
-          <p className="muted" style={{ maxWidth: 420 }}>
-            你的浏览器可能不支持 WebGL，或显卡驱动出现问题。请尝试更新浏览器，或在设置中把画质调到「低」。
-          </p>
-          <p className="small muted">错误信息：{this.state.error}</p>
-          <div>
-            <Btn onClick={() => location.reload()}>重新加载</Btn>
+        <div className="webgl-fallback" role="status">
+          <div className="webgl-fallback-note">
+            <b>😿 3D 场景无法显示</b>
+            <span>浏览器可能不支持 WebGL 或显卡驱动有问题。页面其他功能仍可使用；可以在设置中把画质调到「低」后重新加载。</span>
+            <Btn size="sm" kind="ghost" onClick={() => location.reload()}>
+              重新加载
+            </Btn>
           </div>
         </div>
       );
@@ -229,6 +228,10 @@ function Directors() {
   useEffect(() => {
     if (screen !== 'game' || !voiceOn) voice.stop();
   }, [screen, voiceOn]);
+  // 首页是展示层：不在房间里时不保持多人连接
+  useEffect(() => {
+    if (screen === 'home') net.releaseIfIdle();
+  }, [screen]);
   return null;
 }
 
@@ -264,7 +267,9 @@ export default function App() {
       const g = useGame.getState();
       if (a.status === 'guest' && !guestChosen() && g.screen === 'home') g.setScreen('login');
       if (a.status === 'signedIn' && a.account && !a.account.onboarded && g.screen === 'home') g.setScreen('onboarding');
-      if (net.sessionId || a.status === 'signedIn') net.connect();
+      // 首页不主动连接多人服务器：只有刷新前正在房间里（需要回到座位）才自动重连；
+      // 其他情况在真正创建 / 加入房间、开始服务器对局时才连接
+      if (net.sessionId && net.wasInRoom) net.connect();
     });
   }, []);
 
