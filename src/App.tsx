@@ -1,24 +1,14 @@
-import { Component, ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Fragment, ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState, type ErrorInfo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { Bloom, DepthOfField, EffectComposer, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { useGame } from './store/gameStore';
+import { useGame, type Screen } from './store/gameStore';
 import { useSettings, Quality, QUALITY_NAME } from './store/settingsStore';
-import { cameraFocus } from './three/camera/CameraRig';
 import { useProfile } from './store/profileStore';
-import { GameScene } from './three/scenes/GameScene';
 import { CreatorScene, HomeScene, LobbyScene } from './three/scenes/ShowcaseScenes';
 import { HomeWorld } from './three/scenes/HomeWorld';
 import { SharedEnvironment } from './three/scenes/SceneLights';
 import { HomeScreen } from './ui/home/HomeScreen';
-import { HubScreen } from './ui/home/HubScreen';
-import { OnlineScreen } from './ui/lobby/OnlineScreen';
-import { RoomLobby } from './ui/lobby/RoomLobby';
-import { CreatorScreen } from './ui/creator/CreatorScreen';
-import { CollectionScreen } from './ui/collection/CollectionScreen';
-import { SettingsScreen } from './ui/settings/SettingsScreen';
-import { GameHUD } from './ui/game/GameHUD';
 import { Btn, Toasts } from './ui/common/ui';
 import { useChatReactions, useTableDirector } from './animation/director';
 import { useProgressTracker } from './progress/tracker';
@@ -33,24 +23,43 @@ import { session } from './net/session';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
-/** 后期处理：极克制的泛光 + 暗角；极高画质下加入跟随镜头焦点的景深 */
+// ───────────── 按需加载（代码拆分）─────────────
+// 首页只下载首页需要的代码；牌桌、牌桌界面、动物创建器、大厅、设置等在需要时才加载，
+// 首页空闲后会在后台预取，切换页面时通常已经下载好。
+const loadGameScene = () => import('./three/scenes/GameScene');
+const loadGameHUD = () => import('./ui/game/GameHUD');
+const loadCreator = () => import('./ui/creator/CreatorScreen');
+const loadHub = () => import('./ui/home/HubScreen');
+const loadOnline = () => import('./ui/lobby/OnlineScreen');
+const loadLobby = () => import('./ui/lobby/RoomLobby');
+const loadCollection = () => import('./ui/collection/CollectionScreen');
+const loadSettings = () => import('./ui/settings/SettingsScreen');
+const loadPostFX = () => import('./three/PostFX');
+const GameScene = lazy(() => loadGameScene().then((m) => ({ default: m.GameScene })));
+const GameHUD = lazy(() => loadGameHUD().then((m) => ({ default: m.GameHUD })));
+const CreatorScreen = lazy(() => loadCreator().then((m) => ({ default: m.CreatorScreen })));
+const HubScreen = lazy(() => loadHub().then((m) => ({ default: m.HubScreen })));
+const OnlineScreen = lazy(() => loadOnline().then((m) => ({ default: m.OnlineScreen })));
+const RoomLobby = lazy(() => loadLobby().then((m) => ({ default: m.RoomLobby })));
+const CollectionScreen = lazy(() => loadCollection().then((m) => ({ default: m.CollectionScreen })));
+const SettingsScreen = lazy(() => loadSettings().then((m) => ({ default: m.SettingsScreen })));
+const PostFXLazy = lazy(loadPostFX);
+
+/** 首屏完成后，在浏览器空闲时预取其他页面的代码（失败也没关系，真正进入时会重试） */
+function prefetchScreens() {
+  const run = () => {
+    for (const load of [loadHub, loadOnline, loadLobby, loadGameScene, loadGameHUD, loadCreator, loadSettings, loadCollection]) load().catch(() => undefined);
+    if (useSettings.getState().quality === 'high' || useSettings.getState().quality === 'ultra') loadPostFX().catch(() => undefined);
+  };
+  const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  if (ric) ric(run, { timeout: 4000 });
+  else window.setTimeout(run, 1500);
+}
+
+/** 后期处理只在“高 / 极高”画质加载 */
 function PostFX({ quality, game }: { quality: Quality; game: boolean }) {
   if (quality === 'low' || quality === 'medium') return null;
-  if (quality === 'ultra' && game) {
-    return (
-      <EffectComposer multisampling={4}>
-        <DepthOfField target={cameraFocus} worldFocusRange={7} bokehScale={1.4} />
-        <Bloom intensity={0.22} luminanceThreshold={0.92} luminanceSmoothing={0.15} mipmapBlur />
-        <Vignette eskil={false} offset={0.3} darkness={0.5} />
-      </EffectComposer>
-    );
-  }
-  return (
-    <EffectComposer multisampling={quality === 'ultra' ? 4 : 0}>
-      <Bloom intensity={0.2} luminanceThreshold={0.92} luminanceSmoothing={0.15} mipmapBlur />
-      <Vignette eskil={false} offset={0.3} darkness={0.45} />
-    </EffectComposer>
-  );
+  return <PostFXLazy quality={quality} game={game} />;
 }
 
 const QUALITY_ORDER: Quality[] = ['low', 'medium', 'high', 'ultra'];
@@ -145,26 +154,132 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
   );
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+/**
+ * 3D 场景的错误边界：WebGL 不可用、显卡驱动问题或场景代码出错时，只让 3D 退回静态背景，
+ * 页面文字、按钮、设置照常可用（不会白屏、不会卡在加载画面）。
+ * 切换到其他场景时自动重试（例如牌桌场景出错后回到首页，首页的 3D 可以正常显示）。
+ */
+class SceneErrorBoundary extends Component<{ children: ReactNode; resetKey: string; onError: () => void; onRetry: () => void }, { error: string | null }> {
   state = { error: null as string | null };
   static getDerivedStateFromError(e: Error) {
-    return { error: e.message };
+    return { error: e.message || String(e) };
+  }
+  componentDidCatch(e: Error) {
+    console.error('[3D] 场景出错，已切换为静态背景：', e);
+    this.props.onError();
+  }
+  componentDidUpdate(prev: { resetKey: string }) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
   render() {
-    // 3D 失败时不挡住页面：首页文字、按钮、设置等仍然可以使用（显示一张静态背景 + 小提示）
     if (this.state.error)
       return (
         <div className="webgl-fallback" role="status">
           <div className="webgl-fallback-note">
             <b>😿 3D 场景无法显示</b>
-            <span>浏览器可能不支持 WebGL 或显卡驱动有问题。页面其他功能仍可使用；可以在设置中把画质调到「低」后重新加载。</span>
-            <Btn size="sm" kind="ghost" onClick={() => location.reload()}>
-              重新加载
+            <span>浏览器可能不支持 WebGL 或显卡驱动有问题。页面其他功能仍可使用；也可以在设置中把画质调到「低」后重试。</span>
+            <Btn
+              size="sm"
+              kind="ghost"
+              onClick={() => {
+                this.setState({ error: null });
+                this.props.onRetry();
+              }}
+            >
+              重试
             </Btn>
           </div>
         </div>
       );
     return this.props.children;
+  }
+}
+
+/**
+ * 页面界面的错误边界：任何页面（牌桌界面、大厅、设置…）出错时显示可恢复的提示，
+ * “返回首页”会走正常的离开流程（停止 AI / 离开房间 / 清理牌局状态），不会白屏、不需要刷新。
+ */
+class ScreenErrorBoundary extends Component<{ children: ReactNode; screen: Screen }, { error: string | null }> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(e: Error) {
+    return { error: e.message || String(e) };
+  }
+  componentDidCatch(e: Error, info: ErrorInfo) {
+    console.error(`[界面] 「${this.props.screen}」页面出错：`, e, info.componentStack);
+  }
+  componentDidUpdate(prev: { screen: Screen }) {
+    if (this.state.error && prev.screen !== this.props.screen) this.setState({ error: null });
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="screen-error" role="alert">
+        <div className="panel screen-error-card">
+          <h2>😿 这个页面出了点问题</h2>
+          <p className="muted">别担心，你的等级、金币、动物和存档都安全。返回首页后可以继续游戏。</p>
+          <p className="small muted">错误信息：{this.state.error}</p>
+          <Btn
+            onClick={() => {
+              session.leave('home');
+              this.setState({ error: null });
+            }}
+          >
+            🏠 返回首页
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+}
+
+/** 后台逻辑（牌局导演、成就统计、语音清理）的错误边界：出错时只停止这一部分，不影响页面；切换页面后自动恢复 */
+class QuietBoundary extends Component<{ children: ReactNode; resetKey: string; name: string }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(e: Error) {
+    console.error(`[${this.props.name}] 出错，已暂停这一部分：`, e);
+  }
+  componentDidUpdate(prev: { resetKey: string }) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/**
+ * 最外层的安全网：任何没有被内层捕获的错误都不会让页面变成空白。
+ * “返回首页”会正常离开牌局 / 房间并重新创建整个界面（不刷新网页、不丢失存档）。
+ */
+class RootErrorBoundary extends Component<{ children: ReactNode }, { error: string | null; generation: number }> {
+  state = { error: null as string | null, generation: 0 };
+  static getDerivedStateFromError(e: Error) {
+    return { error: e.message || String(e) };
+  }
+  componentDidCatch(e: Error, info: ErrorInfo) {
+    console.error('[应用] 未处理的界面错误：', e, info.componentStack);
+  }
+  render() {
+    if (!this.state.error) return <Fragment key={this.state.generation}>{this.props.children}</Fragment>;
+    return (
+      <div className="screen-error" role="alert">
+        <div className="panel screen-error-card">
+          <h2>😿 游戏出了点问题</h2>
+          <p className="muted">你的等级、金币、动物和存档都安全。返回首页后可以继续游戏。</p>
+          <p className="small muted">错误信息：{this.state.error}</p>
+          <Btn
+            onClick={() => {
+              session.leave('home');
+              this.setState((s) => ({ error: null, generation: s.generation + 1 }));
+            }}
+          >
+            🏠 返回首页
+          </Btn>
+        </div>
+      </div>
+    );
   }
 }
 
@@ -241,6 +356,14 @@ function HudConnector() {
 }
 
 export default function App() {
+  return (
+    <RootErrorBoundary>
+      <AppContent />
+    </RootErrorBoundary>
+  );
+}
+
+function AppContent() {
   const screen = useGame((s) => s.screen);
   // 只订阅“是否有牌桌”，避免每次状态同步都重新渲染整个画布
   const hasView = useGame((s) => s.view !== null);
@@ -258,6 +381,15 @@ export default function App() {
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
   useBrowserBack();
+  // 加载画面不能无限等待：3D 出错时立即结束；最长 12 秒后无论如何都结束（页面仍可使用）
+  useEffect(() => {
+    const t = window.setTimeout(() => setReady(true), 12000);
+    return () => window.clearTimeout(t);
+  }, []);
+  // 首屏完成后预取其他页面代码
+  useEffect(() => {
+    if (ready) prefetchScreens();
+  }, [ready]);
   const sceneKind = screen === 'game' ? 'game' : screen === 'creator' || screen === 'onboarding' ? 'creator' : screen === 'room' && room ? 'room' : 'home';
 
   useEffect(() => {
@@ -275,7 +407,7 @@ export default function App() {
 
   return (
     <>
-      <ErrorBoundary>
+      <SceneErrorBoundary resetKey={sceneKind} onError={() => setReady(true)} onRetry={() => setCanvasKey((k) => k + 1)}>
         <Canvas
           key={canvasKey}
           className="app-canvas"
@@ -309,11 +441,15 @@ export default function App() {
             <Scene creatorAnim={creatorAnim} />
           </Suspense>
         </Canvas>
-      </ErrorBoundary>
+      </SceneErrorBoundary>
       {/* 页面转场：3D 场景切换时先暗下来再淡入，避免模型瞬间替换 */}
       <div key={sceneKind} className="scene-fade" aria-hidden />
-      <Directors />
+      <QuietBoundary name="牌局导演" resetKey={screen}>
+        <Directors />
+      </QuietBoundary>
       <div className="overlay">
+        <ScreenErrorBoundary screen={screen}>
+        <Suspense fallback={<div className="screen-loading" aria-live="polite">正在打开…</div>}>
         {screen === 'home' && <HomeScreen />}
         {screen === 'login' && <LoginScreen />}
         {screen === 'onboarding' && <OnboardingScreen />}
@@ -334,6 +470,8 @@ export default function App() {
             </Btn>
           </div>
         )}
+        </Suspense>
+        </ScreenErrorBoundary>
       </div>
       <ProfileLoading />
       <WelcomeBanner />
