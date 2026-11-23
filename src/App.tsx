@@ -27,6 +27,7 @@ import { MobileLoader } from './ui/boot/MobileLoader';
 import { BootProbe } from './boot/BootProbe';
 import { markBoot, markBootDegraded, useBoot } from './boot/boot';
 import { homeTimeline } from './ui/home/homeTimeline';
+import { FullscreenNotice } from './ui/common/FullscreenUI';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
@@ -465,6 +466,7 @@ function AppContent() {
       <SyncBadge />
       <NetDebugPanel />
       <Toasts />
+      <FullscreenNotice />
       <ConsentLayer />
       {pcBoot ? <PremiumLoader onReady={() => setReady(true)} /> : <MobileLoader onReady={() => setReady(true)} />}
     </>

@@ -10,6 +10,10 @@ export const QUALITY_NAME: Record<Quality, string> = { low: '低', medium: '中'
 export type RoomTheme = 'casino' | 'penthouse' | 'cabin';
 export const ROOM_NAME: Record<RoomTheme, string> = { casino: '豪华赌场', penthouse: '夜景高层', cabin: '森林小屋' };
 
+/** 手机 / 平板全屏：自动（第一次点“开始 / 创建 / 加入”时进入，自己退出后本次不再自动进入）/ 开（每次进入游戏时进入）/ 关 */
+export type FullscreenPreference = 'auto' | 'on' | 'off';
+export const FULLSCREEN_PREF_NAME: Record<FullscreenPreference, string> = { auto: '自动', on: '开', off: '关' };
+
 export interface SettingsState {
   quality: Quality;
   /** 自动画质：根据帧率自动降低画质 */
@@ -35,6 +39,10 @@ export interface SettingsState {
   trashTalk: boolean;
   /** 台词字幕（气泡） */
   subtitles: boolean;
+  /** 手机 / 平板全屏偏好（只保存在这台设备，不同步到其他设备：每台设备的浏览器能力不同） */
+  fullscreenPreference: FullscreenPreference;
+  /** 手机触感反馈（震动），只在支持的浏览器上生效 */
+  haptics: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -97,6 +105,8 @@ export const useSettings = create<SettingsState>()(
       aiTalk: true,
       trashTalk: true,
       subtitles: true,
+      fullscreenPreference: 'auto',
+      haptics: true,
       set: (patch) => set(patch),
     }),
     {
@@ -128,6 +138,8 @@ export const useSettings = create<SettingsState>()(
           aiTalk: bool(p.aiTalk, current.aiTalk),
           trashTalk: bool(p.trashTalk, current.trashTalk),
           subtitles: bool(p.subtitles, current.subtitles),
+          fullscreenPreference: (['auto', 'on', 'off'] as const).includes(p.fullscreenPreference) ? p.fullscreenPreference : current.fullscreenPreference,
+          haptics: bool(p.haptics, current.haptics),
         };
       },
     },

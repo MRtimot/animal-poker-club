@@ -7,6 +7,7 @@ import { useSettings } from '../../../store/settingsStore';
 import { sound } from '../../../audio/sound';
 import { formatChips } from '../../../utils/format';
 import { useIsPC } from '../../../utils/pc';
+import { FullscreenButton } from '../../common/FullscreenUI';
 
 const CAMERA_ORDER = ['overview', 'player', 'free'] as const;
 const CAMERA_LABEL = { overview: '牌桌视角', player: '玩家视角', free: '自由视角（拖动旋转，滚轮缩放）' } as const;
@@ -103,6 +104,8 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
         <button type="button" className="gbar-btn hide-xs" title="游戏规则" aria-label="游戏规则" onClick={onRules}>
           <span aria-hidden>📖</span>
         </button>
+        {/* 手机 / 平板且浏览器支持时：进入 / 退出全屏（电脑版不显示） */}
+        <FullscreenButton />
         <button type="button" className="gbar-btn" title="设置" aria-label="设置" onClick={onSettings}>
           <span aria-hidden>⚙️</span>
         </button>

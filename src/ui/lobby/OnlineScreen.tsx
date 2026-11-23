@@ -7,6 +7,7 @@ import { net } from '../../net/netClient';
 import { BUILT_IN_SERVER } from '../../net/serverAddress';
 import { BackButton, Btn, Seg, useBusy } from '../common/ui';
 import { formatChips } from '../../utils/format';
+import { enterOnEntryGesture } from '../../display/fullscreen';
 
 function ConnStatus() {
   const conn = useGame((s) => s.conn);
@@ -62,6 +63,7 @@ export function OnlineScreen() {
 
   const create = () => {
     if (!markBusy()) return;
+    enterOnEntryGesture();
     const [sb, bb] = BLIND_OPTIONS[blinds];
     net.updateProfile();
     net.createRoom({ maxPlayers: players, startingChips: chips, smallBlind: sb, bigBlind: bb, turnSeconds: turn });
@@ -73,6 +75,7 @@ export function OnlineScreen() {
       return;
     }
     if (!markBusy()) return;
+    enterOnEntryGesture();
     net.updateProfile();
     net.joinRoom(c);
   };

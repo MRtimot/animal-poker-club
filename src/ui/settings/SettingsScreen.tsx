@@ -10,6 +10,7 @@ import { useConsent } from '../../privacy/consent';
 import { useIsPC } from '../../utils/pc';
 import { net } from '../../net/netClient';
 import { voice } from '../../audio/voice';
+import { DisplaySettings } from '../common/FullscreenUI';
 
 export function QuickSettings() {
   const s = useSettings();
@@ -41,6 +42,8 @@ export function QuickSettings() {
         <span>⚡ 自动画质（帧率不足时自动降低画质）</span>
         <input type="checkbox" checked={s.autoQuality} onChange={(e) => s.set({ autoQuality: e.target.checked })} />
       </label>
+      {/* 手机 / 平板：全屏与触感反馈（电脑版不显示） */}
+      <DisplaySettings />
       {slider('🎵 背景音乐', 'musicVolume')}
       {slider('🔊 音效', 'sfxVolume')}
       {slider('🌃 环境声音', 'ambientVolume')}

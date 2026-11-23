@@ -17,6 +17,7 @@ import { OnlineSection } from './sections/OnlineSection';
 import { AISection } from './sections/AISection';
 import { FinalCTASection, HomeFooter } from './sections/FinalSection';
 import { DesktopRoomCTA, ctaAway as ctaAway_ } from './RoomCTA';
+import { enterOnEntryGesture } from '../../display/fullscreen';
 
 export function HomeScreen() {
   const setScreen = useGame((s) => s.setScreen);
@@ -72,13 +73,22 @@ export function HomeScreen() {
 
   const actions = useMemo<HomeActions>(
     () => ({
-      play: () => setScreen(created ? 'quick' : 'creator'),
-      aiMode: () => setScreen(created ? 'quick' : 'creator'),
+      // 进入游戏的按钮：手机 / 平板按全屏偏好进入全屏（必须在点击里同步调用）
+      play: () => {
+        enterOnEntryGesture();
+        setScreen(created ? 'quick' : 'creator');
+      },
+      aiMode: () => {
+        enterOnEntryGesture();
+        setScreen(created ? 'quick' : 'creator');
+      },
       createRoom: () => {
+        enterOnEntryGesture();
         set({ onlineTab: 'create' });
         setScreen('online');
       },
       joinRoom: () => {
+        enterOnEntryGesture();
         set({ onlineTab: 'join' });
         setScreen('online');
       },

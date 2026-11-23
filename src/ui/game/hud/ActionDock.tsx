@@ -10,6 +10,7 @@ import { formatChips } from '../../../utils/format';
 import { raisePresets, raiseStep, snapRaise, speciesEmoji } from './model';
 import { TimerBar } from './bits';
 import { turnClock, useServerNow } from './clock';
+import { haptic } from '../../../display/haptics';
 
 const PENDING_LABEL: Record<string, string> = { fold: '弃牌', check: '过牌', call: '跟注', raise: '加注', allin: '全押' };
 
@@ -77,6 +78,8 @@ export function ActionDock({ view }: { view: TableView }) {
     lock.current = true;
     setSubmitted(type);
     sound.play('button');
+    // 手机触感反馈（支持时；可在设置中关闭）
+    haptic(type === 'allin' ? 'impact' : 'action');
     session.action({ type, amount: amt });
   };
   const confirmRaise = () => {

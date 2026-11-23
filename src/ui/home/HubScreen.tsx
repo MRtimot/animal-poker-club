@@ -9,6 +9,7 @@ import { useAccount } from '../../store/accountStore';
 import { Avatar, BackButton, Btn, LevelBar, Seg } from '../common/ui';
 import { formatChips, timeAgo } from '../../utils/format';
 import { SPECIES_MAP } from '../../core/player/profile';
+import { enterOnEntryGesture } from '../../display/fullscreen';
 
 const P_KEYS = Object.keys(PERSONALITIES) as AIPersonality[];
 const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
@@ -41,6 +42,8 @@ export function HubScreen() {
   const start = async () => {
     if (startLock.current) return;
     startLock.current = true;
+    // 手机 / 平板：按全屏偏好进入全屏（在点击里同步调用，之后才开始准备对局）
+    enterOnEntryGesture();
     try {
       await doStart();
     } finally {

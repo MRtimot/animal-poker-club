@@ -7,6 +7,7 @@ import { Avatar, Btn, Modal, Seg, useBusy } from '../common/ui';
 import { ChatPanel } from '../game/ChatPanel';
 import { formatChips } from '../../utils/format';
 import { useIsPC } from '../../utils/pc';
+import { enterOnEntryGesture } from '../../display/fullscreen';
 
 export function RoomLobby() {
   const room = useGame((s) => s.room);
@@ -75,6 +76,7 @@ export function RoomLobby() {
               kind="pink"
               onClick={() => {
                 if (!markStarting()) return;
+                enterOnEntryGesture();
                 net.startGame();
               }}
               disabled={!canStart || starting}

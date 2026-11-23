@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useSettings } from '../../store/settingsStore';
 import type { TableView } from '../../core/game/view';
@@ -18,6 +18,7 @@ import { ActionDock } from './hud/ActionDock';
 import { WinnerPresentation } from './hud/WinnerPresentation';
 import { HandFeed } from './hud/HandFeed';
 import './hud/gameHud.css';
+import { haptic } from '../../display/haptics';
 
 /** 屏幕中央的大字提示：全押！/ 翻牌 / 转牌 / 河牌 / 平局！ */
 function Announcer() {
@@ -195,6 +196,13 @@ export function GameHUD({ view }: { view: TableView }) {
   }, [conn]);
   const [rules, setRules] = useState(false);
   const [settings, setSettings] = useState(false);
+  // 自己的筹码用完（出局）：手机触感反馈（只在状态变化的那一刻触发一次）
+  const busted = !!view.players.find((p) => p.id === view.viewerId)?.busted;
+  const wasBusted = useRef(busted);
+  useEffect(() => {
+    if (busted && !wasBusted.current) haptic('defeat');
+    wasBusted.current = busted;
+  }, [busted]);
   // 牌局中：提示消息移到底部操作区上方，不挡顶栏与赢家演出
   useEffect(() => {
     document.body.classList.add('in-game');

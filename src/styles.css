@@ -15,7 +15,13 @@
   --radius: 16px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   --font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Hiragino Sans GB', system-ui, sans-serif;
-  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 安全区（刘海 / 灵动岛 / 圆角 / 底部横条 / 安卓手势导航栏 / 挖孔屏）：所有贴边的手机界面都使用这些变量。
+     电脑上都是 0，不影响电脑版布局 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-b: var(--safe-bottom);
 }
 
 /* ═════════ 设计令牌（Design Tokens）：颜色 / 间距 / 圆角 / 阴影 / 字体层级 / 动效 / 层级 ═════════
@@ -3547,7 +3553,7 @@ h1, h2, h3 {
 
 /* ═════════ 房间顶栏（在线房间大厅）：返回 · 房间代码 · 人数 · 开始 / 准备 ═════════ */
 .lobby-screen {
-  padding-top: calc(var(--hud-top) + var(--sp-3));
+  padding-top: calc(var(--hud-top) + var(--safe-top) + var(--sp-3));
 }
 .lbar {
   position: fixed;
@@ -3555,13 +3561,12 @@ h1, h2, h3 {
   left: 0;
   right: 0;
   z-index: var(--z-hud);
-  height: var(--hud-top);
+  height: calc(var(--hud-top) + var(--safe-top));
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: var(--sp-3);
-  padding: 0 var(--sp-4);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding: var(--safe-top) calc(var(--sp-4) + var(--safe-right)) 0 calc(var(--sp-4) + var(--safe-left));
   background: linear-gradient(180deg, rgba(8, 7, 10, 0.86), rgba(8, 7, 10, 0));
   pointer-events: auto;
 }
@@ -3642,7 +3647,7 @@ h1, h2, h3 {
   .lbar {
     grid-template-columns: auto 1fr auto;
     gap: var(--sp-2);
-    padding: 0 var(--sp-3);
+    padding: var(--safe-top) calc(var(--sp-3) + var(--safe-right)) 0 calc(var(--sp-3) + var(--safe-left));
   }
   .lbar-btn-text,
   .lbar-cap,
@@ -4214,4 +4219,226 @@ html.apc-booting .rcta,
 html.apc-booting .consent-bar,
 html.apc-booting .scroll-hint i::after {
   animation-play-state: paused;
+}
+
+/* ═════════ 手机 / 平板沉浸模式（全屏 + 安全区 + 动态视口）═════════
+   全屏状态由 display/fullscreen.ts 统一管理（<html> 上的 apc-fullscreen / apc-immersive）。
+   电脑版：安全区都是 0、100dvh 等于窗口高度，这里的规则不改变电脑版布局。 */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    /* 动态视口：地址栏 / 工具栏出现或收起时跟着变化，不会把牌桌和按钮切掉 */
+    height: 100dvh;
+  }
+}
+/* 整个页面全屏（各浏览器分开写：不认识带前缀的选择器时不会让整条规则失效） */
+html:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  background: var(--bg);
+}
+html:-webkit-full-screen {
+  width: 100vw;
+  height: 100dvh;
+  background: var(--bg);
+}
+html::backdrop {
+  background: var(--bg);
+}
+@media not all and (min-width: 1101px) and (hover: hover) and (pointer: fine) {
+  html,
+  body {
+    /* 不触发下拉刷新 / 回弹（游戏界面本身不滚动；首页等可滚动区域各自处理） */
+    overscroll-behavior: none;
+  }
+  /* 牌局中：防止双指缩放打乱牌桌布局（列表仍可以上下滚动，按钮没有点击延迟） */
+  body.in-game {
+    touch-action: pan-x pan-y;
+  }
+  /* 顶栏按钮在手机上看起来 36px，但可点击区域至少 44px */
+  .gbar-btn {
+    position: relative;
+  }
+  .gbar-btn::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+  }
+}
+
+/* 全屏按钮（牌桌顶栏，手机 / 平板且浏览器支持时出现） */
+.fs-btn .fs-icon {
+  display: block;
+}
+.fs-btn.on {
+  border-color: var(--c-gold-line);
+  color: var(--c-gold);
+}
+
+/* 进入全屏的短暂提示：1~2 秒后淡出 */
+.fs-notice {
+  position: fixed;
+  top: calc(var(--safe-top) + 14px);
+  left: 50%;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px - var(--safe-left) - var(--safe-right));
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: var(--c-surface-strong);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--sh-2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fsNotice 1.8s var(--e-out, ease-out) both;
+}
+.fs-notice .fs-icon {
+  color: var(--c-gold);
+  flex: none;
+}
+.fs-notice.unavailable {
+  white-space: normal;
+  text-align: center;
+  animation-duration: 3.4s;
+}
+@keyframes fsNotice {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  78% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes fsNoticeFade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0);
+  }
+  12%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 只淡入淡出、不移动；提示需要停留一会儿才能读到（全局规则会把所有动画缩短到 1ms） */
+  .fs-notice {
+    animation-name: fsNoticeFade;
+    animation-duration: 1.8s !important;
+  }
+  .fs-notice.unavailable {
+    animation-duration: 3.4s !important;
+  }
+}
+
+/* 手机 / 平板：贴边的界面避开刘海、灵动岛、圆角、底部横条与安卓手势导航栏
+   （安全区为 0 时与原来的位置完全相同；电脑版不进入这个媒体查询） */
+@media not all and (min-width: 1101px) and (hover: hover) and (pointer: fine) {
+  .home-premium {
+    --gutter: calc(clamp(20px, 7vw, 120px) + max(var(--safe-left), var(--safe-right)));
+  }
+  .home-nav {
+    padding-top: calc(18px + var(--safe-top));
+    padding-left: calc(4vw + var(--safe-left));
+    padding-right: calc(4vw + var(--safe-right));
+  }
+  .home-nav.scrolled {
+    padding-top: calc(10px + var(--safe-top));
+  }
+  .hn-sheet {
+    right: calc(4vw + var(--safe-right));
+  }
+  .scroll-hint {
+    bottom: calc(3.5vh + var(--safe-bottom));
+  }
+  .back-btn {
+    top: calc(18px + var(--safe-top));
+    left: calc(18px + var(--safe-left));
+  }
+  .preview-name {
+    top: calc(20px + var(--safe-top));
+  }
+  .toasts {
+    top: calc(16px + var(--safe-top));
+  }
+  .chat-fab {
+    right: calc(14px + var(--safe-right));
+    bottom: calc(200px + var(--safe-bottom));
+  }
+  .tab-body {
+    padding-bottom: calc(14px + var(--safe-bottom));
+  }  .side-screen {
+    padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+  }
+  .creator,
+  .collection {
+    padding: calc(72px + var(--safe-top)) calc(18px + var(--safe-right)) calc(18px + var(--safe-bottom)) calc(18px + var(--safe-left));
+  }
+}
+@media (max-width: 760px) {
+  /* 手机竖屏：这些页面是贴底的抽屉（原来没有外边距），只在顶部留出状态栏 / 灵动岛 */
+  .side-screen,
+  .creator {
+    padding: var(--safe-top) 0 0;
+  }
+  .collection {
+    padding: calc(64px + var(--safe-top)) 0 0;
+  }
+  /* 扑克大厅：卡片里有较长的下拉框 / 选项时，卡片仍然限制在屏幕宽度内（以前在窄屏上会向右超出） */
+  .card-grid > *,
+  .card-grid .select.grow {
+    min-width: 0;
+  }
+  .home-nav,
+  .home-nav.scrolled {
+    padding: calc(10px + var(--safe-top)) calc(14px + var(--safe-right)) 10px calc(14px + var(--safe-left));
+  }
+  .hn-sheet {
+    right: calc(14px + var(--safe-right));
+  }
+  .hero-copy {
+    left: calc(20px + var(--safe-left));
+    right: calc(20px + var(--safe-right));
+  }
+  .scroll-hint {
+    bottom: calc(2vh + var(--safe-bottom));
+  }
+  .preview-name {
+    top: calc(22px + var(--safe-top));
+    right: calc(16px + var(--safe-right));
+  }
+}
+@media (max-width: 900px) {
+  .chat-fab {
+    bottom: auto;
+    top: calc(118px + var(--safe-top));
+  }
+  /* 聊天面板（底部抽屉）：内容避开左右圆角 / 刘海 */
+  .chat-panel {
+    padding-left: calc(10px + var(--safe-left));
+    padding-right: calc(10px + var(--safe-right));
+  }
 }
