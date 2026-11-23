@@ -15,6 +15,7 @@ import {
   PlayerAction,
   ShownHand,
 } from './types';
+import { canTransition } from './stateMachine';
 
 export interface EngineConfig {
   smallBlind: number;
@@ -198,6 +199,12 @@ export class PokerEngine {
 
   // ───────────── 事件 ─────────────
 
+  /** 阶段只能按状态机前进（见 stateMachine.ts）；非法跳转说明引擎有错误，立即报错而不是继续发错牌 */
+  private setPhase(to: Phase): void {
+    if (!canTransition(this.phase, to)) throw new PokerError(`非法的阶段跳转：${this.phase} → ${to}`);
+    this.phase = to;
+  }
+
   private emit(e: GameEventBody): void {
     this.events.push({ ...e, seq: ++this.seq, t: Date.now() } as GameEvent);
     if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
@@ -268,7 +275,7 @@ export class PokerEngine {
     this.deck.reset();
     this.deck.shuffle();
 
-    this.phase = 'preflop';
+    this.setPhase('preflop');
     this.currentBet = 0;
     this.postBlind(this.players[sbIdx], this.smallBlind, 'sb');
     this.postBlind(this.players[bbIdx], this.bigBlind, 'bb');
@@ -462,7 +469,7 @@ export class PokerEngine {
       return;
     }
     const next: Record<string, Phase> = { preflop: 'flop', flop: 'turn', turn: 'river' };
-    this.phase = next[this.phase];
+    this.setPhase(next[this.phase]);
     this.deck.burn();
     const n = this.phase === 'flop' ? 3 : 1;
     const cards = this.deck.dealMany(n);
@@ -533,7 +540,7 @@ export class PokerEngine {
   }
 
   private showdown(): void {
-    this.phase = 'showdown';
+    this.setPhase('showdown');
     this.currentIndex = -1;
     const contenders = this.activePlayers();
     const results = new Map<string, HandResult>();
@@ -602,7 +609,7 @@ export class PokerEngine {
   }
 
   private endHand(): void {
-    this.phase = 'complete';
+    this.setPhase('complete');
     this.currentIndex = -1;
     for (const p of this.players) {
       p.bet = 0;

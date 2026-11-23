@@ -47,7 +47,8 @@ export const session = {
   leave(to: Screen = 'home') {
     const g = useGame.getState();
     if (g.mode === 'local') stopLocalGame();
-    if (g.mode === 'online' || g.room) net.leaveRoom({ disconnect: useAccount.getState().status !== 'signedIn' });
+    // 游客回首页 / 大厅时断开连接（首页不保持多人连接）；回到“在线”页面要继续创建 / 加入房间，保持连接
+    if (g.mode === 'online' || g.room) net.leaveRoom({ disconnect: useAccount.getState().status !== 'signedIn' && to !== 'online' });
     clearTableFx();
     g.set({ mode: null, view: null, room: null, chat: [], pendingAction: null, modal: null, cameraMode: 'overview' });
     g.setScreen(to);

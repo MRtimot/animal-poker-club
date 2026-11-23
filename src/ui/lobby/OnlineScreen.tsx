@@ -52,9 +52,10 @@ export function OnlineScreen() {
   const [turn, setTurn] = useState(30);
   const [code, setCode] = useState('');
 
+  // 在线页面需要连接：打开时连接；连接被主动断开（conn 回到 idle）时重新连接，避免按钮一直不可用
   useEffect(() => {
-    net.connect();
-  }, []);
+    if (conn === 'idle') net.connect();
+  }, [conn]);
 
   // 防止连续点击创建多个房间 / 重复加入
   const [busy, markBusy] = useBusy();

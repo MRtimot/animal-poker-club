@@ -25,6 +25,26 @@ const GAP: Partial<Record<GameEvent['type'], number>> = {
   win: 400,
 };
 
+/** 事件对应的动画从开始到“落地”的时间：用于让底池数字、牌局记录与画面同步 */
+function landsAfter(e: GameEvent): number {
+  switch (e.type) {
+    case 'blind':
+      return DUR.chipFlight - 120;
+    case 'action':
+      return e.added > 0 ? (e.action === 'allin' ? 380 : 220) + DUR.chipFlight : 120;
+    case 'collect':
+      return DUR.chipFlight;
+    case 'board':
+      return e.street === 'flop' ? 1300 : e.street === 'turn' ? 850 : 1350;
+    case 'refund':
+      return DUR.chipFlight;
+    case 'win':
+      return e.uncontested ? 150 + 950 : 1500;
+    default:
+      return 0;
+  }
+}
+
 /** 玩家面前的筹码堆：下注从这里推出，赢得的筹码回到这里 */
 function handPos(l: SeatLayout): V3 {
   return [l.stack[0], l.stack[1], l.stack[2]];
@@ -87,6 +107,7 @@ export function useTableDirector(view: TableView | null) {
     if (lastSeq.current === null || view.handNumber < lastHand.current || maxSeq < lastSeq.current) {
       lastSeq.current = maxSeq;
       lastHand.current = view.handNumber;
+      useFx.getState().markShown(view.handNumber, maxSeq);
       return;
     }
     if (view.handNumber !== lastHand.current) lastHand.current = view.handNumber;
@@ -272,6 +293,25 @@ export function useTableDirector(view: TableView | null) {
             if (tier >= 1) fx.boostLight(Math.min(1, 0.3 + tier * 0.15), 2000 + tier * 400);
             // 2. 短暂停顿后，筹码从底池移向赢家；赢家起身庆祝
             const payoutDelay = e.uncontested ? 150 : tier >= 3 ? 900 : 520;
+            // 赢家演出（界面）：同一玩家的多个池合并；牌型与最佳五张来自引擎的摊牌结果
+            const merged = new Map<string, number>();
+            for (const a of e.awards) merged.set(a.playerId, (merged.get(a.playerId) ?? 0) + a.amount);
+            const hand = view.handNumber;
+            timers.current.push(
+              window.setTimeout(() => {
+                fx.present({
+                  hand,
+                  uncontested: e.uncontested,
+                  tie,
+                  winners: [...merged].map(([playerId, amount]) => {
+                    const sh = view.summary?.shown.find((x) => x.playerId === playerId);
+                    const handName = view.summary?.winners.find((w) => w.playerId === playerId && w.handName)?.handName ?? sh?.handName;
+                    return { playerId, amount, handName: e.uncontested ? undefined : handName, cards: e.uncontested ? [] : sh?.bestCards ?? [] };
+                  }),
+                  duration: e.uncontested ? 2200 : tier >= 3 ? 4200 : 3400,
+                });
+              }, payoutDelay),
+            );
             e.awards.forEach((a, i) => {
               const l = layout.get(a.playerId);
               if (!l) return;
@@ -319,6 +359,10 @@ export function useTableDirector(view: TableView | null) {
           break;
         }
       }
+      // 这个事件的画面演完（筹码落地 / 牌翻开 / 派奖到手）时，界面上的底池与牌局记录才更新到它
+      const hand = view.handNumber;
+      const seq = e.seq;
+      at(() => fx.markShown(hand, seq), landsAfter(e));
       cursor.current += GAP[e.type] ?? 0;
     }
   }, [view]);

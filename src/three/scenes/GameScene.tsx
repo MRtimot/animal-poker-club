@@ -1,26 +1,25 @@
-import { memo, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { SeatView, TableView } from '../../core/game/view';
 import type { Card } from '../../core/cards/card';
-import { ACTION_NAME } from '../../core/table/types';
 import { AnimalModel } from '../animals/AnimalModel';
 import { Card3D } from '../cards/Card3D';
 import { ChipPile, ChipFlights } from '../chips/Chips';
 import { Chair, ClubEnvironment, PokerTableMesh } from '../environment/ClubEnvironment';
 import { CameraRig } from '../camera/CameraRig';
 import { Bursts } from '../effects/Bursts';
-import { DECK_POS, POT_POS, SeatLayout, TABLE_Y, V3, boardPos, computeLayout } from '../layout';
+import { BOARD_SCALE, DECK_POS, POT_POS, SeatLayout, TABLE_Y, V3, boardPos, computeLayout } from '../layout';
 import { DUR, STAGGER, arc, damp, ease, settle } from '../../animation/motion';
-import { AnimatedChips } from '../../ui/common/AnimatedNumber';
 import type { Species } from '../../core/player/profile';
 import { useFx } from '../../store/fxStore';
 import { useGame } from '../../store/gameStore';
 import { useSettings } from '../../store/settingsStore';
-import { formatChips } from '../../utils/format';
 import { cardBackTexture } from '../textures';
 import { SceneLights } from './SceneLights';
+import { BetTag, PotPlaque, SeatPlate } from './SeatHud';
+import { TableMarkings, TurnGlow } from '../environment/TableMarkings';
+import { eventShown, presentedBets } from '../../ui/game/hud/model';
 import { sound } from '../../audio/sound';
 
 interface RetireCard {
@@ -29,133 +28,8 @@ interface RetireCard {
   pos: V3;
   yaw: number;
   faceUp: boolean;
+  scale?: number;
 }
-
-function seatStatus(p: SeatView, view: TableView): { text: string; cls: string } {
-  if (!p.connected && !p.isAI) return { text: '连接中…', cls: 'offline' };
-  if (p.busted) return { text: '已出局', cls: 'out' };
-  if (p.sittingOut) return { text: '已离开', cls: 'out' };
-  if (view.currentPlayerId === p.id) return { text: '思考中…', cls: 'thinking' };
-  if (p.folded) return { text: '弃牌', cls: 'fold' };
-  if (p.allIn) return { text: '全押', cls: 'allin' };
-  const la = p.lastAction;
-  if (la) {
-    if (la.type === 'sb') return { text: `小盲 ${formatChips(la.amount)}`, cls: '' };
-    if (la.type === 'bb') return { text: `大盲 ${formatChips(la.amount)}`, cls: '' };
-    const name = ACTION_NAME[la.type];
-    return { text: la.type === 'call' || la.type === 'raise' ? `${name} ${formatChips(la.amount)}` : name, cls: la.type };
-  }
-  return { text: '', cls: '' };
-}
-
-/**
- * 环形倒计时：平滑减少；最后 5 秒变琥珀色，最后 3 秒变红，最后 1 秒进入紧急状态（轻微脉动，不闪烁）
- */
-function TurnTimer({ view }: { view: TableView }) {
-  const offset = useGame((s) => s.clockOffset);
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const iv = setInterval(() => tick((x) => x + 1), 200);
-    return () => clearInterval(iv);
-  }, []);
-  if (!view.turnDeadline) return null;
-  const remaining = Math.max(0, view.turnDeadline - (Date.now() + offset));
-  const total = Math.max(1, view.turnTotalMs);
-  const secs = Math.ceil(remaining / 1000);
-  const human = total > 6000;
-  const state = !human ? '' : remaining <= 1000 ? 'urgent' : remaining <= 3000 ? 'danger' : remaining <= 5000 ? 'warn' : '';
-  const R = 15;
-  const C = 2 * Math.PI * R;
-  return (
-    <div className={`ring-timer ${state}`}>
-      <svg viewBox="0 0 36 36" width="34" height="34">
-        <circle cx="18" cy="18" r={R} className="rt-track" />
-        <circle
-          key={view.turnDeadline}
-          cx="18"
-          cy="18"
-          r={R}
-          className="rt-bar"
-          style={{ strokeDasharray: C, strokeDashoffset: C * (1 - remaining / total), animationDuration: `${remaining}ms`, ['--c' as any]: C }}
-        />
-      </svg>
-      {human && <span className="rt-secs">{secs}</span>}
-    </div>
-  );
-}
-
-/** 头顶的情绪表情：弹出 → 漂浮 → 淡出 */
-function MoodBadge({ playerId }: { playerId: string }) {
-  const m = useFx((s) => s.moods[playerId]);
-  if (!m) return null;
-  return (
-    <div key={m.start} className="mood-pop" style={{ animationDuration: `${Math.max(800, m.until - m.start)}ms` }}>
-      {m.emoji}
-    </div>
-  );
-}
-
-function Bubble({ playerId }: { playerId: string }) {
-  const b = useFx((s) => s.bubbles.find((x) => x.playerId === playerId));
-  // 正在播放真实语音时显示 🔊
-  const voiced = useFx((s) => !!s.speech[playerId]?.voiced && s.speech[playerId]?.phase === 'speaking');
-  if (!b) return null;
-  if (b.kind === 'dialogue') {
-    return (
-      <div key={b.id} className="bubble bubble-dialogue">
-        <div className="bd-head">
-          <span>{b.speaker}</span>
-          {voiced && <span className="bd-voice" aria-label="正在说话">🔊</span>}
-        </div>
-        <div className="bd-text">“{b.text}”</div>
-      </div>
-    );
-  }
-  return (
-    <div key={b.id} className={`bubble ${b.kind === 'emote' ? 'bubble-emote' : ''}`}>
-      {b.text}
-    </div>
-  );
-}
-
-const NameTag = memo(function NameTag({ p, view, layout, winAmount }: { p: SeatView; view: TableView; layout: SeatLayout; winAmount: number }) {
-  const st = seatStatus(p, view);
-  const isCurrent = view.currentPlayerId === p.id;
-  const badges: string[] = [];
-  if (view.dealerId === p.id) badges.push('庄');
-  if (view.sbId === p.id && view.phase !== 'idle') badges.push('小盲');
-  if (view.bbId === p.id && view.phase !== 'idle') badges.push('大盲');
-  return (
-    <Html position={layout.tag} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
-      <div className={`nametag ${isCurrent ? 'current' : ''} ${p.folded ? 'folded' : ''} ${layout.isViewer ? 'me' : ''} ${!p.connected && !p.isAI ? 'offline' : ''}`}>
-        <Bubble playerId={p.id} />
-        <MoodBadge playerId={p.id} />
-        <div className="nt-name">
-          {p.profile.avatar && <img className="nt-avatar" src={p.profile.avatar} alt="" referrerPolicy="no-referrer" draggable={false} />}
-          {p.name}
-          {layout.isViewer && <span className="nt-you">你</span>}
-          {p.isAI && <span className="nt-ai">AI</span>}
-        </div>
-        <div className="nt-chips">
-          🪙 <AnimatedChips value={p.chips} />
-        </div>
-        {badges.length > 0 && (
-          <div className="nt-badges">
-            {badges.map((b) => (
-              <span key={b} className={`badge badge-${b === '庄' ? 'd' : b === '小盲' ? 'sb' : 'bb'}`}>
-                {b}
-              </span>
-            ))}
-          </div>
-        )}
-        {st.text && <div className={`nt-status ${st.cls}`}>{st.text}</div>}
-        {p.shown && !p.folded && <div className="nt-hand">{p.shown.handName}</div>}
-        {isCurrent && <TurnTimer view={view} />}
-        {winAmount > 0 && <div className="nt-win">+{formatChips(winAmount)}</div>}
-      </div>
-    </Html>
-  );
-});
 
 /** 底牌的目标位置（发牌、弃牌、回收共用） */
 export function holeTarget(p: SeatView, layout: SeatLayout, i: number): { pos: V3; yaw: number; tilt: number } {
@@ -252,8 +126,12 @@ function SeatEntrance({ layout, species, playerId, order, chair, children }: {
   );
 }
 
-function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, dealDelay, highlight, winAmount, seedIndex }: {
+function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, dealDelay, highlight, winAmount, seedIndex, betShown, revealHand }: {
   showdownOrder: string[];
+  /** 已经落地的下注额（与筹码动画同步） */
+  betShown: number;
+  /** 摊牌已开始演出 */
+  revealHand: boolean;
   p: SeatView;
   view: TableView;
   layout: SeatLayout;
@@ -296,7 +174,8 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, deal
           )}
         </group>
       </SeatEntrance>
-      <NameTag p={p} view={view} layout={layout} winAmount={winAmount} />
+      <SeatPlate p={p} view={view} layout={layout} winAmount={winAmount} revealHand={revealHand} revealDelay={showOrder * 650 + 550} />
+      <BetTag amount={betShown} position={layout.bet} />
 
       {/* 底牌 */}
       {p.hole.map((c, i) => {
@@ -358,7 +237,8 @@ function DealerButton({ layout }: { layout?: SeatLayout }) {
     g.font = 'bold 64px "PingFang SC","Microsoft YaHei",sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText('庄', 64, 68);
+    g.font = 'bold 76px Georgia, "Times New Roman", serif';
+    g.fillText('D', 64, 70);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
@@ -397,29 +277,6 @@ function Deck() {
         <meshStandardMaterial attach="material-5" color="#efe8d8" />
       </mesh>
     </group>
-  );
-}
-
-function PotLabel({ view }: { view: TableView }) {
-  if (view.potTotal <= 0) return null;
-  const side = view.pots.length > 1;
-  return (
-    <Html position={[POT_POS[0], POT_POS[1] + 0.55, POT_POS[2]]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
-      <div className="pot-label">
-        <div>
-          底池 <AnimatedChips value={view.potTotal} />
-        </div>
-        {side && (
-          <div className="pot-side">
-            {view.pots.map((p, i) => (
-              <span key={i}>
-                {i === 0 ? '主池' : `边池${i}`} {formatChips(p)}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </Html>
   );
 }
 
@@ -473,11 +330,18 @@ export function GameScene({ view }: { view: TableView }) {
     return ev && ev.type === 'dealHole' ? ev.order : [];
   }, [view.events]);
 
+  // 演出进度：底池 / 下注金额随筹码落地更新；摊牌牌型在亮牌时出现；赢家与获胜牌在赢家演出开始时才高亮
+  const shown = useFx((s) => s.shown);
+  const presentedHand = useFx((s) => s.presentation?.hand);
+  const winShown = presentedHand === view.handNumber;
+  const showdownShown = eventShown(view, shown, 'showdown');
+  const bets = useMemo(() => presentedBets(view, shown), [view, shown]);
+
   // 获胜高亮的牌
   const { highlight, wins } = useMemo(() => {
     const h = new Set<string>();
     const w = new Map<string, number>();
-    if (view.summary && view.phase === 'complete') {
+    if (view.summary && view.phase === 'complete' && winShown) {
       for (const win of view.summary.winners) {
         w.set(win.playerId, (w.get(win.playerId) ?? 0) + win.amount);
         const shown = view.summary.shown.find((s) => s.playerId === win.playerId);
@@ -485,7 +349,7 @@ export function GameScene({ view }: { view: TableView }) {
       }
     }
     return { highlight: h, wins: w };
-  }, [view.summary, view.phase]);
+  }, [view.summary, view.phase, winShown]);
 
   useEffect(() => () => useFx.getState().reset(), []);
 
@@ -498,7 +362,7 @@ export function GameScene({ view }: { view: TableView }) {
     if (!prev || prev.handNumber === view.handNumber) return;
     const pl = computeLayout(prev);
     const cards: RetireCard[] = [];
-    prev.board.forEach((c, i) => cards.push({ key: 'b' + c.id, card: c, pos: boardPos(i), yaw: 0, faceUp: true }));
+    prev.board.forEach((c, i) => cards.push({ key: 'b' + c.id, card: c, pos: boardPos(i), yaw: 0, faceUp: true, scale: BOARD_SCALE }));
     for (const p of prev.players) {
       const l = pl.get(p.id);
       if (!l) continue;
@@ -518,6 +382,8 @@ export function GameScene({ view }: { view: TableView }) {
       <SceneLights quality={quality} />
       <ClubEnvironment quality={quality} />
       <PokerTableMesh />
+      <TableMarkings />
+      <TurnGlow layout={view.currentPlayerId ? layout.get(view.currentPlayerId) : undefined} mine={view.currentPlayerId === view.viewerId} />
       <Deck />
       {view.players.map((p, i) => (
         <PlayerSeat
@@ -532,6 +398,8 @@ export function GameScene({ view }: { view: TableView }) {
           highlight={highlight}
           winAmount={wins.get(p.id) ?? 0}
           seedIndex={i}
+          betShown={bets.get(p.id) ?? 0}
+          revealHand={showdownShown}
         />
       ))}
       {retiring.cards.map((rc, i) => (
@@ -549,6 +417,7 @@ export function GameScene({ view }: { view: TableView }) {
           arcHeight={0.3}
           vanishOnLand
           silent={i % 3 !== 0}
+          scale={rc.scale}
         />
       ))}
       {view.board.map((c, i) => (
@@ -563,11 +432,12 @@ export function GameScene({ view }: { view: TableView }) {
           arcHeight={i === 4 ? 0.32 : 0.18}
           revealPause={i === 4 ? 520 : i === 3 ? 220 : 90}
           highlight={highlight.has(c.id)}
+          scale={BOARD_SCALE}
         />
       ))}
       <ChipPile amount={view.potCollected} position={POT_POS} delay={DUR.chipFlight + 300} layout="neat" />
       <WinnerLight layout={layout} />
-      <PotLabel view={view} />
+      <PotPlaque view={view} />
       <ChipFlights />
       <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />
       <DealerButton layout={view.dealerId ? layout.get(view.dealerId) : undefined} />

@@ -121,6 +121,20 @@ describe('在线房间：牌局 → 返回首页 → 再进入', () => {
     await until(() => !timers().ws);
   }, 30000);
 
+  it('从房间离开回到在线页面：离开确认后仍保持连接，可以直接创建新房间（不会被“离开后断开”卡住）', async () => {
+    await createAndStart();
+    session.leave('online');
+    await until(() => !(net as any).leavingRoom);
+    await wait(400);
+    expect(useGame.getState().screen).toBe('online');
+    expect(timers().ws).toBeTruthy();
+    expect(useGame.getState().conn).toBe('connected');
+    net.createRoom({ maxPlayers: 6, startingChips: 1000, smallBlind: 10, bigBlind: 20, turnSeconds: 30 } as any);
+    await until(() => useGame.getState().screen === 'room' && !!useGame.getState().room);
+    session.leave('home');
+    await until(() => !timers().ws);
+  }, 30000);
+
   it('连续点击“返回首页”：只清理一次，不出错，不残留', async () => {
     await createAndStart();
     session.leave('home');

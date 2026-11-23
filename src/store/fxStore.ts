@@ -79,6 +79,17 @@ export interface CameraCue {
   duration: number;
 }
 
+/** 赢家演出（由事件导演在派奖时刻触发，界面只负责展示） */
+export interface WinPresentation {
+  id: number;
+  hand: number;
+  uncontested: boolean;
+  tie: boolean;
+  winners: { playerId: string; amount: number; handName?: string; cards: import('../core/cards/card').Card[] }[];
+  start: number; // performance.now()
+  duration: number;
+}
+
 export interface Burst {
   id: number;
   position: [number, number, number];
@@ -117,6 +128,14 @@ interface FxState {
   setCue: (c: Omit<CameraCue, 'start'> | null) => void;
   burst: (position: [number, number, number], kind: Burst['kind']) => void;
   setCool: (playerId: string, ms: number) => void;
+  /**
+   * 已经“演出”到的事件序号：事件导演按节奏播放事件，每播放一个就推进这个游标。
+   * 底池数字、牌局记录等需要与动画同步的界面只显示游标之前的事件（避免数字先变、筹码后到，或提前剧透摊牌结果）。
+   */
+  shown: { hand: number; seq: number };
+  markShown: (hand: number, seq: number) => void;
+  presentation: WinPresentation | null;
+  present: (p: Omit<WinPresentation, 'id' | 'start'>) => void;
   cleanup: () => void;
   reset: () => void;
 }
@@ -181,6 +200,14 @@ export const useFx = create<FxState>()((set, get) => ({
   setCue: (c) => set({ cue: c ? { ...c, start: performance.now() } : null }),
   burst: (position, kind) => set({ bursts: [...get().bursts, { id: fid++, position, kind, start: performance.now() }].slice(-12) }),
   setCool: (playerId, ms) => set({ coolUntil: { ...get().coolUntil, [playerId]: Date.now() + ms } }),
+  shown: { hand: -1, seq: 0 },
+  markShown: (hand, seq) => {
+    const cur = get().shown;
+    // 同一手牌只前进；换了一手（包括“再来一局”从第 1 手重新开始）直接切换
+    if (hand !== cur.hand || seq > cur.seq) set({ shown: { hand, seq } });
+  },
+  presentation: null,
+  present: (p) => set({ presentation: { ...p, id: fid++, start: performance.now() } }),
   cleanup: () => {
     const now = performance.now();
     const nowD = Date.now();
@@ -206,7 +233,7 @@ export const useFx = create<FxState>()((set, get) => ({
       set({ flights, bubbles, bursts, moods, speech });
     }
   },
-  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, speech: {}, announce: null, tension: 0, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
+  reset: () => set({ anims: {}, flights: [], bubbles: [], cue: null, bursts: [], coolUntil: {}, moods: {}, speech: {}, announce: null, presentation: null, shown: { hand: -1, seq: 0 }, tension: 0, shake: { amp: 0, start: 0 }, light: { level: 0, start: 0, duration: 0 } }),
 }));
 
 if (typeof window !== 'undefined') {

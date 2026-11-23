@@ -8,9 +8,14 @@ export const TABLE_Y = 1.0; // 桌面高度
 export const SEAT_R = 4.15;
 export const SEAT_Y = 0.6;
 export const DECK_POS: V3 = [0, TABLE_Y + 0.05, -1.55];
-export const POT_POS: V3 = [0, TABLE_Y + 0.01, -0.85];
+export const POT_POS: V3 = [0, TABLE_Y + 0.01, -1.0];
+/** 弃牌堆：牌堆右侧 */
+export const MUCK_POS: V3 = [0.82, TABLE_Y + 0.006, -1.5];
 export const CARD_W = 0.5;
 export const CARD_H = 0.7;
+/** 公共牌放大倍数与间距：牌桌镜头较远，公共牌是牌局的视觉中心 */
+export const BOARD_SCALE = 1.25;
+export const BOARD_GAP = 0.71;
 
 export interface SeatLayout {
   id: string;
@@ -45,13 +50,14 @@ export function computeLayout(view: Pick<TableView, 'players' | 'viewerId'>): Ma
       angle: a,
       seat: at(a, SEAT_R, SEAT_Y),
       cards: at(a, isViewer ? 2.45 : 2.6, TABLE_Y + 0.012),
-      bet: at(a, 1.95, TABLE_Y + 0.01),
+      bet: at(a, 2.08, TABLE_Y + 0.01),
       stack: at(a - (isViewer ? 0.3 : 0.34), 2.72, TABLE_Y + 0.004),
       head: at(a, SEAT_R, SEAT_Y + 2.45),
-      // 自己的名牌放在侧边，避免挡住自己的手牌
-      tag: isViewer ? [SEAT_R * 0.62, SEAT_Y + 1.2, SEAT_R * 0.92] : at(a, SEAT_R - 0.45, SEAT_Y + 2.3),
+      // 名牌在动物头顶上方（不遮住脸）；自己的信息在屏幕下方的座位面板里
+      tag: isViewer ? [SEAT_R * 0.62, SEAT_Y + 1.2, SEAT_R * 0.92] : at(a, SEAT_R + 0.05, SEAT_Y + 2.95),
       button: at(a + 0.32, 2.35, TABLE_Y + 0.02),
-      muck: at(a + 0.2, 1.35, TABLE_Y + 0.006),
+      // 弃牌推到牌堆旁边的弃牌堆（不进入公共牌区域）；每个座位略有偏移，叠成自然的一小堆
+      muck: [MUCK_POS[0] + Math.sin(a) * 0.16, TABLE_Y + 0.006 + ((a / (Math.PI * 2) + 1) % 1) * 0.018, MUCK_POS[2] + Math.cos(a) * 0.1],
       isViewer,
     });
   });
@@ -59,5 +65,5 @@ export function computeLayout(view: Pick<TableView, 'players' | 'viewerId'>): Ma
 }
 
 export function boardPos(i: number): V3 {
-  return [(i - 2) * 0.6, TABLE_Y + 0.012, 0.18];
+  return [(i - 2) * BOARD_GAP, TABLE_Y + 0.012, 0.18];
 }

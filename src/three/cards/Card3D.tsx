@@ -94,6 +94,8 @@ export interface Card3DProps {
   silent?: boolean;
   /** 摊牌时逐个翻开：翻面前的等待（毫秒） */
   flipDelay?: number;
+  /** 尺寸倍数：公共牌比手牌大，远处镜头也能看清 */
+  scale?: number;
 }
 
 const tmpA = new THREE.Vector3();
@@ -105,7 +107,7 @@ const tmpA = new THREE.Vector3();
  */
 export function Card3D({
   card, target, yaw = 0, tilt = 0, faceUp, delay = 0, from = DECK_POS, fromFaceUp = false, fromYaw, highlight = false,
-  flightMs = DUR.cardFlight, arcHeight = 0.22, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent, flipDelay = 0,
+  flightMs = DUR.cardFlight, arcHeight = 0.22, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent, flipDelay = 0, scale = 1,
 }: Card3DProps) {
   const ref = useRef<THREE.Group>(null!);
   const glow = useRef<THREE.Mesh>(null!);
@@ -177,7 +179,7 @@ export function Card3D({
     sh.position.set(x + above * 0.08, TABLE_Y + 0.0012, z + above * 0.05);
     sh.rotation.set(-Math.PI / 2, 0, ry);
     const k = 1 + above * 1.4;
-    sh.scale.set(CARD_W * 1.3 * k, CARD_H * 1.25 * k, 1);
+    sh.scale.set(CARD_W * 1.3 * k * scale, CARD_H * 1.25 * k * scale, 1);
     myShadow.opacity = 0.6 / (1 + above * 7);
   };
 
@@ -295,7 +297,7 @@ export function Card3D({
   return (
     <>
     <mesh ref={shadow} geometry={shadowGeo} material={myShadow} visible={false} renderOrder={1} />
-    <group ref={ref} visible={false}>
+    <group ref={ref} visible={false} scale={scale}>
       <mesh geometry={faceGeo} material={faceMat} castShadow receiveShadow />
       <mesh geometry={backGeo} material={getBack()} castShadow />
       <mesh geometry={edgeGeo} material={edgeMats} />

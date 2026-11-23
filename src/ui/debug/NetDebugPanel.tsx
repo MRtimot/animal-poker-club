@@ -1,8 +1,8 @@
-// 开发者联机调试面板（开发模式自动显示；正式环境在网址后加 ?debug=1 才显示）
+// 开发者联机调试面板：网址后加 ?debug=1 才显示（开发模式也一样，避免挡住游戏界面）
 import { useGame } from '../../store/gameStore';
 import { serverWsUrl } from '../../net/serverAddress';
 
-const enabled = import.meta.env.DEV || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug'));
+const enabled = typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug');
 
 export function NetDebugPanel() {
   const conn = useGame((s) => s.conn);

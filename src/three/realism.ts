@@ -125,22 +125,9 @@ export function feltMaps(): PBRMaps {
     g.strokeStyle = 'rgba(214,190,128,0.42)';
     g.lineWidth = 3;
     g.beginPath();
-    g.arc(S / 2, S / 2, S * 0.3, 0, Math.PI * 2);
+    g.arc(S / 2, S / 2, S * 0.32, 0, Math.PI * 2);
     g.stroke();
-    // 公共牌区域：极淡的框
-    g.strokeStyle = 'rgba(230,230,210,0.10)';
-    g.lineWidth = 2;
-    for (let i = 0; i < 5; i++) {
-      const x = S / 2 - 205 + i * 84;
-      g.beginPath();
-      g.roundRect(x, S / 2 - 40, 70, 98, 7);
-      g.stroke();
-    }
-    g.fillStyle = 'rgba(214,190,128,0.16)';
-    g.font = '600 30px Georgia, "Times New Roman", serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('A N I M A L   P O K E R   C L U B', S / 2, S / 2 + 140);
+    // 公共牌位置与桌面标志不再印在布纹里：由 TableMarkings 按真实的公共牌坐标精确绘制（压印效果、低对比度）
     grain(g, S, S, 10, 3);
     const map = tex(c);
     map.center.set(0.5, 0.5);
@@ -169,6 +156,33 @@ export function feltMaps(): PBRMaps {
     const normalMap = tex(heightToNormal(h, 1.6), { srgb: false, repeat: [10, 10] });
     return { map, normalMap };
   });
+}
+
+/**
+ * 桌布压印贴花：draw 在透明画布上画出图案（白色 = 凸起），返回颜色贴图与压印法线贴图。
+ * 每次调用都会创建新贴图，由调用方在卸载时释放。
+ */
+export function embossDecal(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, strength = 3) {
+  const { c: mask, g: mg } = canvas(w, h);
+  draw(mg);
+  // 高度图：图案的白色剪影放在黑底上（略微模糊，让边缘像压出来的而不是刻出来的）
+  const { c: sil, g: sg } = canvas(w, h);
+  sg.drawImage(mask, 0, 0);
+  sg.globalCompositeOperation = 'source-in';
+  sg.fillStyle = '#fff';
+  sg.fillRect(0, 0, w, h);
+  const { c: height, g: hg } = canvas(w, h);
+  hg.fillStyle = '#000';
+  hg.fillRect(0, 0, w, h);
+  hg.filter = 'blur(2px)';
+  hg.drawImage(sil, 0, 0);
+  hg.filter = 'none';
+  const map = new THREE.CanvasTexture(mask);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+  const normalMap = new THREE.CanvasTexture(heightToNormal(height, strength));
+  normalMap.anisotropy = 8;
+  return { map, normalMap };
 }
 
 // ───────────── 木材 ─────────────

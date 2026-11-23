@@ -43,6 +43,14 @@ const IDLE: Record<string, IdleStyle> = {
   rabbit: { pace: 1.4, sway: 0.8, tail: 0.6, glance: 1.4, earPerk: true },
   dog: { pace: 1.2, sway: 1, tail: 2, glance: 1.2 },
   monkey: { pace: 1.3, sway: 1.3, tail: 1.3, glance: 1.8 },
+  // 与 PERSONALITIES_BY_SPECIES 的性格一致：狼冷静、很少张望；老虎强势、动作大；狮子沉稳；
+  // 企鹅左右摇摆；浣熊东张西望；龙缓慢而有压迫感
+  wolf: { pace: 0.8, sway: 0.55, tail: 0.7, glance: 0.55 },
+  tiger: { pace: 1.05, sway: 1.15, tail: 1.6, glance: 1.25 },
+  lion: { pace: 0.85, sway: 0.8, tail: 1.1, glance: 0.7 },
+  penguin: { pace: 0.95, sway: 1.9, tail: 0.3, glance: 0.85 },
+  raccoon: { pace: 1.15, sway: 0.9, tail: 1.2, glance: 1.9 },
+  dragon: { pace: 0.6, sway: 0.7, tail: 0.9, glance: 0.45 },
 };
 const DEFAULT_IDLE: IdleStyle = { pace: 1, sway: 1, tail: 1, glance: 1 };
 

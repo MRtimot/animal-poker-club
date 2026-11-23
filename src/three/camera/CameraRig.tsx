@@ -6,12 +6,21 @@ import { useSettings } from '../../store/settingsStore';
 import type { CameraMode } from '../../store/gameStore';
 import { SeatLayout, boardPos } from '../layout';
 import { DUR, ease, smoothDamp } from '../../animation/motion';
+import { prefersReducedMotion } from '../../utils/reducedMotion';
 
 /** 当前镜头焦点（景深使用） */
 export const cameraFocus = new THREE.Vector3(0, 1, 0);
 
 const BOARD_CENTER = new THREE.Vector3(boardPos(2)[0], 1.0, boardPos(2)[2]);
 const tmpV = new THREE.Vector3();
+
+/** 牌局 HUD 占用的屏幕区域（与 gameHud.css 中的 --hud-top / --hud-bottom 一致） */
+export function hudInsets(w: number, h: number): { top: number; bottom: number } {
+  if (w <= 760) return { top: 54, bottom: 196 };
+  if (h <= 520 && w >= 600) return { top: 48, bottom: 104 };
+  if (w >= 1800 && h >= 1000) return { top: 68, bottom: 150 };
+  return { top: 60, bottom: 132 };
+}
 
 /**
  * 摄像机系统：普通视角 / 玩家视角 + 自动镜头（行动、全押、摊牌环绕、获胜特写）
@@ -30,6 +39,23 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     base.current.copy(camera.position);
   }, [mode, camera]);
 
+  // 镜头取景避开 HUD：把画面中心移到顶栏与底部操作区之间（镜头位移，不改变透视），离开牌桌时恢复
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    const { top, bottom } = hudInsets(size.width, size.height);
+    const shift = Math.round((bottom - top) / 2);
+    cam.setViewOffset(size.width, size.height, 0, shift, size.width, size.height);
+    cam.updateProjectionMatrix();
+  }, [camera, size.width, size.height]);
+  useEffect(
+    () => () => {
+      const cam = camera as THREE.PerspectiveCamera;
+      cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+    },
+    [camera],
+  );
+
   // 进入牌桌：镜头从高处远处缓慢推进
   useEffect(() => {
     introStart.current = performance.now();
@@ -43,10 +69,11 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     const aspect = size.width / size.height;
     const portrait = aspect < 0.9;
     const auto = useSettings.getState().autoCamera;
+    const calm = prefersReducedMotion();
 
     // 竖屏（手机）水平视野很窄：加大视场角，保证两侧的动物也在画面内
     const cam = camera as THREE.PerspectiveCamera;
-    const wantFov = portrait ? (mode === 'overview' ? 68 : 58) : 45;
+    const wantFov = portrait ? (mode === 'overview' ? 64 : 58) : 45;
     const fovDiff = wantFov - cam.fov;
     if (Math.abs(fovDiff) > 0.01) {
       cam.fov = Math.abs(fovDiff) < 0.1 ? wantFov : cam.fov + fovDiff * Math.min(1, dt * 4);
@@ -55,11 +82,14 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
 
     // 基础机位
     if (mode === 'overview') {
-      // 足够高，让视线越过自己动物的头顶看到自己的手牌
-      const dist = portrait ? 7.4 : aspect < 1.4 ? 8.2 : 7.6;
-      const h = portrait ? 15.2 : aspect < 1.4 ? 11.2 : 10.4;
+      // 默认牌桌镜头：完整的牌桌 + 所有座位与名牌 + 公共牌区 + 一点环境；
+      // 视线略微看向远端，越过自己动物的头顶，并给顶栏与底部操作区留出空间
+      // 手机横屏（高度很小）：镜头拉远一些，让名牌、牌桌与底部操作区都放得下
+      const short = !portrait && size.height < 520;
+      const dist = portrait ? 10.8 : short ? 12.2 : aspect < 1.4 ? 11.8 : 10.2;
+      const h = portrait ? 13.6 : short ? 13.4 : aspect < 1.4 ? 12.4 : 10.6;
       tmpPos.set(0, h, dist);
-      tmpLook.set(0, 0, portrait ? 0.9 : 0);
+      tmpLook.set(0, 0, portrait ? -2.8 : short ? -1.9 : aspect < 1.4 ? -1.2 : -1.5);
     } else {
       // 玩家视角：越过右肩看向牌桌
       tmpPos.set(portrait ? 1.0 : 1.45, portrait ? 5.6 : 3.9, portrait ? 7.4 : 5.6);
@@ -68,6 +98,8 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
 
     let speed = 2.2;
     const cue = auto ? useFx.getState().cue : null;
+    // 减少动态效果：镜头只做很小的提示性移动，不环绕、不震动
+    const amp = calm ? 0.35 : 1;
     if (cue) {
       const t = (performance.now() - cue.start) / 1000;
       const d = cue.duration / 1000;
@@ -75,7 +107,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
         useFx.getState().setCue(null);
       } else {
         const seat = cue.playerId ? layout.get(cue.playerId) : undefined;
-        const fade = Math.min(1, t / 0.3) * Math.min(1, (d - t) / 0.5);
+        const fade = Math.min(1, t / 0.3) * Math.min(1, (d - t) / 0.5) * amp;
         if (cue.type === 'flop' || cue.type === 'turn' || cue.type === 'river') {
           // 公共牌镜头：翻牌关注、转牌靠近、河牌最靠近也最慢（制造期待感）
           const amt = cue.type === 'flop' ? 0.32 : cue.type === 'turn' ? 0.42 : 0.55;
@@ -83,7 +115,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
           tmpPos.lerp(tmpV, fade * amt);
           tmpLook.lerp(BOARD_CENTER, fade * 0.8);
           speed = cue.type === 'river' ? 1.3 : 1.8;
-        } else if (cue.type === 'showdown') {
+        } else if (cue.type === 'showdown' && !calm) {
           // 镜头慢慢环绕牌桌
           const a = t * 0.35 + 0.2;
           const r = portrait ? 10 : 8.2;
@@ -129,13 +161,15 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     L.set(smoothDamp(L.x, tmpLook.x, V.lx, smooth * 0.9, d), smoothDamp(L.y, tmpLook.y, V.ly, smooth * 0.9, d), smoothDamp(L.z, tmpLook.z, V.lz, smooth * 0.9, d));
     camera.position.copy(b);
 
-    // 极轻微的手持感（几乎察觉不到），重大时刻再叠加一次克制的震动
+    // 极轻微的手持感（几乎察觉不到），重大时刻再叠加一次克制的震动（减少动态效果时都关闭）
     const tt = performance.now() / 1000;
-    camera.position.x += Math.sin(tt * 0.37) * 0.012;
-    camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008;
+    if (!calm) {
+      camera.position.x += Math.sin(tt * 0.37) * 0.012;
+      camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008;
+    }
     const sh = useFx.getState().shake;
     const st = (performance.now() - sh.start) / 1000;
-    if (sh.amp > 0 && st < 0.6) {
+    if (!calm && sh.amp > 0 && st < 0.6) {
       const a = sh.amp * Math.exp(-st * 7);
       camera.position.x += Math.sin(st * 41) * a;
       camera.position.y += Math.sin(st * 33 + 1.3) * a * 0.5;

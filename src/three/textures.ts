@@ -38,19 +38,6 @@ const SERIF = 'Georgia, "Times New Roman", "Songti SC", serif';
 const CW = 300;
 const CH = 420;
 
-/** 2~10 的标准花色点位（相对牌面中央区域） */
-const PIPS: Record<number, [number, number][]> = {
-  2: [[0.5, 0.18], [0.5, 0.82]],
-  3: [[0.5, 0.18], [0.5, 0.5], [0.5, 0.82]],
-  4: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.82], [0.7, 0.82]],
-  5: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.5], [0.3, 0.82], [0.7, 0.82]],
-  6: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.5], [0.7, 0.5], [0.3, 0.82], [0.7, 0.82]],
-  7: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.34], [0.3, 0.5], [0.7, 0.5], [0.3, 0.82], [0.7, 0.82]],
-  8: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.34], [0.3, 0.5], [0.7, 0.5], [0.5, 0.66], [0.3, 0.82], [0.7, 0.82]],
-  9: [[0.3, 0.18], [0.7, 0.18], [0.3, 0.39], [0.7, 0.39], [0.5, 0.5], [0.3, 0.61], [0.7, 0.61], [0.3, 0.82], [0.7, 0.82]],
-  10: [[0.3, 0.18], [0.7, 0.18], [0.5, 0.29], [0.3, 0.39], [0.7, 0.39], [0.3, 0.61], [0.7, 0.61], [0.5, 0.71], [0.3, 0.82], [0.7, 0.82]],
-};
-
 function paper(g: CanvasRenderingContext2D, w: number, h: number, base: string) {
   g.fillStyle = base;
   roundRect(g, 0, 0, w, h, 18);
@@ -73,91 +60,45 @@ function paper(g: CanvasRenderingContext2D, w: number, h: number, base: string) 
 }
 
 /** 写实扑克牌牌面：衬线字体角标、标准点位、双头人头牌 */
+/**
+ * 牌面：大号角标（jumbo index）设计——牌桌镜头离得较远时也能一眼看清点数与花色。
+ * 左上角是大号点数 + 花色，右下角是大号花色；人头牌加一个皇冠记号。红黑高对比。
+ */
 export function cardFaceTexture(card: Card) {
-  return canvasTex('card-' + card.id, CW, CH, (g, w, h) => {
+  return canvasTex('card-jumbo-' + card.id, CW, CH, (g, w, h) => {
     paper(g, w, h, '#fbf8f0');
     const red = isRed(card);
-    const color = red ? '#b3132b' : '#141418';
+    const color = red ? '#c0152f' : '#121216';
     const sym = SUIT_SYMBOL[card.suit];
     const lab = rankLabel(card.rank);
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
+    // 细金线内框：牌面更精致，也让牌在绿色桌布上轮廓清楚
+    g.strokeStyle = 'rgba(184,144,47,0.55)';
+    g.lineWidth = 3;
+    roundRect(g, 12, 12, w - 24, h - 24, 12);
+    g.stroke();
     g.fillStyle = color;
-    const corner = (rot: number) => {
-      g.save();
-      g.translate(w / 2, h / 2);
-      g.rotate(rot);
-      g.translate(-w / 2, -h / 2);
-      g.font = `600 ${lab.length > 1 ? 44 : 50}px ${SERIF}`;
-      g.fillText(lab, 32, 40);
-      g.font = `34px ${SERIF}`;
-      g.fillText(sym, 32, 82);
-      g.restore();
-    };
-    corner(0);
-    corner(Math.PI);
-    const ix = 62;
-    const iy = 56;
-    const iw = w - ix * 2;
-    const ih = h - iy * 2;
-    if (card.rank >= 2 && card.rank <= 10) {
-      g.font = `${card.rank >= 9 ? 48 : 56}px ${SERIF}`;
-      for (const [px, py] of PIPS[card.rank]) {
-        g.save();
-        g.translate(ix + px * iw, iy + py * ih);
-        if (py > 0.55) g.rotate(Math.PI);
-        g.fillText(sym, 0, 0);
-        g.restore();
-      }
-    } else if (card.rank === 14) {
-      g.font = `${card.suit === 's' ? 170 : 120}px ${SERIF}`;
-      g.fillText(sym, w / 2, h / 2 + 6);
-      if (card.suit === 's') {
-        g.strokeStyle = 'rgba(20,20,24,0.5)';
-        g.lineWidth = 2;
-        g.beginPath();
-        g.arc(w / 2, h / 2, 104, 0, Math.PI * 2);
-        g.stroke();
-      }
-    } else {
-      // 人头牌：带边框的双头设计（上下对称）
-      const fx = 58;
-      const fy = 52;
-      const fw = w - fx * 2;
-      const fh = h - fy * 2;
-      g.fillStyle = red ? '#f6e3d6' : '#e3e6ee';
-      g.fillRect(fx, fy, fw, fh);
-      g.strokeStyle = color;
-      g.lineWidth = 2.5;
-      g.strokeRect(fx, fy, fw, fh);
-      g.strokeStyle = '#b8902f';
-      g.lineWidth = 1.5;
-      g.strokeRect(fx + 5, fy + 5, fw - 10, fh - 10);
-      const name = card.rank === 13 ? 'K' : card.rank === 12 ? 'Q' : 'J';
-      const crown = card.rank === 13 ? '♚' : card.rank === 12 ? '♛' : '♞';
-      for (const rot of [0, Math.PI]) {
-        g.save();
-        g.translate(w / 2, h / 2);
-        g.rotate(rot);
-        // 斜向分隔线
-        g.strokeStyle = 'rgba(184,144,47,0.7)';
-        g.lineWidth = 1.5;
-        g.beginPath();
-        g.moveTo(-fw / 2 + 8, 6);
-        g.lineTo(fw / 2 - 8, -6);
-        g.stroke();
-        g.fillStyle = red ? '#7d1020' : '#1a2b5a';
-        g.font = `${74}px ${SERIF}`;
-        g.fillText(crown, -18, -fh / 4 + 4);
-        g.fillStyle = color;
-        g.font = `600 46px ${SERIF}`;
-        g.fillText(name, 42, -fh / 4 - 30);
-        g.font = `30px ${SERIF}`;
-        g.fillText(sym, 42, -fh / 4 + 12);
-        g.fillStyle = '#b8902f';
-        for (let i = 0; i < 5; i++) g.fillRect(-fw / 2 + 16 + i * 14, -fh / 2 + 18, 7, 3);
-        g.restore();
-      }
+    g.textBaseline = 'alphabetic';
+    // 左上：点数（两位数时压窄）
+    g.textAlign = 'left';
+    const two = lab.length > 1;
+    g.save();
+    g.translate(26, 150);
+    if (two) g.scale(0.72, 1);
+    g.font = `700 150px ${SERIF}`;
+    g.fillText(lab, 0, 0);
+    g.restore();
+    // 点数下方：花色
+    g.textAlign = 'center';
+    g.font = `112px ${SERIF}`;
+    g.fillText(sym, 82, 262);
+    // 右下：大号花色
+    g.font = `190px ${SERIF}`;
+    g.fillText(sym, w - 88, h - 34);
+    // 人头牌：右上角的小皇冠
+    if (card.rank >= 11 && card.rank <= 13) {
+      g.fillStyle = '#b8902f';
+      g.font = `64px ${SERIF}`;
+      g.fillText(card.rank === 13 ? '♚' : card.rank === 12 ? '♛' : '♞', w - 64, 92);
     }
   });
 }

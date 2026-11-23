@@ -15,6 +15,8 @@ export function RoomLobby() {
   const [aiP, setAiP] = useState<AIPersonality>('smartCat');
   const [aiD, setAiD] = useState<AIDifficulty>('easy');
   const [confirmLeave, setConfirmLeave] = useState(false);
+  // 防止重复点击“开始游戏”（房间状态改变或出现错误时恢复）。Hook 必须在提前返回之前调用
+  const [starting, markStarting] = useBusy(room?.status);
   if (!room) return null;
 
   const isHost = room.hostId === me;
@@ -22,8 +24,7 @@ export function RoomLobby() {
   const full = room.members.length >= room.settings.maxPlayers;
   const notReady = room.members.filter((m) => !m.isAI && !m.ready);
   const canStart = isHost && room.members.length >= 2 && notReady.length === 0;
-  // 防止重复点击“开始游戏”（房间状态改变或出现错误时恢复）
-  const [starting, markStarting] = useBusy(room.status);
+  const humans = room.members.filter((m) => !m.isAI).length;
 
   const copy = async () => {
     try {
@@ -35,7 +36,44 @@ export function RoomLobby() {
   };
 
   return (
-    <div className="screen side-screen">
+    <div className="screen side-screen lobby-screen">
+      {/* 房间顶栏：返回 · 房间代码 · 人数 · 开始 / 准备 */}
+      <header className="lbar">
+        <button type="button" className="lbar-btn" aria-label="离开房间" title="离开房间" onClick={() => setConfirmLeave(true)}>
+          <span aria-hidden>←</span>
+          <span className="lbar-btn-text">返回</span>
+        </button>
+        <div className="lbar-center">
+          <span className="lbar-cap">房间</span>
+          <button type="button" className="lbar-code" onClick={copy} title="点击复制房间代码" aria-label={`房间代码 ${room.code}，点击复制`}>
+            {room.code}
+          </button>
+          <span className="lbar-sep" aria-hidden />
+          <span className="lbar-count" aria-label={`${room.members.length} / ${room.settings.maxPlayers} 名玩家`}>
+            <b>{room.members.length}</b> / {room.settings.maxPlayers} 名玩家
+            {humans < room.members.length && <small>（{room.members.length - humans} 个 AI）</small>}
+          </span>
+        </div>
+        <div className="lbar-right">
+          {isHost ? (
+            <Btn
+              kind="pink"
+              onClick={() => {
+                if (!markStarting()) return;
+                net.startGame();
+              }}
+              disabled={!canStart || starting}
+              title={canStart ? '开始游戏' : room.members.length < 2 ? '至少需要 2 名玩家' : '还有玩家没有准备'}
+            >
+              {starting ? '开始中…' : '开始游戏'}
+            </Btn>
+          ) : (
+            <Btn kind={mine?.ready ? 'ghost' : 'green'} onClick={() => net.ready(!mine?.ready)}>
+              {mine?.ready ? '取消准备' : '准备'}
+            </Btn>
+          )}
+        </div>
+      </header>
       <ChatPanel side="left" />
       <div className="panel side-panel">
         <div className="panel-head">
@@ -105,31 +143,12 @@ export function RoomLobby() {
               🤖 添加本地 AI
             </Btn>
           )}
-          {!isHost && (
-            <Btn kind={mine?.ready ? 'ghost' : 'green'} size="lg" block onClick={() => net.ready(!mine?.ready)}>
-              {mine?.ready ? '取消准备' : '✅ 准备'}
-            </Btn>
-          )}
-          {isHost && (
-            <Btn
-              kind="pink"
-              size="lg"
-              block
-              onClick={() => {
-                if (!markStarting()) return;
-                net.startGame();
-              }}
-              disabled={!canStart || starting}
-            >
-              🃏 开始游戏
-            </Btn>
-          )}
           {isHost && !canStart && (
             <div className="small muted center">
               {room.members.length < 2 ? '至少需要 2 名玩家，可以添加 AI' : `等待 ${notReady.map((m) => m.profile.name).join('、')} 准备`}
             </div>
           )}
-          {!isHost && <div className="small muted center">所有玩家准备后，由房主开始游戏</div>}
+          {!isHost && <div className="small muted center">{mine?.ready ? '已准备，等待房主开始游戏' : '点击右上角「准备」，所有玩家准备后由房主开始游戏'}</div>}
           <Btn kind="ghost" size="sm" onClick={() => setConfirmLeave(true)}>
             离开房间
           </Btn>
