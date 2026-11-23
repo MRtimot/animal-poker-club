@@ -112,6 +112,17 @@ export const useProfile = create<ProfileState>()(
   ),
 );
 
+/**
+ * 多个标签页共用同一份游客存档：另一个标签页写入后，这里重新读取。
+ * 否则每个标签页都拿着自己内存里的旧存档，下一次保存会把另一个标签页刚获得的经验 / 成就覆盖掉。
+ * （storage 事件只在“其他标签页”修改时触发；重新读取后写回的内容相同，不会来回触发）
+ */
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === GUEST_KEY && !accountMode) void useProfile.persist.rehydrate();
+  });
+}
+
 /** 校验本机游客存档的每个字段；非法值回落到默认值，缺失字段自动补齐 */
 export function cleanGuestSave(raw: unknown, cur: ProfileState): Partial<ProfileState> {
   const p: any = raw && typeof raw === 'object' ? raw : {};

@@ -1,4 +1,5 @@
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { isPC } from '../../utils/pc';
 import type { Card } from '../../core/cards/card';
 import { SUIT_SYMBOL, isRed, rankLabel } from '../../core/cards/card';
 import { AnimalConfig, FUR_COLORS, SPECIES_MAP } from '../../core/player/profile';
@@ -66,16 +67,56 @@ export function Seg<T extends string | number>({ options, value, onChange, disab
 }
 
 export function Modal({ title, children, onClose, actions, width }: { title?: ReactNode; children: ReactNode; onClose?: () => void; actions?: ReactNode; width?: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useEffect(() => {
     if (!onClose) return;
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
+  // 电脑版键盘操作：打开时焦点移进对话框，Tab / Shift+Tab 在对话框内循环，关闭后焦点回到原来的位置
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !isPC()) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      [...el.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter(
+        (x) => x.offsetParent !== null,
+      );
+    (focusables()[0] ?? el).focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const f = focusables();
+      if (!f.length) return e.preventDefault();
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    el.addEventListener('keydown', onKey);
+    return () => {
+      el.removeEventListener('keydown', onKey);
+      if (prev && prev.isConnected) prev.focus({ preventScroll: true });
+    };
+  }, []);
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className="modal panel" style={width ? { width: `min(${width}px, 100%)` } : undefined}>
-        {title && <h2>{title}</h2>}
+      <div
+        ref={box}
+        className="modal panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        tabIndex={-1}
+        style={width ? { width: `min(${width}px, 100%)` } : undefined}
+      >
+        {title && <h2 id={titleId}>{title}</h2>}
         {children}
         {actions && <div className="modal-actions">{actions}</div>}
       </div>

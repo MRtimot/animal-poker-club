@@ -2,6 +2,8 @@
 import { Reveal, StorySection } from '../HomeParts';
 import { useHomeActions } from '../homeActions';
 import { PremiumButton } from '../PremiumButton';
+import { useConsent } from '../../../privacy/consent';
+import { useIsPC } from '../../../utils/pc';
 
 export function FinalCTASection() {
   const a = useHomeActions();
@@ -31,6 +33,7 @@ export function FinalCTASection() {
 
 export function HomeFooter() {
   const a = useHomeActions();
+  const pc = useIsPC();
   const links: [string, () => void][] = [
     ['开始游戏', a.play],
     ['在线房间', a.createRoom],
@@ -56,7 +59,17 @@ export function HomeFooter() {
       <div className="hf-credits">
         创始人 Timothy Ong · Founder of APEX <span aria-hidden>·</span> 游戏测试员 John
       </div>
-      <div className="hf-legal">仅使用虚拟筹码 · 无真钱交易 · 登录仅用于保存游戏进度</div>
+      <div className="hf-legal">
+        仅使用虚拟筹码 · 无真钱交易 · 登录仅用于保存游戏进度
+        {pc && (
+          <>
+            {' · '}
+            <button type="button" className="hf-cookie" onClick={() => useConsent.getState().openSettings()}>
+              Cookie 与本机存储设置
+            </button>
+          </>
+        )}
+      </div>
       <div className="hf-copy">© 2026 Animal Poker Club</div>
     </footer>
   );

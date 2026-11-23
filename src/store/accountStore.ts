@@ -7,6 +7,7 @@ import { ACHIEVEMENTS } from '../progress/progression';
 import { SPECIES_MAP } from '../core/player/profile';
 import { ApiError, accountApi } from '../account/api';
 import { clearGuestSave, isAccountMode, readGuestSave, showAccount, showGuest, useProfile } from './profileStore';
+import { parseAccountCache } from '../account/cacheValidate';
 import { useSettings } from './settingsStore';
 import { useGame } from './gameStore';
 import { safeStorage } from '../utils/format';
@@ -65,7 +66,10 @@ function writeCache(a: AccountState | null) {
 function readCache(): AccountState | null {
   try {
     const raw = store()?.getItem(CACHE_KEY);
-    return raw ? (JSON.parse(raw) as AccountState) : null;
+    const a = parseAccountCache(raw);
+    // 损坏 / 被修改的缓存：丢弃，等服务器数据（以前会在显示缓存时崩溃，登录状态卡住）
+    if (raw && !a) store()?.removeItem(CACHE_KEY);
+    return a;
   } catch {
     return null;
   }
@@ -217,6 +221,19 @@ if (typeof window !== 'undefined') {
     retryCount = 0;
     void flush();
     if (useAccount.getState().cached) void refresh();
+  });
+  // 多个标签页：在另一个标签页退出 / 登录后，这里也跟着切换，界面与服务器的登录状态保持一致。
+  // （退出时服务器会话已作废，但这个标签页的实时连接仍带着旧身份；登录时共用的 Cookie 已经是新身份）
+  window.addEventListener('storage', (e) => {
+    if (e.key !== CACHE_KEY) return;
+    const A = useAccount.getState();
+    if (!e.newValue && A.status === 'signedIn') {
+      void endSession('你已在其他页面退出登录。');
+    } else if (e.newValue && A.status === 'guest') {
+      void refresh().then((ok) => {
+        if (ok) reconnect?.();
+      });
+    }
   });
 }
 

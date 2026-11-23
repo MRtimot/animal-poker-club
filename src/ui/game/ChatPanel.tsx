@@ -3,6 +3,7 @@ import { useGame } from '../../store/gameStore';
 import { EMOTES, QUICK_CHATS } from '../../core/protocol';
 import { session } from '../../net/session';
 import { sound } from '../../audio/sound';
+import { isPC } from '../../utils/pc';
 
 const NAME_COLORS = ['#ffb36b', '#5fe1ff', '#ff8cc4', '#9ff0b8', '#d6a8ff', '#ffe08a', '#8ab8ff', '#ff9a9a'];
 function colorFor(id: string) {
@@ -19,7 +20,8 @@ function isNarrow() {
 export function ChatPanel({ side = 'right' }: { side?: 'left' | 'right' }) {
   const chat = useGame((s) => s.chat);
   const me = useGame((s) => s.playerId);
-  const [open, setOpen] = useState(typeof window !== 'undefined' && window.innerWidth > (side === 'left' ? 1400 : 1280));
+  // 默认展开：电脑版在 1600 宽以上才展开（更窄时会挡住右侧座位）；其他设备保持原来的规则
+  const [open, setOpen] = useState(typeof window !== 'undefined' && window.innerWidth > (side === 'left' ? 1400 : isPC() ? 1599 : 1280));
   const [text, setText] = useState('');
   const [seen, setSeen] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);

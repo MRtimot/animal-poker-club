@@ -7,6 +7,7 @@ import type { CameraMode } from '../../store/gameStore';
 import { SeatLayout, boardPos } from '../layout';
 import { DUR, ease, smoothDamp } from '../../animation/motion';
 import { prefersReducedMotion } from '../../utils/reducedMotion';
+import { isPC } from '../../utils/pc';
 
 /** 当前镜头焦点（景深使用） */
 export const cameraFocus = new THREE.Vector3(0, 1, 0);
@@ -19,6 +20,7 @@ export function hudInsets(w: number, h: number): { top: number; bottom: number }
   if (w <= 760) return { top: 54, bottom: 196 };
   if (w <= 1100 && h > w) return { top: 60, bottom: 210 };
   if (h <= 520 && w >= 600) return { top: 48, bottom: 104 };
+  if (w >= 2800 && h >= 1500 && isPC()) return { top: 92, bottom: 220 };
   if (w >= 1800 && h >= 1000) return { top: 68, bottom: 150 };
   return { top: 60, bottom: 132 };
 }

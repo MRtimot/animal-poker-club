@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { onConsentChange, preferencesAllowed } from '../privacy/consent';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
 
@@ -58,13 +59,22 @@ const memoryStorage = (() => {
 })();
 
 export const persistStorage = createJSONStorage(() => {
+  let base: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
   try {
     const ls = window.localStorage;
     ls.getItem('x');
-    return ls;
+    base = ls;
   } catch {
-    return memoryStorage;
+    base = memoryStorage;
   }
+  return {
+    getItem: (k: string) => base.getItem(k),
+    // 玩家在“Cookie 与本机存储”里关闭了偏好设置：不写入本机（设置只在本次打开期间有效）
+    setItem: (k: string, v: string) => {
+      if (preferencesAllowed()) base.setItem(k, v);
+    },
+    removeItem: (k: string) => base.removeItem(k),
+  };
 });
 
 export const useSettings = create<SettingsState>()(
@@ -123,3 +133,15 @@ export const useSettings = create<SettingsState>()(
     },
   ),
 );
+
+// 重新允许保存偏好设置时：把当前设置写回本机（关闭时已保存的设置由同意模块删除）
+onConsentChange((c) => {
+  if (c.preferences) useSettings.setState({});
+});
+
+// 多个标签页共用设置：另一个标签页修改后重新读取，避免旧设置把新设置覆盖回去
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'apc-settings') void useSettings.persist.rehydrate();
+  });
+}

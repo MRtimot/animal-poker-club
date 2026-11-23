@@ -17,7 +17,7 @@ import { useGame } from '../../store/gameStore';
 import { useSettings } from '../../store/settingsStore';
 import { cardBackTexture } from '../textures';
 import { SceneLights } from './SceneLights';
-import { BetTag, PotPlaque, SeatPlate } from './SeatHud';
+import { BetTag, PotPlaque, SeatPlate, TableStatus } from './SeatHud';
 import { TableMarkings, TurnGlow } from '../environment/TableMarkings';
 import { eventShown, presentedBets } from '../../ui/game/hud/model';
 import { sound } from '../../audio/sound';
@@ -438,6 +438,7 @@ export function GameScene({ view }: { view: TableView }) {
       <ChipPile amount={view.potCollected} position={POT_POS} delay={DUR.chipFlight + 300} layout="neat" />
       <WinnerLight layout={layout} />
       <PotPlaque view={view} />
+      <TableStatus view={view} />
       <ChipFlights />
       <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />
       <DealerButton layout={view.dealerId ? layout.get(view.dealerId) : undefined} />

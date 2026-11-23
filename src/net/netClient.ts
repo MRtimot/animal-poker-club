@@ -1,5 +1,5 @@
 // 在线客户端：自建 WebSocket 服务器连接、自动重连、状态同步（无任何第三方服务）
-import type { ClientMessage, RoomSettings, ServerMessage, SoloSettings } from '../core/protocol';
+import { PROTOCOL_VERSION, type ClientMessage, type RoomSettings, type ServerMessage, type SoloSettings } from '../core/protocol';
 import { onIdentityChanged, onServerAccount, onServerProgress } from '../store/accountStore';
 import type { PlayerAction } from '../core/table/types';
 import type { AIDifficulty, AIPersonality } from '../core/ai/ai';
@@ -8,6 +8,7 @@ import { currentProfile } from '../store/profileStore';
 import { safeStorage } from '../utils/format';
 import { serverWsUrl } from './serverAddress';
 import { parseServerMessage } from './validate';
+import { startTabSession } from './tabSession';
 
 const SESSION_KEY = 'apc-session';
 const LAST_ROOM_KEY = 'apc-last-room';
@@ -44,6 +45,21 @@ class NetClient {
   private leavingRoom = false;
   /** 离开确认后断开连接（游客不需要一直保持空闲连接） */
   private disconnectAfterLeave = false;
+  private versionWarned = false;
+  /**
+   * 复制出来的标签页会带着同一个会话编号：第一次连接前确认没有别的标签页在用它（见 tabSession.ts），
+   * 否则两个标签页会互相挤下线、无限重连。
+   */
+  private tabCheck: Promise<boolean> | null =
+    typeof window !== 'undefined'
+      ? startTabSession({
+          getSessionId: () => this.sessionId,
+          resetSession: () => {
+            tabStorage()?.removeItem(SESSION_KEY);
+            tabStorage()?.removeItem(LAST_ROOM_KEY);
+          },
+        }).ready
+      : null;
 
   url(): string {
     return serverWsUrl();
@@ -63,6 +79,15 @@ class NetClient {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const g = useGame.getState();
     g.set({ conn: 'connecting' });
+    if (this.tabCheck) {
+      // 先确认会话没有被另一个标签页占用（最多等 0.2 秒），之后再连接；期间要发送的消息进入队列
+      const check = this.tabCheck;
+      void check.then(() => {
+        if (this.tabCheck === check) this.tabCheck = null;
+        if (this.wanted) this.connect();
+      });
+      return;
+    }
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.url());
@@ -74,7 +99,7 @@ class NetClient {
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
-      this.raw({ t: 'hello', sessionId: this.sessionId, profile: currentProfile() });
+      this.raw({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), v: PROTOCOL_VERSION });
       const q = this.queue;
       this.queue = [];
       q.forEach((m) => this.raw(m));
@@ -139,7 +164,7 @@ class NetClient {
     const giveUp = window.setTimeout(() => {
       if (!swapped) next.close();
     }, 10_000);
-    next.onopen = () => next.send(JSON.stringify({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), rotate: true } satisfies ClientMessage));
+    next.onopen = () => next.send(JSON.stringify({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), rotate: true, v: PROTOCOL_VERSION } satisfies ClientMessage));
     next.onmessage = (ev) => {
       const msg = parseServerMessage(ev.data);
       if (!msg) return;
@@ -200,11 +225,42 @@ class NetClient {
     useGame.getState().set({ conn: 'idle', latency: null });
   }
 
+  /**
+   * 同一个会话在另一个标签页 / 页面上连接了，服务器把座位交给了那边：
+   * 这里停止自动重连（否则两边会互相挤掉、无限重连），清除本标签页的会话，下次连接时成为一名新玩家。
+   */
+  private replaced(message: string) {
+    tabStorage()?.removeItem(SESSION_KEY);
+    tabStorage()?.removeItem(LAST_ROOM_KEY);
+    this.leavingRoom = false;
+    this.disconnectAfterLeave = false;
+    this.disconnect();
+    const g = useGame.getState();
+    if (g.mode === 'online' || g.room) {
+      g.set({ mode: null, view: null, room: null, chat: [], pendingAction: null });
+      if (g.screen === 'room' || g.screen === 'game') g.setScreen('online');
+    }
+    g.toast(message, 'error');
+  }
+
   /** 登录 / 退出后重新连接，让服务器用新的身份识别这条连接 */
   reconnect() {
     const ws = this.ws;
     if (!ws) return;
     this.ws = null;
+    // 身份变了（登录 / 退出）：旧身份的座位不能再用。先在旧连接上离开房间，让服务器立即释放座位，
+    // 而不是让其他玩家看到一个“断线”的座位直到超时清理
+    const g = useGame.getState();
+    if (ws.readyState === WebSocket.OPEN && (g.room || g.mode === 'online')) {
+      try {
+        ws.send(JSON.stringify({ t: 'leaveRoom' } satisfies ClientMessage));
+      } catch {
+        /* 连接已经断开：交给服务器的断线清理 */
+      }
+      tabStorage()?.removeItem(LAST_ROOM_KEY);
+      g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
+      if (g.screen === 'room' || g.screen === 'game') g.setScreen(g.room?.solo ? 'quick' : 'online');
+    }
     // 旧连接上还在路上的消息属于旧身份，不能再处理
     ws.onclose = null;
     ws.onmessage = null;
@@ -255,6 +311,11 @@ class NetClient {
     }
     switch (msg.t) {
       case 'welcome': {
+        // 服务器已经更新到新版本，而这个页面还是旧代码：提示刷新（只提示一次，不自动刷新）
+        if (typeof msg.protocol === 'number' && msg.protocol !== PROTOCOL_VERSION && !this.versionWarned) {
+          this.versionWarned = true;
+          g.toast('游戏已经更新，请刷新页面以使用最新版本（当前页面的在线功能可能不正常）。', 'error');
+        }
         tabStorage()?.setItem(SESSION_KEY, msg.sessionId);
         if (msg.rotateInMs) this.scheduleRotate(msg.rotateInMs);
         g.set({ conn: 'connected', playerId: msg.playerId, pendingAction: null, serverRestarting: false });
@@ -277,6 +338,10 @@ class NetClient {
         break;
       }
       case 'notice':
+        if (msg.kind === 'replaced') {
+          this.replaced(msg.message);
+          break;
+        }
         g.set({ serverRestarting: true });
         g.toast(msg.message, 'error');
         break;

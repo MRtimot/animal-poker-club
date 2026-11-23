@@ -6,6 +6,8 @@ import { SaveError, applySave, exportSave, parseSave, readFileText, type SaveFil
 import { levelFromXp } from '../../progress/progression';
 import { useAccount } from '../../store/accountStore';
 import { BackButton, Btn, Modal, Seg } from '../common/ui';
+import { useConsent } from '../../privacy/consent';
+import { useIsPC } from '../../utils/pc';
 import { net } from '../../net/netClient';
 import { voice } from '../../audio/voice';
 
@@ -125,6 +127,8 @@ export function SettingsScreen() {
   const setS = useSettings((s) => s.set);
   const resetAll = useProfile((s) => s.resetAll);
   const signedIn = useAccount((s) => s.status === 'signedIn');
+  // 电脑版：可以重新打开 Cookie 与本机存储设置（移动端界面不变）
+  const pc = useIsPC();
   const canLogin = useAccount((s) => !!s.config && s.config.accounts !== false && (!!s.config.googleClientId || s.config.devLogin));
   const [url, setUrl] = useState(serverUrl);
   const [confirm, setConfirm] = useState(false);
@@ -165,6 +169,11 @@ export function SettingsScreen() {
           >
             📘 重新观看新手教程
           </Btn>
+          {pc && (
+            <Btn kind="ghost" onClick={() => useConsent.getState().openSettings()}>
+              🍪 Cookie 与本机存储设置
+            </Btn>
+          )}
           {signedIn ? (
             <Btn kind="ghost" onClick={() => setScreen('profile')}>
               👤 账号与云端存档

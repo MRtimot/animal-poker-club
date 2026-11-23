@@ -1285,6 +1285,151 @@ body.in-game .toasts {
     display: none;
   }
 }
+/* 4K 显示器（100% 缩放，约 3840 CSS 像素宽）：界面再放大一级，否则显得很小 */
+@media (min-width: 2800px) and (min-height: 1500px) and (hover: hover) and (pointer: fine) {
+  :root {
+    --hud-top: 92px;
+    --hud-bottom: 220px;
+    --fs-status: 18px;
+    --fs-name: 20px;
+    --fs-chips: 22px;
+    --fs-amount: 36px;
+    --fs-button: 24px;
+    --fs-caption: 16px;
+  }
+  .gbar {
+    padding: 0 var(--sp-6);
+  }
+  .gbar-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 26px;
+    border-radius: var(--r-lg);
+  }
+  .gbar-name {
+    font-size: 22px;
+  }
+  .gbar-center {
+    padding: 8px 10px 8px 20px;
+    gap: 20px;
+  }
+  .gbar-item b {
+    font-size: 22px;
+  }
+  .gbar-steps li {
+    font-size: 18px;
+    padding: 7px 18px;
+  }
+  .gdock {
+    padding: var(--sp-6) var(--sp-6) calc(var(--sp-6) + var(--safe-b));
+  }
+  .gdock-me {
+    padding: var(--sp-4) var(--sp-5);
+    gap: var(--sp-5);
+  }
+  .me-name {
+    font-size: 20px;
+  }
+  .me-chips {
+    font-size: 32px;
+  }
+  .me-strength b {
+    font-size: 24px;
+  }
+  .me-strength small,
+  .me-bet {
+    font-size: 15px;
+  }
+  .me-turn-label {
+    font-size: 17px;
+    padding: 5px 16px;
+  }
+  .hcard-lg {
+    --w: 80px;
+  }
+  .savatar-lg {
+    --size: 76px;
+  }
+  .gdock-act {
+    width: 900px;
+    padding: var(--sp-4);
+  }
+  .act {
+    min-height: 92px;
+    border-radius: var(--r-lg);
+  }
+  .act em {
+    font-size: 19px;
+  }
+  .act kbd {
+    font-size: 13px;
+  }
+  .raise-presets button {
+    min-height: 48px;
+    font-size: 18px;
+  }
+  .raise-amount input {
+    width: 190px;
+  }
+  .tbar-track {
+    height: 6px;
+  }
+  .tbar-secs {
+    font-size: 17px;
+  }
+  .splate {
+    min-width: 240px;
+    max-width: 300px;
+    padding: 10px 14px 12px 12px;
+  }
+  .splate .savatar-sm {
+    --size: 48px;
+  }
+  .sp-name-text {
+    max-width: 150px;
+  }
+  .posb {
+    min-width: 30px;
+    height: 26px;
+    font-size: 14px;
+  }
+  .bet-tag {
+    font-size: 17px;
+    padding: 4px 12px;
+  }
+  .pot-plaque {
+    padding: 8px 22px 10px;
+  }
+  .pot-cap {
+    font-size: 14px;
+  }
+  .gfeed {
+    width: 400px;
+  }
+  .gfeed li,
+  .gfeed-head {
+    font-size: 17px;
+  }
+  .winp {
+    min-width: 560px;
+  }
+  .winp-name {
+    font-size: 36px;
+  }
+  .winp-hand {
+    font-size: 24px;
+  }
+  .table-status {
+    padding: 14px 32px 16px;
+  }
+  .ts-title {
+    font-size: 26px;
+  }
+  .ts-sub {
+    font-size: 17px;
+  }
+}
+
 /* 平板宽度（两块并排但空间有限）：自己的座位保留最小宽度，行动面板缩小，名字和牌型不被挤掉 */
 @media (min-width: 761px) and (max-width: 1100px) {
   .gdock-me {

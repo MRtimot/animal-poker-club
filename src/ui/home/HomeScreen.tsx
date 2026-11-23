@@ -41,7 +41,13 @@ export function HomeScreen() {
         const id: HomeSectionId | 'top' = HOME_SECTIONS[i] === 'hero' ? 'top' : HOME_SECTIONS[i];
         if (id !== lastActive) {
           lastActive = id;
-          for (const l of links) l.classList.toggle('on', l.dataset.navLink === id);
+          for (const l of links) {
+            const on = l.dataset.navLink === id;
+            l.classList.toggle('on', on);
+            // 读屏软件也能知道当前所在的段落（只有一个链接处于当前状态）
+            if (on) l.setAttribute('aria-current', 'location');
+            else l.removeAttribute('aria-current');
+          }
         }
       },
       onCount: (c, p) => {

@@ -13,6 +13,7 @@ import { formatChips } from '../../utils/format';
 import { PosBadges, SeatAvatar, TimerBar } from '../../ui/game/hud/bits';
 import { turnClock, useServerNow } from '../../ui/game/hud/clock';
 import { presentedPot, seatStatus } from '../../ui/game/hud/model';
+import { useIsPC } from '../../utils/pc';
 
 const tmpP = new THREE.Vector3();
 /**
@@ -177,6 +178,26 @@ export function PotPlaque({ view }: { view: TableView }) {
             ))}
           </span>
         )}
+      </div>
+    </Html>
+  );
+}
+
+/**
+ * 电脑版：还没发牌时（空桌）在公共牌位置显示牌局状态，空桌与正在进行的牌局一眼就能区分。
+ * 移动端保持原样。
+ */
+export function TableStatus({ view }: { view: TableView }) {
+  const pc = useIsPC();
+  if (!pc || view.gameOver || view.handNumber > 0) return null;
+  const seated = view.players.filter((p) => !p.busted && !p.sittingOut).length;
+  return (
+    <Html position={[POT_POS[0], POT_POS[1] + 0.06, POT_POS[2] + 1.05]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+      <div className="table-status" role="status">
+        <span className="ts-title">牌局即将开始</span>
+        <span className="ts-sub">
+          {seated} 位玩家已入座 · 盲注 {view.smallBlind}/{view.bigBlind} · 正在洗牌
+        </span>
       </div>
     </Html>
   );

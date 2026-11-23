@@ -23,18 +23,28 @@ describe('牌局状态机', () => {
     expect(STREET_STEPS).toEqual(['preflop', 'flop', 'turn', 'river', 'showdown']);
   });
 
-  it('400 张随机牌桌 × 25 手：所有阶段跳转合法；动作只在下注街出现；每手以派奖结束', () => {
+  it('400 张随机牌桌 × 25 手：所有阶段跳转合法；公共牌数量正确；任何时刻没有重复的牌；动作只在下注街出现；每手以派奖结束', () => {
     let transitions = 0;
     let hands = 0;
     for (let seed = 1; seed <= 400; seed++) {
       const { e, rng } = randomTable(seed);
       let last: Phase = e.phase;
+      const BOARD: Record<string, number[]> = { preflop: [0], flop: [3], turn: [4], river: [5], showdown: [5], complete: [0, 3, 4, 5] };
       const check = () => {
         if (e.phase !== last) {
           expect(canTransition(last, e.phase), `${last} → ${e.phase}（种子 ${seed}）`).toBe(true);
           transitions++;
           last = e.phase;
         }
+        // 公共牌数量严格对应阶段：翻牌前 0、翻牌 3、转牌 4、河牌 5（提前结束时停在当时的数量）
+        if (BOARD[e.phase]) expect(BOARD[e.phase], `${e.phase} 公共牌 ${e.board.length} 张（种子 ${seed}）`).toContain(e.board.length);
+        // 任何时刻同一张牌只存在一次：所有底牌 + 公共牌 + 剩余牌堆 不重复；每位在局玩家正好 2 张底牌
+        const inPlay = [...e.board, ...e.players.flatMap((p) => p.hole)].map((c) => c.id);
+        expect(new Set(inPlay).size, `重复的牌（种子 ${seed}）`).toBe(inPlay.length);
+        for (const p of e.players) if (p.inHand) expect(p.hole.length).toBe(2);
+        const deck = ((e as any).deck.cards as { id: string }[]).map((c) => c.id);
+        expect(inPlay.some((id) => deck.includes(id)), `牌堆里还有已经发出的牌（种子 ${seed}）`).toBe(false);
+        expect(new Set(deck).size).toBe(deck.length);
       };
       for (let h = 0; h < 25 && e.canStartHand(); h++) {
         e.startHand();

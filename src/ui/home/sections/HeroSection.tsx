@@ -3,9 +3,12 @@ import { AccountChip } from '../../account/AccountScreens';
 import { PremiumButton } from '../PremiumButton';
 import { Reveal, StorySection } from '../HomeParts';
 import { useHomeActions } from '../homeActions';
+import { useIsPC } from '../../../utils/pc';
 
 export function HeroSection() {
   const a = useHomeActions();
+  // 电脑版：在主按钮下方提供三个直达入口（移动端保持原样）
+  const pc = useIsPC();
   return (
     <StorySection id="hero" label="首页">
       <div className="hero-copy">
@@ -30,6 +33,19 @@ export function HeroSection() {
               探索扑克俱乐部
             </PremiumButton>
           </div>
+          {pc && (
+            <nav className="hero-quick hero-in hero-in-4" aria-label="快速开始">
+              <button type="button" onClick={a.createRoom}>
+                <span aria-hidden>🌐</span>在线对战
+              </button>
+              <button type="button" onClick={a.aiMode}>
+                <span aria-hidden>🤖</span>AI 对战
+              </button>
+              <button type="button" onClick={() => a.scrollTo('animals')}>
+                <span aria-hidden>🐾</span>探索动物
+              </button>
+            </nav>
+          )}
           <div className="hero-credits hero-in hero-in-5">
             <div className="founder-badge">
               <span className="founder-crown">👑</span>

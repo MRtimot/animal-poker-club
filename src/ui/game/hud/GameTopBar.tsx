@@ -5,6 +5,8 @@ import { STREET_STEPS } from '../../../core/table/stateMachine';
 import { useGame } from '../../../store/gameStore';
 import { useSettings } from '../../../store/settingsStore';
 import { sound } from '../../../audio/sound';
+import { formatChips } from '../../../utils/format';
+import { useIsPC } from '../../../utils/pc';
 
 const CAMERA_ORDER = ['overview', 'player', 'free'] as const;
 const CAMERA_LABEL = { overview: '牌桌视角', player: '玩家视角', free: '自由视角（拖动旋转，滚轮缩放）' } as const;
@@ -41,6 +43,8 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
     useGame.getState().toast(`📷 ${CAMERA_LABEL[next]}`);
   };
   const online = mode === 'online' && room && !room.solo;
+  // 电脑版顶栏额外显示当前需要跟到的下注额（移动端顶栏空间不够，保持原样）
+  const pc = useIsPC();
   return (
     <header className="gbar">
       <div className="gbar-left">
@@ -67,6 +71,12 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
               {view.smallBlind}/{view.bigBlind}
             </b>
           </span>
+          {pc && ['preflop', 'flop', 'turn', 'river'].includes(view.phase) && (
+            <span className="gbar-item">
+              <small>当前注</small>
+              <b>{formatChips(view.currentBet)}</b>
+            </span>
+          )}
           {online && (
             <span className="gbar-item gbar-room">
               <small>房间</small>

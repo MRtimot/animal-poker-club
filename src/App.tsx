@@ -17,6 +17,7 @@ import { voice } from './audio/voice';
 import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge, WelcomeBanner } from './ui/account/AccountScreens';
 import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import { NetDebugPanel } from './ui/debug/NetDebugPanel';
+import { ConsentLayer } from './ui/privacy/ConsentUI';
 import type { AnimName } from './store/fxStore';
 import { useBrowserBack } from './ui/useBrowserBack';
 import { session } from './net/session';
@@ -478,6 +479,7 @@ function AppContent() {
       <SyncBadge />
       <NetDebugPanel />
       <Toasts />
+      <ConsentLayer />
       <LoadingScreen done={ready} />
     </>
   );

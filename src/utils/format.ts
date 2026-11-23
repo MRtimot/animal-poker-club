@@ -16,12 +16,21 @@ export function timeAgo(ts: number): string {
   return `${Math.floor(s / 86400)} 天前`;
 }
 
+/**
+ * 可用的 localStorage（隐私模式 / 禁用存储时返回 undefined）。
+ * 只在第一次成功时做一次读写探测并记住结果：以前每次调用都写入再删除一个测试键，
+ * 每次读写存档都多两次写入，还会在其他标签页触发两次 storage 事件。
+ */
+let probed: Storage | undefined;
 export function safeStorage(): Storage | undefined {
   try {
+    const ls = window.localStorage;
+    if (probed === ls) return ls;
     const k = '__apc_test__';
-    window.localStorage.setItem(k, '1');
-    window.localStorage.removeItem(k);
-    return window.localStorage;
+    ls.setItem(k, '1');
+    ls.removeItem(k);
+    probed = ls;
+    return ls;
   } catch {
     return undefined;
   }

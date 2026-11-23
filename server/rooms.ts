@@ -13,6 +13,7 @@ import {
   CHIP_OPTIONS,
   MAX_ROOM_PLAYERS,
   EMOTES,
+  PROTOCOL_VERSION,
   type ChatMessage,
   type ClientMessage,
   type LobbyMember,
@@ -509,10 +510,11 @@ export class RoomServer {
         clearTimeout(s.offlineTimer);
         s.offlineTimer = undefined;
       }
-      // 同一会话的旧连接：无缝换连接时静默关闭，否则提示“已在其他页面登录”
+      // 同一会话的旧连接：无缝换连接时静默关闭，否则通知旧连接“已被替换”
       if (s.conn && s.conn !== conn) {
         try {
-          if (!rotate) s.conn.send({ t: 'error', message: '你已在其他页面登录，本页面已断开' });
+          // 告诉旧连接“被替换了”：客户端据此停止自动重连，否则两个页面会互相挤掉、无限重连
+          if (!rotate) s.conn.send({ t: 'notice', kind: 'replaced', message: '这个座位已在另一个标签页或页面上打开，本页面已断开。' });
           s.conn.close?.();
         } catch {
           /* ignore */
@@ -533,6 +535,7 @@ export class RoomServer {
       sessionId: session.sessionId,
       playerId: session.playerId,
       resumed,
+      protocol: PROTOCOL_VERSION,
       ...(this.opts.maxConnectionMs ? { rotateInMs: this.opts.maxConnectionMs } : {}),
     });
     if (userId && this.accounts) {

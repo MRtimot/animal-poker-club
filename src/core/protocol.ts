@@ -71,8 +71,9 @@ export interface ChatMessage {
 }
 
 export type ClientMessage =
-  /** rotate：客户端在平台连接时限到期前主动换一条新连接（不提示“已在其他页面登录”） */
-  | { t: 'hello'; sessionId?: string; profile: PlayerProfile; rotate?: boolean }
+  /** rotate：客户端在平台连接时限到期前主动换一条新连接（服务器不会向旧连接发送“已被替换”通知） */
+  /** v：客户端的协议版本（见 PROTOCOL_VERSION） */
+  | { t: 'hello'; sessionId?: string; profile: PlayerProfile; rotate?: boolean; v?: number }
   | { t: 'createRoom'; settings: RoomSettings }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
@@ -93,13 +94,19 @@ export type ClientMessage =
   | { t: 'resync' }
   | { t: 'ping'; time: number };
 
+/**
+ * 实时协议版本：消息格式有不兼容的变化时加 1。
+ * 网站更新后，一直开着、没有刷新的旧页面仍在运行旧代码：版本不一致时提示玩家刷新，而不是悄悄出错。
+ */
+export const PROTOCOL_VERSION = 2;
+
 export type ServerMessage =
   /** resumed：是否恢复了之前的会话（服务器重启后旧会话不存在，为 false） */
-  | { t: 'welcome'; sessionId: string; playerId: string; resumed?: boolean; rotateInMs?: number }
+  | { t: 'welcome'; sessionId: string; playerId: string; resumed?: boolean; rotateInMs?: number; protocol?: number }
   /** 牌局动作的确认：ok=false 时附带原因；duplicate=true 表示重复发送，已忽略 */
   | { t: 'ack'; actionId: string; ok: boolean; message?: string; duplicate?: boolean }
-  /** 服务器通知（例如即将重启） */
-  | { t: 'notice'; kind: 'shutdown'; message: string }
+  /** 服务器通知：即将重启；或这个会话已在另一个标签页 / 页面上连接（本连接被替换，不要自动重连） */
+  | { t: 'notice'; kind: 'shutdown' | 'replaced'; message: string }
   | { t: 'room'; room: RoomInfo | null }
   | { t: 'state'; view: TableView }
   | { t: 'chat'; message: ChatMessage }

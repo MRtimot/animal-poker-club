@@ -95,7 +95,8 @@ export function ActionDock({ view }: { view: TableView }) {
   useEffect(() => {
     if (!legal) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || useGame.getState().modal) return;
+      // 任何对话框打开时（离开确认、规则、设置、教程…）快捷键都不生效，避免看规则时按到 C 就跟注
+      if (e.ctrlKey || e.metaKey || e.altKey || useGame.getState().modal || document.querySelector('.modal-backdrop')) return;
       const tag = (e.target as HTMLElement)?.tagName;
       const inAmount = (e.target as HTMLElement)?.dataset?.raiseInput === '1';
       if ((tag === 'INPUT' || tag === 'TEXTAREA') && !inAmount) return;

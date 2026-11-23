@@ -262,3 +262,71 @@ describe('深度审计回归（真实客户端 + 真实服务器）', () => {
     net.disconnect();
   }, 20000);
 });
+
+describe('Cookie / 会话 / 存储审计回归（真实客户端）', () => {
+  it('SESS-01 同一会话在另一个页面打开：本页面停止自动重连（不会互相挤掉、无限重连），清除本标签页会话，下次连接成为新玩家', async () => {
+    await createAndStart();
+    const code = useGame.getState().room!.code;
+    const sid = net.sessionId!;
+    const myId = useGame.getState().playerId;
+    // 另一个页面（复制出来的标签页）用同一个会话连接
+    const other = new WebSocket(`ws://127.0.0.1:${srv.port}/api/ws`);
+    const otherMsgs: any[] = [];
+    other.onmessage = (e) => otherMsgs.push(JSON.parse(String(e.data)));
+    await new Promise((r) => (other.onopen = r));
+    other.send(JSON.stringify({ t: 'hello', sessionId: sid, profile: { name: '另一个标签页', animal: useProfile.getState().animal } }));
+    await until(() => !timers().ws);
+    const s = useGame.getState();
+    expect(s.conn).toBe('idle');
+    expect([s.mode, s.view, s.room]).toEqual([null, null, null]);
+    expect(s.screen).toBe('online');
+    expect(s.toasts.some((t) => t.text.includes('另一个标签页'))).toBe(true);
+    expect(net.sessionId).toBeUndefined();
+    // 不会自动重连回去把对方挤掉
+    await wait(1500);
+    expect(timers()).toEqual({ ws: null, ping: null, rotate: null, retry: null, queue: 0 });
+    expect(otherMsgs.find((m) => m.t === 'welcome')?.playerId).toBe(myId);
+    // 下次连接：新的会话、新的玩家
+    net.connect();
+    await until(() => useGame.getState().conn === 'connected');
+    expect(useGame.getState().playerId).not.toBe(myId);
+    other.send(JSON.stringify({ t: 'leaveRoom' }));
+    await until(() => !srv.rooms.getRoom(code));
+    other.close();
+    net.disconnect();
+  }, 30000);
+
+  it('SESS-02 牌局中身份变化（另一个标签页登录 / 退出）：先在旧连接上离开房间，座位立即释放，而不是留下一个“断线”的座位等超时', async () => {
+    const code = await createAndStart();
+    const oldId = useGame.getState().playerId;
+    net.reconnect();
+    // 本地立即回到在线页面，不显示旧身份的牌桌
+    const s = useGame.getState();
+    expect([s.room, s.view, s.mode]).toEqual([null, null, null]);
+    expect(s.screen).toBe('online');
+    // 最后一名真人离开 → 服务器立即删除房间（断线宽限是 2.5 秒，这里要求 1 秒内）
+    const t0 = Date.now();
+    await until(() => !srv.rooms.getRoom(code), 1000);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await until(() => useGame.getState().conn === 'connected' && useGame.getState().playerId !== oldId);
+    net.disconnect();
+  }, 30000);
+});
+
+describe('协议版本', () => {
+  it('PROTO-01 服务器在欢迎消息里告知协议版本；版本不一致时提示刷新（只提示一次，不自动刷新页面）', async () => {
+    const { PROTOCOL_VERSION } = await import('../src/core/protocol');
+    net.connect();
+    await until(() => useGame.getState().conn === 'connected');
+    const before = useGame.getState().toasts.length;
+    const sid = net.sessionId!;
+    const pid = useGame.getState().playerId!;
+    (net as any).handle({ t: 'welcome', sessionId: sid, playerId: pid, protocol: PROTOCOL_VERSION });
+    expect(useGame.getState().toasts.length).toBe(before);
+    (net as any).handle({ t: 'welcome', sessionId: sid, playerId: pid, protocol: PROTOCOL_VERSION + 1 });
+    (net as any).handle({ t: 'welcome', sessionId: sid, playerId: pid, protocol: PROTOCOL_VERSION + 1 });
+    const warned = useGame.getState().toasts.filter((t) => t.text.includes('刷新页面'));
+    expect(warned).toHaveLength(1);
+    net.disconnect();
+  });
+});
