@@ -17,14 +17,14 @@
     <meta name="twitter:description" content="每一张牌，都有自己的故事。3D 动物德州扑克，免费游玩。" />
     <!--
       电脑版加载页（PC ONLY）：首屏关键样式内联，保证第一帧就是完整的加载页（不依赖主样式表与脚本）。
-      只在电脑版条件下显示（与 src/utils/pc.ts 的 PC_QUERY 一致）；手机与平板仍显示原来的 .boot-loader，不受影响。
+      只在电脑版条件下显示（与 src/utils/pc.ts 的 PC_QUERY 一致）；手机与平板显示下面单独设计的 .apm 竖版加载页。
       React 启动后由 src/ui/boot/PremiumLoader.tsx 接管同一套结构与样式，继续显示真实的启动进度。
     -->
     <style>
       @property --apl-p { syntax: '<integer>'; inherits: false; initial-value: 0; }
       .apl.apl-boot { display: none; }
       @media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
-        #root > .boot-loader { display: none !important; }
+        #root > .apm-boot { display: none !important; }
         .apl.apl-boot { display: grid; }
       }
       .apl {
@@ -171,19 +171,165 @@
         .apl { transition: opacity 240ms ease !important; }
         .apl.exiting .apl-center { transform: none; filter: none; }
       }
+
+      /* ═════ 手机 / 平板加载页（.apm）：竖版构图、更轻的背景（没有扫光与微尘）、顾及刘海与底部横条 ═════
+         与电脑版共用：真实启动进度、品牌色、进度细线（.apl-track / .apl-fill / .apl-scan / .apl-pct / .apl-status）与动画关键帧。 */
+      .apm {
+        position: fixed; inset: 0; z-index: 100;
+        display: flex; flex-direction: column; align-items: center;
+        padding:
+          max(28px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+          max(22px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+        overflow: hidden;
+        color: #f5efe4; background: #0a0809;
+        font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Hiragino Sans GB', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+        transition: opacity 640ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .apm-layer { position: absolute; inset: 0; pointer-events: none; }
+      /* 竖屏的房间：头顶一盏灯，脚下一张牌桌的绒布微光 */
+      .apm-room {
+        background:
+          radial-gradient(90% 42% at 50% -6%, rgba(255, 214, 150, 0.13), transparent 72%),
+          radial-gradient(130% 30% at 50% 108%, rgba(36, 96, 66, 0.34), transparent 76%),
+          radial-gradient(160% 90% at 50% 42%, #19141b 0%, #0d0b0e 60%, #060507 100%);
+      }
+      .apm-lamp {
+        background: radial-gradient(60% 30% at 50% 0%, rgba(255, 220, 160, 0.1), transparent 72%);
+        animation: aplBreath 7s ease-in-out var(--apl-t, 0ms) infinite alternate;
+      }
+      .apm-vignette { background: radial-gradient(140% 100% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.6) 100%); }
+      .apm-center {
+        position: relative; margin-block: auto;
+        width: 100%; max-width: 440px;
+        display: flex; flex-direction: column; align-items: center; text-align: center;
+        transition: opacity 420ms ease, transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .apm-emblem {
+        position: relative;
+        width: clamp(48px, 13vw, 58px); height: clamp(48px, 13vw, 58px); border-radius: 50%;
+        display: grid; place-items: center;
+        font-size: clamp(18px, 5vw, 22px); line-height: 1; color: #f4dc98;
+        border: 1px solid rgba(233, 207, 134, 0.45);
+        background: radial-gradient(circle at 35% 30%, rgba(244, 220, 152, 0.16), rgba(244, 220, 152, 0.02) 70%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        animation: aplRise 900ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--apl-t, 0ms) + 80ms) both;
+      }
+      /* 徽章的光：只改变透明度的缓慢呼吸，很克制 */
+      .apm-emblem::after {
+        content: ''; position: absolute; inset: -14px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(244, 220, 152, 0.16), transparent 68%);
+        animation: aplBreath 4.6s ease-in-out var(--apl-t, 0ms) infinite alternate;
+        pointer-events: none;
+      }
+      .apm-eyebrow {
+        margin-top: clamp(20px, 3.4vh, 28px);
+        font-family: 'SF Pro Display', 'Helvetica Neue', 'Segoe UI', sans-serif;
+        font-size: clamp(9.5px, 2.7vw, 11.5px); font-weight: 600;
+        letter-spacing: 0.36em; text-indent: 0.36em; white-space: nowrap;
+        color: rgba(233, 207, 134, 0.72);
+        animation: aplFade 800ms ease calc(var(--apl-t, 0ms) + 260ms) both;
+      }
+      .apm-title {
+        margin: 10px 0 0;
+        font-size: clamp(30px, 9.4vw, 46px); font-weight: 800; line-height: 1.12;
+        letter-spacing: 0.1em; text-indent: 0.1em; white-space: nowrap;
+        background: linear-gradient(180deg, #fffaf0 0%, #f7e3b0 46%, #d9a23a 122%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 8px 26px rgba(0, 0, 0, 0.6));
+        animation: apmReveal 1100ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--apl-t, 0ms) + 300ms) both;
+      }
+      .apm-tagline {
+        margin-top: 12px;
+        font-size: clamp(12px, 3.5vw, 14px); letter-spacing: 0.12em;
+        color: rgba(245, 239, 228, 0.6);
+        animation: aplFade 900ms ease calc(var(--apl-t, 0ms) + 600ms) both;
+      }
+      .apm-meter {
+        margin-top: clamp(40px, 8vh, 72px); width: min(64vw, 280px);
+        display: grid; justify-items: center; gap: 12px;
+        animation: aplFade 700ms ease calc(var(--apl-t, 0ms) + 450ms) both;
+      }
+      .apm .apl-status { font-size: 13px; letter-spacing: 0.1em; text-align: center; text-wrap: balance; }
+      .apm .apl-pct { font-size: 11.5px; }
+      .apm-credits {
+        flex: none; margin-top: 20px;
+        display: grid; gap: 4px; justify-items: center;
+        font-size: 10.5px; letter-spacing: 0.1em; color: rgba(245, 239, 228, 0.32);
+        animation: aplFade 900ms ease calc(var(--apl-t, 0ms) + 800ms) both;
+      }
+      .apm-credits b { font-weight: 600; color: rgba(233, 207, 134, 0.55); margin-right: 6px; }
+      /* 卡住：简短说明 + 适合手指点按的大按钮（不依赖悬停） */
+      /* 卡住时进度区稍微放宽，放下说明与按钮（不超出进度区，进度线保持居中） */
+      .apm-meter.wide { width: min(84vw, 320px); }
+      .apm-error { display: grid; justify-items: center; gap: 6px; width: 100%; }
+      .apm-error strong { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; color: #f7e3b0; }
+      .apm-error p { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: rgba(245, 239, 228, 0.62); text-wrap: balance; }
+      .apm-actions { width: 100%; }
+      .apm-btn {
+        width: 100%; min-height: 48px; padding: 0 20px; border-radius: 999px; cursor: pointer;
+        font: inherit; font-size: 15px; letter-spacing: 0.1em;
+        color: #f7e3b0; background: rgba(233, 207, 134, 0.1);
+        border: 1px solid rgba(233, 207, 134, 0.55);
+        touch-action: manipulation;
+        transition: background 160ms ease, transform 160ms ease;
+      }
+      .apm-btn:active { background: rgba(233, 207, 134, 0.2); transform: scale(0.98); }
+      .apm-btn.ghost { color: rgba(245, 239, 228, 0.72); background: transparent; border-color: rgba(255, 255, 255, 0.16); }
+      .apm-btn + .apm-btn { margin-top: 4px; }
+      .apm-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #0a0809, 0 0 0 4px rgba(244, 220, 152, 0.85); }
+      /* 退场：标志淡出并轻轻上移（手机上不使用模糊），背景随后褪去 */
+      .apm.exiting { opacity: 0; pointer-events: none; }
+      .apm.exiting .apm-center { opacity: 0; transform: translateY(-8px); }
+      @keyframes apmReveal { from { opacity: 0; transform: translateY(8px); } }
+      /* 横屏的手机：高度很小，整体收紧，致谢放在一行 */
+      @media (orientation: landscape) and (max-height: 540px) {
+        .apm { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+        .apm-emblem { width: 38px; height: 38px; font-size: 15px; }
+        .apm-emblem::after { inset: -10px; }
+        .apm-eyebrow { margin-top: 12px; font-size: 9.5px; }
+        .apm-title { margin-top: 6px; font-size: clamp(24px, 7.4vh, 34px); }
+        .apm-tagline { margin-top: 6px; font-size: 12px; }
+        .apm-meter { margin-top: clamp(16px, 5vh, 28px); width: min(40vw, 300px); gap: 8px; }
+        .apm-credits { margin-top: 8px; display: block; }
+        .apm-credits span + span::before { content: '·'; margin: 0 10px; opacity: 0.6; }
+        .apm-meter.wide { width: min(64vw, 400px); }
+        .apm-error p { margin-bottom: 6px; }
+        .apm-actions { display: flex; gap: 10px; width: 100%; }
+        .apm-btn { min-height: 44px; }
+        .apm-btn + .apm-btn { margin-top: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .apm, .apm * { animation: none !important; transition: none !important; }
+        .apm .apl-scan { display: none; }
+        .apm { transition: opacity 240ms ease !important; }
+        .apm.exiting .apm-center { transform: none; }
+      }
     </style>
     <script>
-      // 电脑版：加载页显示期间，首页的开场动画（标题、按钮、入口）先不播放，揭幕时再开始
-      try {
-        if (window.matchMedia('(min-width: 1101px) and (hover: hover) and (pointer: fine)').matches) document.documentElement.classList.add('apc-booting');
-      } catch (e) {}
+      // 加载页显示期间（电脑版与手机版都一样），首页的开场动画（标题、按钮、入口）先不播放，揭幕时再开始
+      document.documentElement.classList.add('apc-booting');
     </script>
   </head>
   <body>
     <div id="root">
-      <div class="boot-loader">
-        <div class="boot-paw">🐾</div>
-        <div class="boot-text">动物扑克俱乐部 · 正在加载…</div>
+      <div class="apm apm-boot" aria-busy="true">
+        <div class="apm-layer apm-room" aria-hidden="true"></div>
+        <div class="apm-layer apm-lamp" aria-hidden="true"></div>
+        <div class="apm-layer apm-vignette" aria-hidden="true"></div>
+        <div class="apm-center">
+          <div class="apm-emblem" aria-hidden="true">♠</div>
+          <div class="apm-eyebrow" aria-hidden="true">ANIMAL POKER CLUB</div>
+          <h1 class="apm-title">动物扑克俱乐部</h1>
+          <div class="apm-tagline">每一张牌，都有自己的故事。</div>
+          <div class="apm-meter">
+            <div class="apl-track" role="progressbar" aria-label="加载进度" aria-valuetext="正在打开俱乐部"><i class="apl-scan"></i></div>
+            <div class="apl-pct none" aria-hidden="true"></div>
+            <div class="apl-status" aria-live="polite">正在打开俱乐部</div>
+          </div>
+        </div>
+        <div class="apm-credits" aria-hidden="true"><span><b>创始人</b>Timothy Ong · Founder of APEX</span><span><b>游戏测试员</b>John</span></div>
       </div>
       <div class="apl apl-boot" aria-busy="true">
         <div class="apl-layer apl-room" aria-hidden="true"></div>

@@ -82,12 +82,20 @@ describe('启动进度', () => {
     expect(useBoot.getState().stalled).toBe(false);
   });
 
-  it('BOOT-06 加载页不使用计时器或随机数“推进”进度（只读取真实步骤）', () => {
-    const src = fs.readFileSync(new URL('../src/ui/boot/PremiumLoader.tsx', import.meta.url), 'utf8') + fs.readFileSync(new URL('../src/boot/boot.ts', import.meta.url), 'utf8');
+  it('BOOT-06 加载页（电脑版与手机版）不使用计时器或随机数“推进”进度（只读取真实步骤）', () => {
+    const read = (f: string) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+    const src = ['../src/ui/boot/PremiumLoader.tsx', '../src/ui/boot/MobileLoader.tsx', '../src/ui/boot/useLoaderFlow.ts', '../src/boot/boot.ts'].map(read).join('\n');
     expect(src).not.toMatch(/Math\.random/);
     // 唯一的 setInterval 是卡住检测（只读状态、不修改进度）
     const intervals = src.match(/setInterval\(/g) ?? [];
     expect(intervals.length).toBe(1);
     expect(src).toMatch(/markBootStalled\(\)/);
+    // 两个画面都使用同一套流程，不各自实现
+    expect(read('../src/ui/boot/PremiumLoader.tsx')).toMatch(/useLoaderFlow\(/);
+    expect(read('../src/ui/boot/MobileLoader.tsx')).toMatch(/useLoaderFlow\(/);
+    // 原来手机上用随机数增长的模拟进度已经移除
+    const app = read('../src/App.tsx');
+    expect(app).not.toMatch(/function LoadingScreen/);
+    expect(app).not.toMatch(/Math\.random\(\) \* 18/);
   });
 });

@@ -23,6 +23,7 @@ import { useBrowserBack } from './ui/useBrowserBack';
 import { session } from './net/session';
 import { isPC } from './utils/pc';
 import { PremiumLoader } from './ui/boot/PremiumLoader';
+import { MobileLoader } from './ui/boot/MobileLoader';
 import { BootProbe } from './boot/BootProbe';
 import { markBoot, markBootDegraded, useBoot } from './boot/boot';
 import { homeTimeline } from './ui/home/homeTimeline';
@@ -289,53 +290,6 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: stri
   }
 }
 
-function LoadingScreen({ done }: { done: boolean }) {
-  const [gone, setGone] = useState(false);
-  const [p, setP] = useState(8);
-  useEffect(() => {
-    const iv = setInterval(() => setP((x) => Math.min(92, x + Math.random() * 18)), 160);
-    return () => clearInterval(iv);
-  }, []);
-  useEffect(() => {
-    if (!done) return;
-    setP(100);
-    const t = setTimeout(() => setGone(true), 650);
-    return () => clearTimeout(t);
-  }, [done]);
-  if (gone) return null;
-  const tips = ['正在布置森林俱乐部…', '动物们正在入座…', '狐狸正在洗牌…', '正在擦亮筹码…'];
-  return (
-    <div className="loading-screen" style={{ opacity: done ? 0 : 1, pointerEvents: done ? 'none' : 'auto' }}>
-      {/* 小狐狸正在洗牌 */}
-      <div className="shuffler" aria-hidden>
-        <span className="shuffler-fox">🦊</span>
-        <div className="shuffler-deck">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <i key={i} style={{ animationDelay: `${i * 0.14}s` }} />
-          ))}
-        </div>
-      </div>
-      <h1 style={{ marginTop: 14, color: '#f2c94c', letterSpacing: 4 }}>动物扑克俱乐部</h1>
-      <p className="small" style={{ margin: '6px 0 0', color: '#fff3c8' }}>正在准备牌桌……</p>
-      <div className="loading-bar">
-        <div style={{ width: `${p}%` }} />
-      </div>
-      <p className="muted small">{tips[Math.floor(p / 26) % tips.length]}</p>
-      <div className="founder-badge" style={{ margin: '28px auto 0' }}>
-        <span className="founder-crown">👑</span>
-        <span className="founder-label">创始人</span>
-        <span className="founder-name">Timothy Ong</span>
-        <span className="founder-title">Founder of APEX</span>
-      </div>
-      <div className="tester-badge" style={{ margin: '10px auto 0' }}>
-        <span className="tester-icon">🧪</span>
-        <span className="tester-label">游戏测试员</span>
-        <span className="tester-name">John</span>
-      </div>
-    </div>
-  );
-}
-
 function Directors() {
   const view = useGame((s) => s.view);
   const mode = useGame((s) => s.mode);
@@ -387,33 +341,25 @@ function AppContent() {
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
   useBrowserBack();
-  // 电脑版使用按真实启动步骤显示进度的加载页（PremiumLoader）；手机与平板保持原来的加载画面。
-  // 打开页面时决定一次（加载途中改变窗口大小不会切换加载页）
+  // 加载页：按真实启动步骤显示进度（boot.ts），电脑版与手机版共用同一套流程，只是画面不同
+  // （电脑版 PremiumLoader；手机与平板 MobileLoader）。打开页面时决定一次，加载途中改变窗口大小不会切换。
   const [pcBoot] = useState(isPC);
   useLayoutEffect(() => {
-    // 首页开场（镜头推进、动物入座）在加载页揭幕时才开始；不是电脑版时去掉 index.html 加上的暂停标记
-    if (pcBoot) homeTimeline.held = true;
-    else document.documentElement.classList.remove('apc-booting');
-  }, [pcBoot]);
-  // 电脑版：页面代码已运行、存档与设置已读取，等界面字体就绪（系统字体通常立即就绪；最多等 3 秒，不让字体阻塞进入）
+    // 首页开场（镜头推进、动物入座）在加载页揭幕时才开始
+    homeTimeline.held = true;
+  }, []);
+  // 页面代码已运行、存档与设置已读取，等界面字体就绪（系统字体通常立即就绪；最多等 3 秒，不让字体阻塞进入）
   useEffect(() => {
-    if (!pcBoot) return;
     let alive = true;
     const fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready ?? Promise.resolve();
     void Promise.race([fonts, new Promise((r) => window.setTimeout(r, 3000))]).then(() => alive && markBoot('core'));
     return () => {
       alive = false;
     };
-  }, [pcBoot]);
-  // 电脑版加载页的“重试”：只重建 3D 画布（不重复初始化页面、存档或连接）
-  useEffect(() => (pcBoot ? useBoot.subscribe((s, p) => s.attempt !== p.attempt && setCanvasKey((k) => k + 1)) : undefined), [pcBoot]);
-  // 加载画面不能无限等待：3D 出错时立即结束；最长 12 秒后无论如何都结束（页面仍可使用）。
-  // 电脑版由加载页自己判断（卡住时显示原因、重试或先进入）
-  useEffect(() => {
-    if (pcBoot) return;
-    const t = window.setTimeout(() => setReady(true), 12000);
-    return () => window.clearTimeout(t);
-  }, [pcBoot]);
+  }, []);
+  // 加载页的“重试”：只重建 3D 画布（不重复初始化页面、存档或连接）。
+  // 加载卡住时由加载页显示原因、重试或先进入，不再用固定的超时直接结束
+  useEffect(() => useBoot.subscribe((s, p) => s.attempt !== p.attempt && setCanvasKey((k) => k + 1)), []);
   // 首屏完成后预取其他页面代码
   useEffect(() => {
     if (ready) prefetchScreens();
@@ -439,8 +385,8 @@ function AppContent() {
         resetKey={sceneKind}
         onError={() => {
           setReady(true);
-          // 电脑版：3D 不可用不阻塞进入首页（首页显示静态背景与“3D 无法显示”的提示和重试）
-          if (pcBoot) markBootDegraded();
+          // 3D 不可用不阻塞进入首页（首页显示静态背景与“3D 无法显示”的提示和重试）
+          markBootDegraded();
         }}
         onRetry={() => setCanvasKey((k) => k + 1)}
       >
@@ -452,15 +398,17 @@ function AppContent() {
           gl={glOptions}
           camera={{ fov: 45, position: [0, 3, 9], near: 0.1, far: 80 }}
           onCreated={({ gl, scene }) => {
-            if (pcBoot) markBoot('gl');
-            else setTimeout(() => setReady(true), 400);
+            markBoot('gl');
             if (import.meta.env.DEV) Object.assign(window as any, { __gl: gl, __scene: scene });
             // 上下文丢失：先等浏览器自动恢复（three.js 会重新上传资源），超时才重建画布
             gl.domElement.addEventListener('webglcontextlost', (e) => {
               e.preventDefault();
-              if (restoreTimer.current) return;
+              // 画布被正常替换（加载页“重试”、3D 出错后的“重试”）时，旧画布释放上下文也会触发这个事件：
+              // 那不是显卡出错，不能再重建一次画布（以前会多重建一次，并提示“3D 画面重新加载中”）
+              if (!gl.domElement.isConnected || restoreTimer.current) return;
               restoreTimer.current = window.setTimeout(() => {
                 restoreTimer.current = null;
+                if (!gl.domElement.isConnected) return;
                 if (rebuilds.current < 2) {
                   rebuilds.current++;
                   useGame.getState().toast('3D 画面重新加载中…');
@@ -476,8 +424,8 @@ function AppContent() {
         >
           <Suspense fallback={null}>
             <Scene creatorAnim={creatorAnim} />
-            {/* 电脑版：场景搭建完成 → 预编译着色器 → 渲染出最初几帧，作为加载页的真实进度 */}
-            {pcBoot && <BootProbe />}
+            {/* 场景搭建完成 → 预编译着色器 → 渲染出最初几帧，作为加载页的真实进度 */}
+            <BootProbe />
           </Suspense>
         </Canvas>
       </SceneErrorBoundary>
@@ -518,7 +466,7 @@ function AppContent() {
       <NetDebugPanel />
       <Toasts />
       <ConsentLayer />
-      {pcBoot ? <PremiumLoader onReady={() => setReady(true)} /> : <LoadingScreen done={ready} />}
+      {pcBoot ? <PremiumLoader onReady={() => setReady(true)} /> : <MobileLoader onReady={() => setReady(true)} />}
     </>
   );
 }
