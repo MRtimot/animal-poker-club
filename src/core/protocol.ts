@@ -74,7 +74,8 @@ export type ClientMessage =
   /** rotate：客户端在平台连接时限到期前主动换一条新连接（服务器不会向旧连接发送“已被替换”通知） */
   /** v：客户端的协议版本（见 PROTOCOL_VERSION） */
   | { t: 'hello'; sessionId?: string; profile: PlayerProfile; rotate?: boolean; v?: number }
-  | { t: 'createRoom'; settings: RoomSettings }
+  /** requestId：同一次“创建房间”的编号。重复到达（连续点击、重发）时服务器只创建一个房间 */
+  | { t: 'createRoom'; settings: RoomSettings; requestId?: string }
   | { t: 'joinRoom'; code: string }
   | { t: 'leaveRoom' }
   | { t: 'ready'; ready: boolean }

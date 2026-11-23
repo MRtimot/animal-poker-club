@@ -16,6 +16,7 @@ import { demoPot } from './demoHand';
 import { OnlineSection } from './sections/OnlineSection';
 import { AISection } from './sections/AISection';
 import { FinalCTASection, HomeFooter } from './sections/FinalSection';
+import { DesktopRoomCTA, ctaAway as ctaAway_ } from './RoomCTA';
 
 export function HomeScreen() {
   const setScreen = useGame((s) => s.setScreen);
@@ -33,9 +34,17 @@ export function HomeScreen() {
     const nav = document.querySelector<HTMLElement>('[data-nav]');
     const links = nav ? [...nav.querySelectorAll<HTMLElement>('[data-nav-link]')] : [];
     let lastActive = '';
+    let ctaAway: boolean | null = null;
     const b = bindHomeTimeline(el, {
       onUpdate: (t) => {
         nav?.classList.toggle('scrolled', t.story > 0.02);
+        // 电脑版“创建房间”入口：滚到结尾（那里有自己的“创建房间”按钮与页脚）时让开；
+        // 只在越过分界时查找并修改 DOM（手机上没有这个入口，滚动时也不会每一帧去查找）
+        const away = ctaAway_(t);
+        if (away !== ctaAway) {
+          ctaAway = away;
+          document.querySelector<HTMLElement>('[data-room-cta]')?.classList.toggle('away', away);
+        }
         // 当前所在段落 → 导航高亮
         const i = Math.min(HOME_SECTIONS.length - 1, Math.floor(t.story + 0.001));
         const id: HomeSectionId | 'top' = HOME_SECTIONS[i] === 'hero' ? 'top' : HOME_SECTIONS[i];
@@ -86,6 +95,8 @@ export function HomeScreen() {
     <HomeActionsContext.Provider value={actions}>
       <div className="screen home-premium">
         <HomeNav />
+        {/* 电脑版“创建房间”入口：放在导航之后，键盘 Tab 很快就能到达（位置固定在右侧，与文档顺序无关） */}
+        <DesktopRoomCTA />
         <div className="home-scroll" ref={scroller} tabIndex={-1}>
           <div className="home-track">
             <HeroSection />

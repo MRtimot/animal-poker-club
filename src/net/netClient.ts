@@ -27,6 +27,15 @@ function tabStorage(): Storage | undefined {
   }
 }
 
+/** 记录 / 清除本标签页所在的房间（同时更新界面可以订阅的 lastRoom） */
+function rememberRoom(code: string | null) {
+  if (code) tabStorage()?.setItem(LAST_ROOM_KEY, code);
+  else tabStorage()?.removeItem(LAST_ROOM_KEY);
+  if (useGame.getState().lastRoom !== code) useGame.getState().set({ lastRoom: code });
+}
+
+export type CreateRoomResult = { ok: true; code: string } | { ok: false; message: string };
+
 let actionSeq = 0;
 const newActionId = () => `a${Date.now().toString(36)}${(actionSeq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -56,7 +65,7 @@ class NetClient {
           getSessionId: () => this.sessionId,
           resetSession: () => {
             tabStorage()?.removeItem(SESSION_KEY);
-            tabStorage()?.removeItem(LAST_ROOM_KEY);
+            rememberRoom(null);
           },
         }).ready
       : null;
@@ -222,6 +231,7 @@ class NetClient {
     this.retry = 0;
     this.queue = [];
     this.soloWaiter?.(false);
+    this.creating?.done({ ok: false, message: '与服务器的连接已断开，请重试' });
     useGame.getState().set({ conn: 'idle', latency: null });
   }
 
@@ -231,7 +241,7 @@ class NetClient {
    */
   private replaced(message: string) {
     tabStorage()?.removeItem(SESSION_KEY);
-    tabStorage()?.removeItem(LAST_ROOM_KEY);
+    rememberRoom(null);
     this.leavingRoom = false;
     this.disconnectAfterLeave = false;
     this.disconnect();
@@ -257,7 +267,7 @@ class NetClient {
       } catch {
         /* 连接已经断开：交给服务器的断线清理 */
       }
-      tabStorage()?.removeItem(LAST_ROOM_KEY);
+      rememberRoom(null);
       g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
       if (g.screen === 'room' || g.screen === 'game') g.setScreen(g.room?.solo ? 'quick' : 'online');
     }
@@ -298,7 +308,7 @@ class NetClient {
       if (msg.t === 'room') {
         if (msg.room) return; // 离开前就发出的旧房间更新
         this.leavingRoom = false;
-        tabStorage()?.removeItem(LAST_ROOM_KEY);
+        rememberRoom(null);
         if (this.disconnectAfterLeave) {
           this.disconnectAfterLeave = false;
           this.disconnect();
@@ -322,12 +332,14 @@ class NetClient {
         // 服务器重启后旧会话不存在：房间已经消失，友好地告诉玩家（房间只在服务器运行期间存在）
         const lastRoom = tabStorage()?.getItem(LAST_ROOM_KEY);
         if (msg.resumed === false && lastRoom) {
-          tabStorage()?.removeItem(LAST_ROOM_KEY);
+          rememberRoom(null);
           g.toast(`房间 ${lastRoom} 已失效：服务器刚刚重启过。在线房间只在服务器运行期间存在，请重新创建房间。`, 'error');
           if (g.mode === 'online') {
             g.set({ mode: null, view: null, room: null, chat: [] });
             if (g.screen === 'room' || g.screen === 'game') g.setScreen('online');
           }
+          // 刷新后在首页等待回到房间，房间已经不存在：首页不保持多人连接
+          if (useGame.getState().screen === 'home') queueMicrotask(() => this.releaseIfIdle());
         }
         break;
       }
@@ -347,18 +359,21 @@ class NetClient {
         break;
       case 'room': {
         const prev = g.room;
+        const hadLast = g.lastRoom;
         g.setRoom(msg.room);
-        if (msg.room) tabStorage()?.setItem(LAST_ROOM_KEY, msg.room.code);
-        else tabStorage()?.removeItem(LAST_ROOM_KEY);
+        rememberRoom(msg.room ? msg.room.code : null);
         if (!msg.room) {
           if (g.mode === 'online') {
             g.set({ mode: null, view: null });
             if (g.screen === 'room' || g.screen === 'game') g.setScreen(prev?.solo ? 'quick' : 'online');
           }
+          // 在首页等待回到原来的房间，但已经不在房间里了（例如断线期间被移出）：首页不保持多人连接
+          if (hadLast && !prev && useGame.getState().screen === 'home') queueMicrotask(() => this.releaseIfIdle());
           return;
         }
         g.set({ mode: 'online' });
         this.soloWaiter?.(true);
+        if (!msg.room.solo) this.creating?.done({ ok: true, code: msg.room.code });
         if (msg.room.solo) {
           if (g.screen !== 'game') g.setScreen('game');
           break;
@@ -412,6 +427,7 @@ class NetClient {
         break;
       case 'error':
         g.toast(msg.message, 'error');
+        this.creating?.done({ ok: false, message: msg.message });
         break;
       case 'pong':
         g.set({ latency: Math.max(0, Date.now() - msg.time) });
@@ -464,6 +480,44 @@ class NetClient {
     this.newIntent();
     this.send({ t: 'createRoom', settings });
   }
+
+  private creating: { id: string; promise: Promise<CreateRoomResult>; done: (r: CreateRoomResult) => void } | null = null;
+
+  /** 是否有一个“创建房间”请求正在等待服务器回应 */
+  get creatingRoom(): boolean {
+    return !!this.creating;
+  }
+
+  /**
+   * 创建房间并等待结果（电脑版首页的“创建房间”入口使用）。
+   * - 正在创建时再次调用（连续点击）：返回同一个结果，不会发出第二次请求；
+   * - 请求带 requestId：服务器收到重复的请求（例如断线后重发）也只创建一个房间；
+   * - 房间信息到达后，现有的房间流程会自动进入房间大厅；
+   * - timeoutMs 内没有结果（服务器无法连接）：撤回还没发出的请求并返回失败（免费服务器唤醒通常不到 1 分钟）。
+   */
+  requestCreateRoom(settings: RoomSettings, timeoutMs = 60_000): Promise<CreateRoomResult> {
+    if (this.creating) return this.creating.promise;
+    const id = 'c' + newActionId();
+    let done!: (r: CreateRoomResult) => void;
+    const promise = new Promise<CreateRoomResult>((resolve) => {
+      const timer = window.setTimeout(() => {
+        // 还没发出去的请求（一直没连上服务器）撤回：之后连上也不会再创建
+        this.queue = this.queue.filter((m) => !(m.t === 'createRoom' && m.requestId === id));
+        done({ ok: false, message: '暂时无法连接游戏服务器，请稍后重试' });
+      }, timeoutMs);
+      done = (r) => {
+        clearTimeout(timer);
+        if (this.creating?.id !== id) return;
+        this.creating = null;
+        resolve(r);
+      };
+    });
+    this.creating = { id, promise, done };
+    this.updateProfile();
+    this.newIntent();
+    this.send({ t: 'createRoom', settings, requestId: id });
+    return promise;
+  }
   joinRoom(code: string) {
     this.newIntent();
     this.send({ t: 'joinRoom', code });
@@ -473,7 +527,7 @@ class NetClient {
     this.send({ t: 'leaveRoom' });
     this.leavingRoom = true;
     this.disconnectAfterLeave = !!opts.disconnect;
-    tabStorage()?.removeItem(LAST_ROOM_KEY);
+    rememberRoom(null);
     const g = useGame.getState();
     g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
   }
@@ -484,7 +538,7 @@ class NetClient {
    */
   releaseIfIdle() {
     const g = useGame.getState();
-    if (this.leavingRoom || g.room || g.mode === 'online') return;
+    if (this.leavingRoom || this.creating || g.room || g.mode === 'online') return;
     if (this.ws || this.retryTimer || this.wanted) this.disconnect();
   }
 
@@ -531,4 +585,6 @@ class NetClient {
 }
 
 export const net = new NetClient();
+// 刷新前所在的房间（本标签页）：界面据此显示“正在回到房间”
+if (typeof window !== 'undefined') useGame.getState().set({ lastRoom: tabStorage()?.getItem(LAST_ROOM_KEY) ?? null });
 onIdentityChanged(() => net.reconnect());

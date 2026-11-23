@@ -16,8 +16,9 @@ export function RoomLobby() {
   const [aiP, setAiP] = useState<AIPersonality>('smartCat');
   const [aiD, setAiD] = useState<AIDifficulty>('easy');
   const [confirmLeave, setConfirmLeave] = useState(false);
-  // 电脑版顶栏显示房间状态（移动端顶栏保持原样）
+  // 电脑版顶栏显示房间状态（移动端顶栏保持原样）；自己的连接中断时如实显示，而不是看起来一切正常
   const pc = useIsPC();
+  const conn = useGame((s) => s.conn);
   // 防止重复点击“开始游戏”（房间状态改变或出现错误时恢复）。Hook 必须在提前返回之前调用
   const [starting, markStarting] = useBusy(room?.status);
   if (!room) return null;
@@ -53,8 +54,14 @@ export function RoomLobby() {
           </button>
           <span className="lbar-sep" aria-hidden />
           {pc && (
-            <span className={`lbar-status ${canStart ? 'ready' : ''}`} role="status">
-              {room.members.length < 2 ? '等待玩家加入' : notReady.length ? `等待 ${notReady.length} 位玩家准备` : '全部就绪，可以开始'}
+            <span className={`lbar-status ${conn !== 'connected' ? 'lost' : canStart ? 'ready' : ''}`} role="status">
+              {conn !== 'connected'
+                ? '连接中断，正在重新连接…'
+                : room.members.length < 2
+                  ? '等待玩家加入'
+                  : notReady.length
+                    ? `等待 ${notReady.length} 位玩家准备`
+                    : '全部就绪，可以开始'}
             </span>
           )}
           <span className="lbar-count" aria-label={`${room.members.length} / ${room.settings.maxPlayers} 名玩家`}>

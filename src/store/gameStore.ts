@@ -31,6 +31,8 @@ export interface GameState {
   serverRestarting: boolean;
   /** 与服务器的往返延迟（毫秒），用于调试面板 */
   latency: number | null;
+  /** 这个标签页最近所在的在线房间代码（刷新后用来回到座位；离开 / 房间失效时清空） */
+  lastRoom: string | null;
 
   setScreen: (s: Screen) => void;
   setView: (v: TableView | null) => void;
@@ -60,6 +62,7 @@ export const useGame = create<GameState>()((set, get) => ({
   pendingAction: null,
   serverRestarting: false,
   latency: null,
+  lastRoom: null,
 
   setScreen: (screen) => set({ screen }),
   setView: (view) => {

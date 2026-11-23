@@ -59,6 +59,8 @@ interface Session {
   lastRoomJson?: string;
   /** 断线后的宽限计时：期间重新连接（哪怕连到另一台服务器）就不算断线 */
   offlineTimer?: ReturnType<typeof setTimeout>;
+  /** 最近一次“创建房间”请求（code 为 null 表示正在创建）：同一个请求重复到达时不再创建第二个房间 */
+  lastCreate?: { id: string; code: string | null };
 }
 
 /** 共享存储中的会话记录（玩家刷新页面 / 连到另一台服务器时用来恢复身份） */
@@ -683,8 +685,17 @@ export class RoomServer {
       case 'createRoom': {
         const settings = this.cleanSettings(msg.settings);
         if (!settings) return err('房间设置无效');
+        const rid = typeof msg.requestId === 'string' && msg.requestId ? msg.requestId.slice(0, 40) : null;
+        if (rid && s.lastCreate?.id === rid) {
+          // 同一个创建请求重复到达（连续点击、断线后重发）：不创建第二个房间；
+          // 仍在那个房间里就把房间信息再发一次，让客户端进入房间
+          if (s.lastCreate.code && s.roomCode === s.lastCreate.code) await this.resendRoom(s);
+          return;
+        }
+        if (rid) s.lastCreate = { id: rid, code: null };
         if (s.roomCode) await this.leave(s);
         await this.createRoom(s, settings, null);
+        if (rid && s.lastCreate?.id === rid) s.lastCreate.code = s.roomCode;
         return;
       }
       case 'startSolo': {
@@ -892,6 +903,17 @@ export class RoomServer {
       s.lastRoomJson = undefined;
       void this.saveSession(s);
     }
+  }
+
+  /** 把当前房间信息（与聊天记录）重新发给这名玩家 */
+  private async resendRoom(s: Session) {
+    const code = s.roomCode;
+    const room = code ? (await this.getRoomRec(code))?.room : null;
+    if (!room || !room.members.some((m) => m.id === s.playerId)) return;
+    const info = this.roomInfo(room);
+    s.lastRoomJson = JSON.stringify(info);
+    s.conn?.send({ t: 'chatHistory', messages: room.chat });
+    s.conn?.send({ t: 'room', room: info });
   }
 
   /** 服务器生成房间代码；与已有房间重复时重新生成 */

@@ -3984,6 +3984,11 @@ h1, h2, h3 {
   background: var(--c-ok);
   font-weight: 650;
 }
+.lbar-status.lost {
+  color: #ffd9a0;
+  border-color: rgba(232, 162, 58, 0.45);
+  background: rgba(232, 162, 58, 0.12);
+}
 
 /* 牌桌中央：还没发牌（空桌）时的状态 */
 .table-status {
@@ -4047,5 +4052,247 @@ h1, h2, h3 {
   .consent-bar,
   .table-status {
     animation: none;
+  }
+}
+
+/* ───── 电脑版首页“创建房间”入口（只在电脑版渲染，见 RoomCTA.tsx）─────
+   层级：首页位于 .overlay（10）内：首页导航 5 < 入口 6 < 对话框遮罩 50（对话框盖住入口）；
+   Cookie 说明条（45）与通知（80）在根层，高于整个 .overlay。
+   位置：右边距跟随首页布局（4vw），超宽屏上不会飘到离内容很远的地方。 */
+.rcta-wrap {
+  --rcta-fs: clamp(14px, calc(0.42vw + 8.6px), 17px);
+  position: fixed;
+  /* 与首屏账号卡片同一条右边线（4vw + 首页滚动条宽度），停在卡片上方 */
+  right: calc(max(24px, 4vw) + var(--rcta-sbw, 0px));
+  bottom: calc(13vh + var(--rcta-clear, 133px) + 18px);
+  z-index: 6;
+  font-size: var(--rcta-fs);
+  transition: opacity var(--t-ui) var(--e-out), transform var(--t-ui) var(--e-out), visibility 0s linear 0s;
+}
+/* 滚到结尾（那里有自己的“创建房间”按钮与页脚）时让开：淡出、不可点击、不可聚焦 */
+.rcta-wrap.away {
+  opacity: 0;
+  transform: translateX(12px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--t-ui) var(--e-out), transform var(--t-ui) var(--e-out), visibility 0s linear var(--t-ui);
+}
+.rcta {
+  position: relative;
+  display: grid;
+  gap: 0.22em;
+  width: max(15.2em, var(--rcta-chip-w, 0px));
+  padding: 1em 1.2em 1.05em;
+  text-align: left;
+  font: inherit;
+  color: var(--c-text);
+  cursor: pointer;
+  border-radius: 1.35em 1.35em 1.35em 0.5em;
+  border: 1px solid rgba(233, 207, 134, 0.26);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(233, 207, 134, 0.09), transparent 55%),
+    linear-gradient(160deg, rgba(32, 25, 18, 0.8), rgba(14, 11, 9, 0.76));
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.07), 0 18px 44px rgba(0, 0, 0, 0.42), 0 2px 6px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  transition: transform var(--t-ui) var(--e-out), border-color var(--t-ui) var(--e-out), box-shadow var(--t-ui) var(--e-out);
+  /* 入场：只播放一次（backwards：结束后不再覆盖悬停效果） */
+  animation: rctaIn 360ms var(--e-out) 0.35s backwards;
+}
+.rcta-late .rcta {
+  animation-delay: 2.3s;
+}
+@keyframes rctaIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+/* 桌边金属装饰：顶部一道细金线 */
+.rcta::before {
+  content: '';
+  position: absolute;
+  left: 1.2em;
+  right: 1.2em;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(244, 220, 152, 0.8), transparent);
+  opacity: 0.6;
+  transition: opacity var(--t-ui) var(--e-out);
+}
+/* 悬停提亮层（只改变透明度） */
+.rcta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(160deg, rgba(255, 236, 190, 0.075), transparent 62%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-ui) var(--e-out);
+}
+.rcta-top {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-bottom: 0.4em;
+}
+.rcta-suit {
+  width: 2em;
+  height: 2em;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 0.95em;
+  line-height: 1;
+  color: var(--c-gold-strong);
+  background: radial-gradient(circle at 35% 30%, rgba(244, 220, 152, 0.18), rgba(244, 220, 152, 0.03) 70%);
+  border: 1px solid rgba(233, 207, 134, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform var(--t-ui) var(--e-out);
+}
+.rcta-eyebrow {
+  font-family: var(--font-num);
+  font-size: 0.6em;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  color: rgba(233, 207, 134, 0.68);
+}
+.rcta-spark {
+  margin-left: auto;
+  font-size: 0.72em;
+  color: var(--c-gold-strong);
+  opacity: 0;
+  transform: scale(0.6) rotate(-25deg);
+  transition: opacity var(--t-ui) var(--e-out), transform var(--t-ui) var(--e-out);
+}
+.rcta-title {
+  font-size: 1.32em;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: #fbf3e2;
+}
+.rcta-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.82em;
+  color: var(--c-text-2);
+  opacity: 0.78;
+  transition: opacity var(--t-ui) var(--e-out);
+}
+.rcta-sub.code {
+  font-family: var(--font-num);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--c-gold);
+  opacity: 0.95;
+}
+.rcta-arrow {
+  margin-left: auto;
+  color: var(--c-gold);
+  letter-spacing: 0;
+  transition: transform var(--t-ui) var(--e-out);
+}
+.rcta-note {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.7em;
+  color: rgba(255, 196, 176, 0.82);
+}
+.rcta:hover:not([aria-disabled]) {
+  transform: translateY(-2px);
+  border-color: rgba(244, 220, 152, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.1), 0 24px 56px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(233, 207, 134, 0.07), 0 0 30px rgba(233, 207, 134, 0.07);
+}
+.rcta:hover:not([aria-disabled])::before,
+.rcta:hover:not([aria-disabled])::after,
+.rcta:hover:not([aria-disabled]) .rcta-sub {
+  opacity: 1;
+}
+.rcta:hover:not([aria-disabled]) .rcta-suit {
+  transform: translateY(-1px) rotate(-8deg);
+}
+.rcta:hover:not([aria-disabled]) .rcta-spark {
+  opacity: 0.9;
+  transform: none;
+}
+.rcta:hover:not([aria-disabled]) .rcta-arrow {
+  transform: translateX(3px);
+}
+.rcta:active:not([aria-disabled]) {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 90ms;
+}
+.rcta:focus-visible {
+  outline: none;
+  border-color: rgba(244, 220, 152, 0.6);
+  box-shadow: 0 0 0 2px rgba(11, 10, 14, 0.9), 0 0 0 4px rgba(244, 220, 152, 0.85), 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+.rcta[aria-disabled] {
+  cursor: progress;
+}
+.rcta.error {
+  border-color: rgba(226, 83, 63, 0.42);
+}
+.rcta.error .rcta-suit {
+  color: #f3a08f;
+  border-color: rgba(226, 83, 63, 0.5);
+  background: rgba(226, 83, 63, 0.08);
+  font-family: var(--font-num);
+  font-weight: 700;
+}
+.rcta-spin {
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  border: 1.5px solid rgba(244, 220, 152, 0.22);
+  border-top-color: var(--c-gold-strong);
+  animation: rctaSpin 0.9s linear infinite;
+}
+@keyframes rctaSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rcta-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* 4K（3840 CSS 像素宽，100% 缩放）：整体放大，不变成一个孤零零的小按钮 */
+@media (min-width: 2800px) and (min-height: 1500px) {
+  .rcta-wrap {
+    --rcta-fs: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rcta-wrap,
+  .rcta,
+  .rcta::before,
+  .rcta::after,
+  .rcta-suit,
+  .rcta-spark,
+  .rcta-arrow {
+    animation: none;
+    transition: none;
+  }
+  .rcta:hover:not([aria-disabled]),
+  .rcta:active:not([aria-disabled]),
+  .rcta:hover:not([aria-disabled]) .rcta-suit,
+  .rcta:hover:not([aria-disabled]) .rcta-arrow,
+  .rcta-wrap.away {
+    transform: none;
+  }
+  /* 加载指示保留（功能性状态），只是转得更慢 */
+  .rcta-spin {
+    animation: rctaSpin 2.4s linear infinite;
   }
 }
