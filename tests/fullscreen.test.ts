@@ -81,11 +81,19 @@ describe('全屏管理', () => {
     f = setup({ supported: false });
     const m = await load();
     expect(m.isSupported()).toBe(false);
-    expect(m.displayMode()).toBe('immersive');
+    expect(m.displayMode()).toBe('immersive-fallback');
     expect(f.classes.has('apc-immersive')).toBe(true);
+    expect(f.classes.has('apc-fullscreen')).toBe(false);
     expect(await m.enter()).toBe(false);
+    // 不假装已经全屏
     expect(m.isFullscreen()).toBe(false);
-    expect(m.useFullscreen.getState().notice?.kind).toBe('unavailable');
+    expect(m.useFullscreen.getState().notice?.kind).toBe('immersive');
+    // “关”：不请求全屏，普通页面
+    settings.fullscreenPreference = 'off';
+    expect(m.displayMode()).toBe('browser');
+    settings.fullscreenPreference = 'on';
+    expect(m.displayMode()).toBe('immersive-fallback');
+    settings.fullscreenPreference = 'auto';
     // 进入游戏的按钮：静默跳过（不提示、不报错）
     m.useFullscreen.setState({ notice: null });
     m.enterOnEntryGesture();
@@ -95,11 +103,12 @@ describe('全屏管理', () => {
   it('FS-02 进入 / 退出 / 切换：状态以浏览器的 fullscreenchange 为准，进入时短暂提示', async () => {
     f = setup();
     const m = await load();
-    expect(m.displayMode()).toBe('windowed');
+    expect(m.displayMode()).toBe('browser');
     expect(await m.enter()).toBe(true);
     expect(m.isFullscreen()).toBe(true);
     expect(f.classes.has('apc-fullscreen')).toBe(true);
     expect(m.useFullscreen.getState().notice?.kind).toBe('entered');
+    expect(m.displayMode()).toBe('native-fullscreen');
     await m.toggle();
     expect(m.isFullscreen()).toBe(false);
     expect(f.classes.has('apc-fullscreen')).toBe(false);
@@ -146,7 +155,7 @@ describe('全屏管理', () => {
     pc = false;
     f = setup({ standalone: true });
     m = await load();
-    expect(m.displayMode()).toBe('standalone');
+    expect(m.displayMode()).toBe('standalone-pwa');
     m.enterOnEntryGesture();
     expect(f.requests.count).toBe(0);
   });
@@ -160,13 +169,32 @@ describe('全屏管理', () => {
     expect(m.isFullscreen()).toBe(false);
     expect(m.useFullscreen.getState().failed).toBe(true);
     expect(m.useFullscreen.getState().notice).toBe(null);
+    // 被拒绝后本次使用沉浸式显示（不是“全屏”，也不是坏掉）
+    expect(m.displayMode()).toBe('immersive-fallback');
+    expect(f.classes.has('apc-immersive')).toBe(true);
     m.enterOnEntryGesture();
     expect(f.requests.count).toBe(1);
     // 手动点“进入全屏”失败时才提示
     expect(await m.enter(true)).toBe(false);
-    expect(m.useFullscreen.getState().notice?.kind).toBe('unavailable');
+    expect(m.useFullscreen.getState().notice?.kind).toBe('immersive');
     expect(err).not.toHaveBeenCalled();
     err.mockRestore();
+  });
+
+  it('FS-09 能力检测必须同时满足“允许全屏”和“方法存在”：只有其中一个时按不支持处理（沉浸式显示）', async () => {
+    f = setup();
+    f.doc.fullscreenEnabled = true;
+    delete f.el.requestFullscreen;
+    let m = await load();
+    expect(m.isSupported()).toBe(false);
+    expect(m.displayMode()).toBe('immersive-fallback');
+    vi.resetModules();
+    f = setup();
+    f.doc.fullscreenEnabled = false;
+    m = await load();
+    expect(m.isSupported()).toBe(false);
+    m.enterOnEntryGesture();
+    expect(f.requests.count).toBe(0);
   });
 
   it('FS-06 只有带 webkit 前缀的接口（旧版 Safari）：按能力检测使用', async () => {

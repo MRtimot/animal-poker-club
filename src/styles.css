@@ -4252,8 +4252,10 @@ html::backdrop {
     /* 不触发下拉刷新 / 回弹（游戏界面本身不滚动；首页等可滚动区域各自处理） */
     overscroll-behavior: none;
   }
-  /* 牌局中：防止双指缩放打乱牌桌布局（列表仍可以上下滚动，按钮没有点击延迟） */
-  body.in-game {
+  /* 牌局中：只在牌桌画面与牌桌界面上防止双指缩放打乱布局（列表仍可以上下滚动，按钮没有点击延迟）；
+     不在全局使用 touch-action: none */
+  body.in-game .app-canvas,
+  body.in-game .game-hud {
     touch-action: pan-x pan-y;
   }
   /* 顶栏按钮在手机上看起来 36px，但可点击区域至少 44px */
@@ -4305,10 +4307,16 @@ html::backdrop {
   color: var(--c-gold);
   flex: none;
 }
-.fs-notice.unavailable {
-  white-space: normal;
-  text-align: center;
-  animation-duration: 3.4s;
+/* 设置里“当前显示方式”的小标签（如实显示：全屏 / 沉浸式显示 / 应用模式 / 普通页面） */
+.fs-status {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-text-2);
+  vertical-align: 1px;
 }
 @keyframes fsNotice {
   0% {
@@ -4348,9 +4356,6 @@ html::backdrop {
   .fs-notice {
     animation-name: fsNoticeFade;
     animation-duration: 1.8s !important;
-  }
-  .fs-notice.unavailable {
-    animation-duration: 3.4s !important;
   }
 }
 
@@ -4408,6 +4413,15 @@ html::backdrop {
     padding: calc(64px + var(--safe-top)) 0 0;
   }
   /* 扑克大厅：卡片里有较长的下拉框 / 选项时，卡片仍然限制在屏幕宽度内（以前在窄屏上会向右超出） */
+  /* 底部抽屉按“当前可见高度”计算：Safari 地址栏 / 工具栏出现时也不会超出屏幕（不支持 dvh 的浏览器保留原来的 vh） */
+  @supports (height: 1dvh) {
+    .side-panel {
+      height: 72dvh;
+    }
+    .creator-left {
+      height: 46dvh;
+    }
+  }
   .card-grid > *,
   .card-grid .select.grow {
     min-width: 0;
@@ -4435,6 +4449,11 @@ html::backdrop {
   .chat-fab {
     bottom: auto;
     top: calc(118px + var(--safe-top));
+  }
+  @supports (height: 1dvh) {
+    .chat-panel {
+      height: 62dvh;
+    }
   }
   /* 聊天面板（底部抽屉）：内容避开左右圆角 / 刘海 */
   .chat-panel {
