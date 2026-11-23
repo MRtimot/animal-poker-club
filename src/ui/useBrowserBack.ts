@@ -9,6 +9,7 @@
 import { useEffect } from 'react';
 import { useGame, type Screen } from '../store/gameStore';
 import { session } from '../net/session';
+import { consumeBackForFullscreen } from '../display/fullscreen';
 
 const IN_APP = 'apc-in';
 const ROOT_SCREENS: Screen[] = ['home', 'login'];
@@ -31,6 +32,11 @@ export function useBrowserBack() {
       if (isInApp()) return; // “前进”：停在当前页面
       const g = useGame.getState();
       if (ROOT_SCREENS.includes(g.screen)) return;
+      // 全屏时按返回：只退出全屏，留在当前页面（不离开房间、不回首页）
+      if (consumeBackForFullscreen()) {
+        push();
+        return;
+      }
       if (g.screen === 'onboarding' || (g.screen === 'game' && g.view && !g.view.gameOver)) {
         push();
         if (g.screen === 'game') g.set({ modal: 'leave' });

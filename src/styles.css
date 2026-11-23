@@ -4401,6 +4401,20 @@ html::backdrop {
   .creator,
   .collection {
     padding: calc(72px + var(--safe-top)) calc(18px + var(--safe-right)) calc(18px + var(--safe-bottom)) calc(18px + var(--safe-left));
+  }  /* 手机横屏（高度很小）：角色创建页的两个面板限制在屏幕内，内容在面板里滚动
+     （以前面板按内容高度排开，会超出屏幕底部约 180px，下方的按钮点不到） */
+  @media (max-height: 520px) and (min-width: 761px) {
+    .creator {
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .creator-right {
+      max-height: 100%;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }    /* 鼠标操作提示（竖屏时本来就隐藏）：横屏时会盖住面板底部 */
+    .creator-hint {
+      display: none;
+    }
   }
 }
 @media (max-width: 760px) {

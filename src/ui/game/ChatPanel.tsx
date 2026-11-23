@@ -38,11 +38,12 @@ export function ChatPanel({ side = 'right' }: { side?: 'left' | 'right' }) {
     session.chat(text);
     setText('');
   };
-  const sideStyle = side === 'left' ? { left: 14, right: 'auto' } : undefined;
+  // 靠左时避开横屏手机一侧的挖孔 / 圆角（安全区为 0 时与原来的 14px / 70px 相同，电脑版不变）
+  const sideStyle = side === 'left' ? { left: 'calc(14px + var(--safe-left))', right: 'auto' } : undefined;
 
   if (!open) {
     return (
-      <div className="chat-fab" style={side === 'left' && !isNarrow() ? { left: 14, right: 'auto', top: 70, bottom: 'auto' } : undefined}>
+      <div className="chat-fab" style={side === 'left' && !isNarrow() ? { left: 'calc(14px + var(--safe-left))', right: 'auto', top: 'calc(70px + var(--safe-top))', bottom: 'auto' } : undefined}>
         <button
           className="icon-btn"
           style={{ position: 'relative', width: 52, height: 52, fontSize: 24 }}

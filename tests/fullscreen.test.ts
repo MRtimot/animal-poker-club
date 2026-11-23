@@ -197,7 +197,27 @@ describe('全屏管理', () => {
     expect(f.requests.count).toBe(0);
   });
 
-  it('FS-06 只有带 webkit 前缀的接口（旧版 Safari）：按能力检测使用', async () => {
+  it('FS-10 安卓返回键：全屏时或刚退出全屏时的“返回”只用来退出全屏（不离开房间、不回首页）；平时的返回照常处理', async () => {
+    f = setup();
+    const m = await load();
+    expect(m.consumeBackForFullscreen()).toBe(false);
+    await m.enter();
+    // 浏览器先触发历史返回、仍在全屏：退出全屏并留在当前页面
+    expect(m.consumeBackForFullscreen()).toBe(true);
+    await Promise.resolve();
+    expect(m.isFullscreen()).toBe(false);
+    // 浏览器先退出全屏、紧接着触发历史返回：同样只退出全屏
+    await m.enter();
+    f.systemExit();
+    expect(m.consumeBackForFullscreen()).toBe(true);
+    // 过一会儿以后的返回：正常导航
+    const t = performance.now();
+    const spy = vi.spyOn(performance, 'now').mockReturnValue(t + 2000);
+    expect(m.consumeBackForFullscreen()).toBe(false);
+    spy.mockRestore();
+  });
+
+    it('FS-06 只有带 webkit 前缀的接口（旧版 Safari）：按能力检测使用', async () => {
     f = setup({ webkitOnly: true });
     const m = await load();
     expect(m.isSupported()).toBe(true);

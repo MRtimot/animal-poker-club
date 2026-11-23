@@ -121,8 +121,28 @@ export function handleFullscreenChange() {
   if (was === active) return;
   // 退出（无论用哪种方式）都视为玩家的选择：“自动”在本次打开期间不再自动进入
   useFullscreen.setState(active ? { active } : { active, declined: true });
+  if (!active) lastExitAt = now();
   if (active) notify('entered');
   syncRootClass();
+}
+
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+let lastExitAt = -Infinity;
+/** 返回键与退出全屏的事件顺序因浏览器而异：在这个时间内到达的“返回”视为退出全屏 */
+const BACK_AFTER_EXIT_MS = 600;
+
+/**
+ * 浏览器“返回”（安卓返回键 / 返回手势）到达时调用：如果这次返回是用来退出全屏的，返回 true，
+ * 调用方应当保持在当前页面（不离开房间、不回首页）。
+ * · 多数安卓浏览器在全屏时按返回只退出全屏、不产生历史记录变化，这里不会被调用；
+ * · 个别浏览器同时退出全屏并触发历史返回：此时仍在全屏（先退出）或刚刚退出，都只退出全屏。
+ */
+export function consumeBackForFullscreen(): boolean {
+  if (currentElement()) {
+    void exit();
+    return true;
+  }
+  return now() - lastExitAt < BACK_AFTER_EXIT_MS;
 }
 
 /** 请求失败（浏览器拒绝、没有用户手势、被策略禁止）：不报错、不显示技术信息，本次改用沉浸式显示 */
