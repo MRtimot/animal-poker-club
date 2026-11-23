@@ -210,3 +210,55 @@ describe('本地 AI 对战：结束 → 返回首页 → 再来', () => {
     session.leave('home');
   }, 20000);
 });
+
+describe('深度审计回归（真实客户端 + 真实服务器）', () => {
+  const solo = { opponents: [{ personality: 'smartCat' as const, difficulty: 'easy' as const }], startingChips: 1000, smallBlind: 10, bigBlind: 20 };
+
+  it('BUG-04 连续点击“开始对局”：只发出一次请求；两次调用得到同一个结果；超时后不会把已开始的对局切换成离线对局', async () => {
+    useGame.getState().setScreen('quick');
+    const p1 = net.startSolo(solo, 1500);
+    const p2 = net.startSolo(solo, 1500);
+    expect(p2).toBe(p1);
+    expect(await p1).toBe(true);
+    expect(await p2).toBe(true);
+    const code = useGame.getState().room!.code;
+    // 以前：第一次调用的计时器会在这里超时并返回 false
+    await wait(1800);
+    const s = useGame.getState();
+    expect(s.mode).toBe('online');
+    expect(s.room?.code).toBe(code);
+    expect(s.room?.solo).toBe(true);
+    expect((net as any).soloStarting).toBeNull();
+    session.leave('home');
+    await until(() => !timers().ws);
+    await until(() => !srv.rooms.getRoom(code));
+  }, 20000);
+
+  it('BUG-05 连接上收到结构不对的消息：丢弃，不会抛错，也不会改动牌局 / 房间状态', async () => {
+    await createAndStart();
+    const before = useGame.getState();
+    const ws = (net as any).ws as WebSocket;
+    const junk = ['{oops', JSON.stringify({ t: 'state' }), JSON.stringify({ t: 'state', view: { players: 'x' } }), JSON.stringify({ t: 'room', room: { code: 1 } }), JSON.stringify({ t: 'chat', message: null }), JSON.stringify({ t: 'zzz' })];
+    for (const data of junk) expect(() => (ws.onmessage as any)({ data })).not.toThrow();
+    const after = useGame.getState();
+    expect(after.view).toBe(before.view);
+    expect(after.room).toBe(before.room);
+    expect(after.chat).toBe(before.chat);
+    expect(after.screen).toBe('game');
+    session.leave('home');
+    await until(() => !timers().ws);
+  }, 30000);
+
+  it('BUG-06 登录 / 退出后重新连接：旧连接的消息处理全部解除，旧身份的消息不会再被处理', async () => {
+    net.connect();
+    await until(() => useGame.getState().conn === 'connected');
+    const old = (net as any).ws as WebSocket;
+    const oldPlayer = useGame.getState().playerId;
+    net.reconnect();
+    expect(old.onmessage).toBeNull();
+    expect(old.onclose).toBeNull();
+    expect((net as any).rotateTimer).toBeNull();
+    await until(() => useGame.getState().conn === 'connected' && (net as any).ws !== old && useGame.getState().playerId !== oldPlayer);
+    net.disconnect();
+  }, 20000);
+});

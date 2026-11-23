@@ -17,6 +17,7 @@ const tmpV = new THREE.Vector3();
 /** 牌局 HUD 占用的屏幕区域（与 gameHud.css 中的 --hud-top / --hud-bottom 一致） */
 export function hudInsets(w: number, h: number): { top: number; bottom: number } {
   if (w <= 760) return { top: 54, bottom: 196 };
+  if (w <= 1100 && h > w) return { top: 60, bottom: 210 };
   if (h <= 520 && w >= 600) return { top: 48, bottom: 104 };
   if (w >= 1800 && h >= 1000) return { top: 68, bottom: 150 };
   return { top: 60, bottom: 132 };

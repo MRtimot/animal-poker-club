@@ -1,5 +1,6 @@
 // 事件导演：把服务器 / 本地引擎产生的牌局事件转换为动物动作、筹码飞行、音效和镜头
 import { useEffect, useRef } from 'react';
+import { TimerBag } from './timerBag';
 import type { TableView } from '../core/game/view';
 import type { GameEvent } from '../core/table/types';
 import { useFx, AnimName, MoodFace } from '../store/fxStore';
@@ -94,12 +95,22 @@ export function useTableDirector(view: TableView | null) {
   const lastSeq = useRef<number | null>(null);
   const lastHand = useRef<number>(-1);
   const cursor = useRef(0);
-  const timers = useRef<number[]>([]);
+  // 待播放的表现（音效、动作、派奖、赢家演出）：到点后自动移除，离开牌桌时全部取消
+  const timers = useRef(new TimerBag()).current;
+  const cancelAll = () => timers.cancelAll();
 
-  useEffect(() => () => timers.current.forEach((t) => clearTimeout(t)), []);
+  useEffect(() => cancelAll, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!view) return;
+    if (!view) {
+      // 离开牌桌（返回首页 / 离开房间）：取消还没播放的音效与动画，下次进入牌桌重新开始，
+      // 否则摊牌时离开，回到首页后还会听到“赢了”的音效、看到派奖动画
+      cancelAll();
+      lastSeq.current = null;
+      lastHand.current = -1;
+      cursor.current = 0;
+      return;
+    }
     const events = view.events;
     const maxSeq = events.length ? events[events.length - 1].seq : 0;
 
@@ -126,7 +137,7 @@ export function useTableDirector(view: TableView | null) {
     const at = (fn: () => void, extra = 0) => {
       const delay = Math.max(0, cursor.current + extra - performance.now());
       if (delay < 5) fn();
-      else timers.current.push(window.setTimeout(fn, delay));
+      else timers.later(fn, delay);
     };
     const play = (id: string, a: AnimName) => fx.play(id, a);
     const mood = (id: string, emoji: string, face: MoodFace, ms?: number) => fx.setMood(id, emoji, face, ms);
@@ -158,7 +169,7 @@ export function useTableDirector(view: TableView | null) {
           at(() => {
             view.players.forEach((p, i) => {
               if (!p.inHand) return;
-              timers.current.push(window.setTimeout(() => play(p.id, 'peek'), 120 * i));
+              timers.later(() => play(p.id, 'peek'), 120 * i);
             });
             reactToMyCards([]);
           }, n * STAGGER.holeCard + 700);
@@ -190,12 +201,10 @@ export function useTableDirector(view: TableView | null) {
               others.forEach((o, i) => {
                 if (Math.random() > 0.45) return;
                 const sur = Math.random() < 0.5;
-                timers.current.push(
-                  window.setTimeout(() => {
-                    mood(o.id, sur ? '😳' : '🤨', sur ? 'wide' : 'doubt', 1800);
-                    if (!sur) play(o.id, 'doubt');
-                  }, 450 + i * 120),
-                );
+                timers.later(() => {
+                  mood(o.id, sur ? '😳' : '🤨', sur ? 'wide' : 'doubt', 1800);
+                  if (!sur) play(o.id, 'doubt');
+                }, 450 + i * 120);
               });
             } else if (e.action === 'allin') {
               // 全押：自信 → 镜头快速推进 → 推出所有筹码 → 桌面震动 →“全押！”→ 其他动物反应
@@ -211,16 +220,14 @@ export function useTableDirector(view: TableView | null) {
               sound.duck(0.45, 1600);
               sound.setIntensity(1, 9000);
               if (p) sound.animal(p.profile.animal.species, 'neutral', 0.3);
-              timers.current.push(window.setTimeout(() => fx.doShake(0.022), chipDelay + DUR.chipFlight));
+              timers.later(() => fx.doShake(0.022), chipDelay + DUR.chipFlight);
               const others = view.players.filter((x) => x.id !== e.playerId && x.inHand && !x.busted);
               others.forEach((o, i) => {
                 const r = ALLIN_REACTION[o.profile.animal.species] ?? { emoji: '😳', face: 'wide' as MoodFace, anim: 'surprised' as AnimName };
-                timers.current.push(
-                  window.setTimeout(() => {
-                    mood(o.id, r.emoji, r.face, 2400);
-                    play(o.id, r.anim);
-                  }, 900 + i * 140),
-                );
+                timers.later(() => {
+                  mood(o.id, r.emoji, r.face, 2400);
+                  play(o.id, r.anim);
+                }, 900 + i * 140);
               });
             }
             if (l && e.added > 0) fx.flyChips({ from: handPos(l), to: l.bet, amount: e.added, duration: DUR.chipFlight, delay: chipDelay });
@@ -261,7 +268,7 @@ export function useTableDirector(view: TableView | null) {
             fx.setCue({ type: 'showdown', duration: 2600 });
             sound.setIntensity(0.85, 5000);
             sound.duck(0.6, 2400);
-            e.hands.forEach((h, i) => timers.current.push(window.setTimeout(() => play(h.playerId, i % 2 ? 'surprised' : 'doubt'), i * 180)));
+            e.hands.forEach((h, i) => timers.later(() => play(h.playerId, i % 2 ? 'surprised' : 'doubt'), i * 180));
           });
           break;
         case 'refund': {
@@ -297,47 +304,41 @@ export function useTableDirector(view: TableView | null) {
             const merged = new Map<string, number>();
             for (const a of e.awards) merged.set(a.playerId, (merged.get(a.playerId) ?? 0) + a.amount);
             const hand = view.handNumber;
-            timers.current.push(
-              window.setTimeout(() => {
-                fx.present({
-                  hand,
-                  uncontested: e.uncontested,
-                  tie,
-                  winners: [...merged].map(([playerId, amount]) => {
-                    const sh = view.summary?.shown.find((x) => x.playerId === playerId);
-                    const handName = view.summary?.winners.find((w) => w.playerId === playerId && w.handName)?.handName ?? sh?.handName;
-                    return { playerId, amount, handName: e.uncontested ? undefined : handName, cards: e.uncontested ? [] : sh?.bestCards ?? [] };
-                  }),
-                  duration: e.uncontested ? 2200 : tier >= 3 ? 4200 : 3400,
-                });
-              }, payoutDelay),
-            );
+            timers.later(() => {
+              fx.present({
+                hand,
+                uncontested: e.uncontested,
+                tie,
+                winners: [...merged].map(([playerId, amount]) => {
+                  const sh = view.summary?.shown.find((x) => x.playerId === playerId);
+                  const handName = view.summary?.winners.find((w) => w.playerId === playerId && w.handName)?.handName ?? sh?.handName;
+                  return { playerId, amount, handName: e.uncontested ? undefined : handName, cards: e.uncontested ? [] : sh?.bestCards ?? [] };
+                }),
+                duration: e.uncontested ? 2200 : tier >= 3 ? 4200 : 3400,
+              });
+            }, payoutDelay);
             e.awards.forEach((a, i) => {
               const l = layout.get(a.playerId);
               if (!l) return;
               fx.flyChips({ from: POT_POS, to: handPos(l), amount: a.amount, duration: 950, delay: payoutDelay + i * STAGGER.winnerPayout, arc: 0.12 });
-              timers.current.push(
-                window.setTimeout(() => {
-                  play(a.playerId, e.uncontested || tier <= 0 ? 'happy' : 'win');
-                  if (!e.uncontested) mood(a.playerId, tie ? '🤝' : '😆', 'happy', 2600);
-                  // 粒子：按牌力分级，始终克制
-                  if (tier >= 1) fx.burst(l.head, 'gold');
-                  if (tier >= 2) fx.burst(l.head, 'confetti');
-                  if (tier >= 5) timers.current.push(window.setTimeout(() => fx.burst(l.head, 'gold'), 600));
-                }, payoutDelay + i * STAGGER.winnerPayout),
-              );
+              timers.later(() => {
+                play(a.playerId, e.uncontested || tier <= 0 ? 'happy' : 'win');
+                if (!e.uncontested) mood(a.playerId, tie ? '🤝' : '😆', 'happy', 2600);
+                // 粒子：按牌力分级，始终克制
+                if (tier >= 1) fx.burst(l.head, 'gold');
+                if (tier >= 2) fx.burst(l.head, 'confetti');
+                if (tier >= 5) timers.later(() => fx.burst(l.head, 'gold'), 600);
+              }, payoutDelay + i * STAGGER.winnerPayout);
             });
             // 3. 输家：愣住 → 低头 → 叹气
             if (!e.uncontested) {
               for (const p of view.players) {
                 if (winners.has(p.id) || !p.inHand) continue;
                 if (!p.folded) {
-                  timers.current.push(
-                    window.setTimeout(() => {
-                      play(p.id, 'lose');
-                      mood(p.id, '😨', 'wide', 1400);
-                    }, payoutDelay + 200),
-                  );
+                  timers.later(() => {
+                    play(p.id, 'lose');
+                    mood(p.id, '😨', 'wide', 1400);
+                  }, payoutDelay + 200);
                 } else if (Math.random() < 0.3) play(p.id, 'sad');
               }
             }
@@ -345,10 +346,10 @@ export function useTableDirector(view: TableView | null) {
             sound.setIntensity(0);
             const viewerWon = winners.has(viewer);
             if (viewerWon) {
-              timers.current.push(window.setTimeout(() => sound.play(tier >= 5 ? 'royal' : 'win'), payoutDelay));
+              timers.later(() => sound.play(tier >= 5 ? 'royal' : 'win'), payoutDelay);
               if (me) sound.animal(me.profile.animal.species, 'happy', 0.4 + payoutDelay / 1000);
             } else if (tier >= 5) {
-              timers.current.push(window.setTimeout(() => sound.play('royal'), payoutDelay));
+              timers.later(() => sound.play('royal'), payoutDelay);
             } else if (me && me.inHand && !me.folded && showdownHappened) {
               sound.play('lose');
             } else {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useGame } from '../../store/gameStore';
 import { useProfile } from '../../store/profileStore';
 import { AIDifficulty, AIPersonality, DIFFICULTY_NAME, PERSONALITIES } from '../../core/ai/ai';
@@ -35,8 +35,19 @@ export function HubScreen() {
   const signedIn = useAccount((s) => s.status === 'signedIn');
   const cached = useAccount((s) => s.cached);
   const [starting, setStarting] = useState(false);
+  // ref 立即生效：同一瞬间的连续点击只开始一局（状态还没来得及更新时 disabled 拦不住）
+  const startLock = useRef(false);
 
   const start = async () => {
+    if (startLock.current) return;
+    startLock.current = true;
+    try {
+      await doStart();
+    } finally {
+      startLock.current = false;
+    }
+  };
+  const doStart = async () => {
     const [sb, bb] = BLIND_OPTIONS[blinds];
     const settings = {
       opponents: mix.slice(0, count).map((p, i) => {

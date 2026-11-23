@@ -66,8 +66,10 @@ export const useProfile = create<ProfileState>()(
       setAnimal: (a) => set({ animal: a }),
       saveCharacter: () => {
         const { name, animal, characters } = get();
-        const existing = characters.find((c) => c.name === name);
-        const ch: SavedCharacter = { id: existing?.id ?? randomId(8), name: sanitizeName(name), animal, createdAt: Date.now() };
+        // 用整理后的名字比较：保存的名字是整理过的（去掉首尾空格等），用原始输入比较会把同名角色存成两份
+        const clean = sanitizeName(name);
+        const existing = characters.find((c) => c.name === clean);
+        const ch: SavedCharacter = { id: existing?.id ?? randomId(8), name: clean, animal: sanitizeAnimal(animal), createdAt: Date.now() };
         const list = existing ? characters.map((c) => (c.id === ch.id ? ch : c)) : [ch, ...characters].slice(0, 12);
         set({ characters: list, createdCharacter: true });
         return ch;

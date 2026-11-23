@@ -7,6 +7,7 @@ import { useGame } from '../store/gameStore';
 import { currentProfile } from '../store/profileStore';
 import { safeStorage } from '../utils/format';
 import { serverWsUrl } from './serverAddress';
+import { parseServerMessage } from './validate';
 
 const SESSION_KEY = 'apc-session';
 const LAST_ROOM_KEY = 'apc-last-room';
@@ -85,10 +86,10 @@ class NetClient {
   /** 绑定一条已经成为“当前连接”的 WebSocket 的消息与关闭处理 */
   private bind(ws: WebSocket) {
     ws.onmessage = (ev) => {
-      let msg: ServerMessage;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
+      // 结构不对的消息（版本不一致、被截断）直接丢弃，不让界面崩溃
+      const msg = parseServerMessage(ev.data);
+      if (!msg) {
+        if (import.meta.env.DEV) console.warn('[联机] 忽略格式不正确的服务器消息', String(ev.data).slice(0, 200));
         return;
       }
       this.handle(msg);
@@ -140,12 +141,8 @@ class NetClient {
     }, 10_000);
     next.onopen = () => next.send(JSON.stringify({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), rotate: true } satisfies ClientMessage));
     next.onmessage = (ev) => {
-      let msg: ServerMessage;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
+      const msg = parseServerMessage(ev.data);
+      if (!msg) return;
       if (!swapped && msg.t === 'welcome') {
         if (this.ws !== old) {
           // 期间旧连接已经断开并重新连接过：放弃这条
@@ -208,9 +205,14 @@ class NetClient {
     const ws = this.ws;
     if (!ws) return;
     this.ws = null;
+    // 旧连接上还在路上的消息属于旧身份，不能再处理
     ws.onclose = null;
+    ws.onmessage = null;
+    ws.onerror = null;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+    if (this.rotateTimer) clearTimeout(this.rotateTimer);
+    this.rotateTimer = null;
     ws.close();
     tabStorage()?.removeItem(SESSION_KEY);
     this.connect();
@@ -359,24 +361,31 @@ class NetClient {
   }
 
   private soloWaiter: ((ok: boolean) => void) | null = null;
+  private soloStarting: Promise<boolean> | null = null;
 
-  /** 与 AI 对战（在服务器上运行，由服务器结算奖励）。服务器无法连接时返回 false */
+  /**
+   * 与 AI 对战（在服务器上运行，由服务器结算奖励）。服务器无法连接时返回 false。
+   * 正在开始时再次调用（连续点击）：返回同一个结果，不会发出第二次请求。
+   * 以前第二次调用会覆盖等待者，第一次调用 5 秒后超时返回 false，把已经开始的服务器对局切换成离线对局。
+   */
   startSolo(settings: SoloSettings, timeoutMs = 5000): Promise<boolean> {
-    return new Promise((resolve) => {
-      const timer = window.setTimeout(() => {
-        this.soloWaiter = null;
-        resolve(false);
-      }, timeoutMs);
-      this.soloWaiter = (ok) => {
+    if (this.soloStarting) return this.soloStarting;
+    const p = new Promise<boolean>((resolve) => {
+      const waiter = (ok: boolean) => {
         clearTimeout(timer);
-        this.soloWaiter = null;
+        if (this.soloWaiter === waiter) this.soloWaiter = null;
+        this.soloStarting = null;
         resolve(ok);
       };
+      const timer = window.setTimeout(() => waiter(false), timeoutMs);
+      this.soloWaiter = waiter;
       const g = useGame.getState();
       g.set({ chat: [], view: null });
       this.newIntent();
       this.send({ t: 'startSolo', settings });
     });
+    this.soloStarting = p;
+    return p;
   }
   restartSolo() {
     this.send({ t: 'restartSolo' });
