@@ -4296,3 +4296,13 @@ h1, h2, h3 {
     animation: rctaSpin 2.4s linear infinite;
   }
 }
+
+/* ───── 电脑版加载页（样式在 index.html 内联，保证第一帧就正确）─────
+   加载页显示期间（html.apc-booting，只在电脑版添加）：首页的开场动画先不播放，揭幕时才开始，
+   玩家看到的是完整的开场（标题、按钮、“创建房间”入口、Cookie 说明依次出现），而不是被加载页挡住的一半。 */
+html.apc-booting .hero-in,
+html.apc-booting .rcta,
+html.apc-booting .consent-bar,
+html.apc-booting .scroll-hint i::after {
+  animation-play-state: paused;
+}

@@ -1,4 +1,4 @@
-import { Component, Fragment, ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState, type ErrorInfo } from 'react';
+import { Component, Fragment, ReactNode, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -21,6 +21,11 @@ import { ConsentLayer } from './ui/privacy/ConsentUI';
 import type { AnimName } from './store/fxStore';
 import { useBrowserBack } from './ui/useBrowserBack';
 import { session } from './net/session';
+import { isPC } from './utils/pc';
+import { PremiumLoader } from './ui/boot/PremiumLoader';
+import { BootProbe } from './boot/BootProbe';
+import { markBoot, markBootDegraded, useBoot } from './boot/boot';
+import { homeTimeline } from './ui/home/homeTimeline';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
@@ -382,11 +387,33 @@ function AppContent() {
   // WebGL 上下文丢失（显卡驱动重置 / 内存不足）时自动重建画布
   const [canvasKey, setCanvasKey] = useState(0);
   useBrowserBack();
-  // 加载画面不能无限等待：3D 出错时立即结束；最长 12 秒后无论如何都结束（页面仍可使用）
+  // 电脑版使用按真实启动步骤显示进度的加载页（PremiumLoader）；手机与平板保持原来的加载画面。
+  // 打开页面时决定一次（加载途中改变窗口大小不会切换加载页）
+  const [pcBoot] = useState(isPC);
+  useLayoutEffect(() => {
+    // 首页开场（镜头推进、动物入座）在加载页揭幕时才开始；不是电脑版时去掉 index.html 加上的暂停标记
+    if (pcBoot) homeTimeline.held = true;
+    else document.documentElement.classList.remove('apc-booting');
+  }, [pcBoot]);
+  // 电脑版：页面代码已运行、存档与设置已读取，等界面字体就绪（系统字体通常立即就绪；最多等 3 秒，不让字体阻塞进入）
   useEffect(() => {
+    if (!pcBoot) return;
+    let alive = true;
+    const fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready ?? Promise.resolve();
+    void Promise.race([fonts, new Promise((r) => window.setTimeout(r, 3000))]).then(() => alive && markBoot('core'));
+    return () => {
+      alive = false;
+    };
+  }, [pcBoot]);
+  // 电脑版加载页的“重试”：只重建 3D 画布（不重复初始化页面、存档或连接）
+  useEffect(() => (pcBoot ? useBoot.subscribe((s, p) => s.attempt !== p.attempt && setCanvasKey((k) => k + 1)) : undefined), [pcBoot]);
+  // 加载画面不能无限等待：3D 出错时立即结束；最长 12 秒后无论如何都结束（页面仍可使用）。
+  // 电脑版由加载页自己判断（卡住时显示原因、重试或先进入）
+  useEffect(() => {
+    if (pcBoot) return;
     const t = window.setTimeout(() => setReady(true), 12000);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [pcBoot]);
   // 首屏完成后预取其他页面代码
   useEffect(() => {
     if (ready) prefetchScreens();
@@ -408,7 +435,15 @@ function AppContent() {
 
   return (
     <>
-      <SceneErrorBoundary resetKey={sceneKind} onError={() => setReady(true)} onRetry={() => setCanvasKey((k) => k + 1)}>
+      <SceneErrorBoundary
+        resetKey={sceneKind}
+        onError={() => {
+          setReady(true);
+          // 电脑版：3D 不可用不阻塞进入首页（首页显示静态背景与“3D 无法显示”的提示和重试）
+          if (pcBoot) markBootDegraded();
+        }}
+        onRetry={() => setCanvasKey((k) => k + 1)}
+      >
         <Canvas
           key={canvasKey}
           className="app-canvas"
@@ -417,7 +452,8 @@ function AppContent() {
           gl={glOptions}
           camera={{ fov: 45, position: [0, 3, 9], near: 0.1, far: 80 }}
           onCreated={({ gl, scene }) => {
-            setTimeout(() => setReady(true), 400);
+            if (pcBoot) markBoot('gl');
+            else setTimeout(() => setReady(true), 400);
             if (import.meta.env.DEV) Object.assign(window as any, { __gl: gl, __scene: scene });
             // 上下文丢失：先等浏览器自动恢复（three.js 会重新上传资源），超时才重建画布
             gl.domElement.addEventListener('webglcontextlost', (e) => {
@@ -440,6 +476,8 @@ function AppContent() {
         >
           <Suspense fallback={null}>
             <Scene creatorAnim={creatorAnim} />
+            {/* 电脑版：场景搭建完成 → 预编译着色器 → 渲染出最初几帧，作为加载页的真实进度 */}
+            {pcBoot && <BootProbe />}
           </Suspense>
         </Canvas>
       </SceneErrorBoundary>
@@ -480,7 +518,7 @@ function AppContent() {
       <NetDebugPanel />
       <Toasts />
       <ConsentLayer />
-      <LoadingScreen done={ready} />
+      {pcBoot ? <PremiumLoader onReady={() => setReady(true)} /> : <LoadingScreen done={ready} />}
     </>
   );
 }

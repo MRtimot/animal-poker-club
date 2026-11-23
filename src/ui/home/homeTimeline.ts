@@ -38,6 +38,8 @@ export interface HomeTimeline {
   mounted: boolean;
   /** 首页出现的时间（performance.now），用于开场动画 */
   bornAt: number;
+  /** 电脑版加载页还在显示：开场（镜头推进、动物入座）先停在起点，揭幕时才开始（手机上始终为 false） */
+  held: boolean;
 }
 
 export const homeTimeline: HomeTimeline = {
@@ -48,6 +50,7 @@ export const homeTimeline: HomeTimeline = {
   compact: false,
   mounted: false,
   bornAt: 0,
+  held: false,
 };
 
 export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);

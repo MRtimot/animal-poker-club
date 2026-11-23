@@ -15,12 +15,193 @@
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="动物扑克俱乐部 · Animal Poker Club" />
     <meta name="twitter:description" content="每一张牌，都有自己的故事。3D 动物德州扑克，免费游玩。" />
+    <!--
+      电脑版加载页（PC ONLY）：首屏关键样式内联，保证第一帧就是完整的加载页（不依赖主样式表与脚本）。
+      只在电脑版条件下显示（与 src/utils/pc.ts 的 PC_QUERY 一致）；手机与平板仍显示原来的 .boot-loader，不受影响。
+      React 启动后由 src/ui/boot/PremiumLoader.tsx 接管同一套结构与样式，继续显示真实的启动进度。
+    -->
+    <style>
+      @property --apl-p { syntax: '<integer>'; inherits: false; initial-value: 0; }
+      .apl.apl-boot { display: none; }
+      @media (min-width: 1101px) and (hover: hover) and (pointer: fine) {
+        #root > .boot-loader { display: none !important; }
+        .apl.apl-boot { display: grid; }
+      }
+      .apl {
+        position: fixed; inset: 0; z-index: 100;
+        display: grid; place-items: center;
+        overflow: hidden;
+        color: #f5efe4;
+        background: #0a0809;
+        font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Hiragino Sans GB', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        transition: opacity 820ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .apl-layer { position: absolute; inset: 0; pointer-events: none; }
+      /* 房间：吊灯的暖光、牌桌绒布的微光、四周的暗角 */
+      .apl-room {
+        background:
+          radial-gradient(60% 55% at 50% -8%, rgba(255, 214, 150, 0.12), transparent 62%),
+          radial-gradient(70% 42% at 50% 112%, rgba(36, 96, 66, 0.3), transparent 72%),
+          radial-gradient(130% 100% at 50% 42%, #19141b 0%, #0d0b0e 58%, #060507 100%);
+      }
+      .apl-lamp {
+        background: radial-gradient(40% 38% at 50% 0%, rgba(255, 220, 160, 0.09), transparent 70%);
+        animation: aplBreath 7s ease-in-out var(--apl-t, 0ms) infinite alternate;
+      }
+      .apl-sweep {
+        inset: -10% -60%;
+        background: linear-gradient(105deg, transparent 44%, rgba(255, 232, 186, 0.045) 50%, transparent 56%);
+        animation: aplSweep 13s cubic-bezier(0.65, 0, 0.35, 1) var(--apl-t, 0ms) infinite;
+      }
+      .apl-dust {
+        inset: auto; left: 50%; top: 50%; width: 2px; height: 2px; border-radius: 50%;
+        box-shadow:
+          -38vw 18vh 0 0 rgba(255, 226, 170, 0.18), -27vw -21vh 0 0 rgba(255, 226, 170, 0.12),
+          -14vw 30vh 0 0 rgba(255, 226, 170, 0.1), -6vw -33vh 0 0 rgba(255, 226, 170, 0.14),
+          9vw 26vh 0 0 rgba(255, 226, 170, 0.12), 19vw -16vh 0 0 rgba(255, 226, 170, 0.16),
+          31vw 12vh 0 0 rgba(255, 226, 170, 0.1), 40vw -28vh 0 0 rgba(255, 226, 170, 0.13),
+          -33vw -6vh 0 0 rgba(255, 226, 170, 0.09), 24vw 36vh 0 0 rgba(255, 226, 170, 0.11);
+        animation: aplDust 28s linear var(--apl-t, 0ms) infinite;
+      }
+      .apl-vignette { background: radial-gradient(120% 95% at 50% 46%, transparent 52%, rgba(0, 0, 0, 0.62) 100%); }
+      .apl-center {
+        position: relative;
+        display: grid; justify-items: center; text-align: center;
+        transition: opacity 520ms ease, transform 760ms cubic-bezier(0.22, 1, 0.36, 1), filter 760ms ease;
+      }
+      .apl-eyebrow {
+        display: flex; align-items: center; gap: 16px;
+        font-family: 'SF Pro Display', 'Helvetica Neue', 'Segoe UI', sans-serif;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.44em; text-indent: 0.44em;
+        color: rgba(233, 207, 134, 0.72);
+        animation: aplRise 900ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--apl-t, 0ms) + 120ms) both;
+      }
+      .apl-eyebrow i { display: block; width: 40px; height: 1px; background: linear-gradient(90deg, transparent, rgba(233, 207, 134, 0.6)); }
+      .apl-eyebrow i:last-child { transform: scaleX(-1); }
+      .apl-title {
+        margin: 20px 0 0;
+        font-size: clamp(46px, 4.6vw, 92px); font-weight: 800; line-height: 1.05;
+        letter-spacing: 0.14em; text-indent: 0.14em; white-space: nowrap;
+        background: linear-gradient(180deg, #fffaf0 0%, #f7e3b0 46%, #d9a23a 122%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: blur(0) drop-shadow(0 10px 40px rgba(0, 0, 0, 0.6));
+        animation: aplReveal 1300ms cubic-bezier(0.22, 1, 0.36, 1) calc(var(--apl-t, 0ms) + 220ms) both;
+      }
+      .apl-suit {
+        margin-top: 26px; width: 30px; height: 30px; border-radius: 50%;
+        display: grid; place-items: center;
+        font-size: 13px; line-height: 1; color: #f4dc98;
+        border: 1px solid rgba(233, 207, 134, 0.38);
+        opacity: 0.6;
+        animation: aplSuit 1600ms ease calc(var(--apl-t, 0ms) + 760ms) both;
+      }
+      .apl-meter {
+        margin-top: 52px; width: clamp(240px, 21vw, 420px);
+        display: grid; justify-items: center; gap: 14px;
+        animation: aplFade 900ms ease calc(var(--apl-t, 0ms) + 480ms) both;
+      }
+      .apl-track { position: relative; width: 100%; height: 2px; border-radius: 2px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+      .apl-fill {
+        position: absolute; inset: 0; transform-origin: left center;
+        transform: scaleX(var(--apl-f, 0));
+        background: linear-gradient(90deg, rgba(184, 145, 60, 0.55), #f4dc98);
+        transition: transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      /* 就绪：最后一段走得更快，0.4 秒内开始退场 */
+      .apl-fill.done { transition-duration: 360ms; }
+      /* 正在进行中的步骤：一道很淡的光沿着细线移动（表示仍在工作，不代表进度） */
+      .apl-scan {
+        position: absolute; top: 0; bottom: 0; left: 0; width: 24%;
+        background: linear-gradient(90deg, transparent, rgba(255, 236, 190, 0.32), transparent);
+        animation: aplScan 2.1s cubic-bezier(0.65, 0, 0.35, 1) var(--apl-t, 0ms) infinite;
+      }
+      .apl-pct {
+        min-height: 16px;
+        font-family: 'SF Pro Display', 'Helvetica Neue', 'Segoe UI', sans-serif;
+        font-size: 12px; font-weight: 600; letter-spacing: 0.16em;
+        font-variant-numeric: tabular-nums;
+        color: rgba(233, 207, 134, 0.82);
+        counter-reset: aplp var(--apl-p);
+        transition: --apl-p 640ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .apl-pct::after { content: counter(aplp) '%'; }
+      .apl-pct.none::after { content: ''; }
+      .apl-status { min-height: 20px; font-size: 14px; letter-spacing: 0.08em; color: rgba(245, 239, 228, 0.55); }
+      .apl-credits {
+        position: absolute; left: 0; right: 0; bottom: 34px;
+        font-size: 11px; letter-spacing: 0.14em; text-align: center;
+        color: rgba(245, 239, 228, 0.3);
+        animation: aplFade 1200ms ease calc(var(--apl-t, 0ms) + 900ms) both;
+      }
+      .apl-credits b { font-weight: 600; color: rgba(233, 207, 134, 0.55); }
+      .apl-credits span { margin: 0 14px; opacity: 0.5; }
+      .apl-error { display: grid; justify-items: center; gap: 18px; margin-top: 4px; }
+      .apl-error p { margin: 0; max-width: 440px; font-size: 14px; line-height: 1.7; color: rgba(245, 239, 228, 0.72); }
+      .apl-actions { display: flex; gap: 12px; }
+      .apl-btn {
+        min-width: 120px; padding: 10px 22px; border-radius: 999px; cursor: pointer;
+        font: inherit; font-size: 14px; letter-spacing: 0.08em;
+        color: #f7e3b0; background: rgba(233, 207, 134, 0.08);
+        border: 1px solid rgba(233, 207, 134, 0.5);
+        transition: background 200ms ease, border-color 200ms ease, transform 200ms ease;
+      }
+      .apl-btn:hover { background: rgba(233, 207, 134, 0.16); border-color: rgba(244, 220, 152, 0.8); transform: translateY(-1px); }
+      .apl-btn.ghost { color: rgba(245, 239, 228, 0.7); background: transparent; border-color: rgba(255, 255, 255, 0.16); }
+      .apl-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #0a0809, 0 0 0 4px rgba(244, 220, 152, 0.85); }
+      /* 退场：标志先淡出并轻微上移，背景随后褪去，露出已经准备好的 3D 俱乐部 */
+      .apl.exiting { opacity: 0; pointer-events: none; }
+      .apl.exiting .apl-center { opacity: 0; transform: translateY(-12px) scale(0.985); filter: blur(3px); }
+      @keyframes aplRise { from { opacity: 0; transform: translateY(8px); } }
+      @keyframes aplReveal { from { opacity: 0; transform: translateY(10px); filter: blur(10px) drop-shadow(0 10px 40px rgba(0, 0, 0, 0.6)); } }
+      @keyframes aplSuit { from { opacity: 0; } to { opacity: 0.6; } }
+      @keyframes aplFade { from { opacity: 0; } }
+      @keyframes aplScan { from { transform: translateX(-100%); } to { transform: translateX(420%); } }
+      @keyframes aplBreath { from { opacity: 0.7; } to { opacity: 1; } }
+      @keyframes aplSweep { from { transform: translateX(-28%); } to { transform: translateX(28%); } }
+      @keyframes aplDust { from { transform: translateY(0); opacity: 1; } 50% { opacity: 0.6; } to { transform: translateY(-48px); opacity: 1; } }
+      /* 大屏（2K / 4K，100% 缩放）：内容整体等比放大，不会变成屏幕中央一小块 */
+      @media (min-width: 2200px) and (min-height: 1250px) { .apl-center, .apl-credits { zoom: 1.25; } }
+      @media (min-width: 2800px) and (min-height: 1500px) { .apl-center, .apl-credits { zoom: 1.6; } }
+      /* 减少动态效果：没有入场、背景移动、扫光与进度动画；退场只保留很短的淡出（不移动、不模糊） */
+      @media (prefers-reduced-motion: reduce) {
+        .apl, .apl * { animation: none !important; transition: none !important; }
+        .apl-scan, .apl-sweep, .apl-dust { display: none; }
+        .apl-suit { opacity: 0.6; }
+        .apl { transition: opacity 240ms ease !important; }
+        .apl.exiting .apl-center { transform: none; filter: none; }
+      }
+    </style>
+    <script>
+      // 电脑版：加载页显示期间，首页的开场动画（标题、按钮、入口）先不播放，揭幕时再开始
+      try {
+        if (window.matchMedia('(min-width: 1101px) and (hover: hover) and (pointer: fine)').matches) document.documentElement.classList.add('apc-booting');
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root">
       <div class="boot-loader">
         <div class="boot-paw">🐾</div>
         <div class="boot-text">动物扑克俱乐部 · 正在加载…</div>
+      </div>
+      <div class="apl apl-boot" aria-busy="true">
+        <div class="apl-layer apl-room" aria-hidden="true"></div>
+        <div class="apl-layer apl-lamp" aria-hidden="true"></div>
+        <div class="apl-layer apl-sweep" aria-hidden="true"></div>
+        <div class="apl-layer apl-dust" aria-hidden="true"></div>
+        <div class="apl-layer apl-vignette" aria-hidden="true"></div>
+        <div class="apl-center">
+          <div class="apl-eyebrow" aria-hidden="true"><i></i>ANIMAL POKER CLUB<i></i></div>
+          <h1 class="apl-title">动物扑克俱乐部</h1>
+          <div class="apl-suit" aria-hidden="true">♠</div>
+          <div class="apl-meter">
+            <div class="apl-track" role="progressbar" aria-label="加载进度" aria-valuetext="正在打开俱乐部"><i class="apl-scan"></i></div>
+            <div class="apl-pct none" aria-hidden="true"></div>
+            <div class="apl-status" aria-live="polite">正在打开俱乐部</div>
+          </div>
+        </div>
+        <div class="apl-credits" aria-hidden="true"><b>创始人</b> Timothy Ong · Founder of APEX<span>·</span><b>游戏测试员</b> John</div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

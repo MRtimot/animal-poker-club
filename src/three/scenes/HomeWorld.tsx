@@ -249,6 +249,7 @@ function GlowDisc({ position, size, color = '#ffd28a', level }: { position: V3; 
 function seatPresent(k: number): number {
   const s = homeTimeline.story;
   const sinceBorn = (performance.now() - homeTimeline.bornAt) / 1000;
+  if (homeTimeline.held) return 0; // 电脑版加载页还在显示：揭幕后再依次入座（着色器已提前编译，不会卡顿）
   if (s < 3) return sinceBorn > 0.9 + k * 0.16 || homeTimeline.reduced ? 1 : 0; // 开场：依次入座
   if (s < 4) return k === RIVAL ? 1 : 0; // 牌局演示：只有对手
   if (s < 5) return k === RIVAL || P.online > JOIN_AT[k] ? 1 : 0; // 在线：朋友们一个个加入
@@ -467,12 +468,17 @@ function HomeCamera() {
       tmp.pos.y -= tl.pointer.y * 0.14;
     }
     const sinceBorn = (performance.now() - tl.bornAt) / 1000;
-    if (tmp.first) {
-      // 开场：从远处推进到俱乐部（减少动态效果时直接到位）
+    if (tmp.first || tl.held) {
+      // 开场：从远处推进到俱乐部（减少动态效果时直接到位）。
+      // 电脑版加载页还在显示时停在起点，揭幕时才开始推进（手机上 held 始终为 false）
       if (tl.reduced) camera.position.copy(tmp.pos);
       else camera.position.set(...INTRO_FROM);
       tmp.curLook.copy(tmp.look);
       tmp.first = false;
+      if (tl.held) {
+        camera.lookAt(tmp.curLook);
+        return;
+      }
     }
     const lambda = tl.reduced ? 8 : sinceBorn < 2.6 ? 1.15 : 3.2;
     camera.position.x = damp(camera.position.x, tmp.pos.x, lambda, k);
