@@ -18,11 +18,13 @@ import { isPC } from '../../utils/pc';
 import { prefersReducedMotion } from '../../utils/reducedMotion';
 import {
   BYSTANDER_REACTION,
-  COLLAPSE_BY_SPECIES,
+  DECAP_CUT_MS,
   DREAD_FACE,
+  EXECUTION_REACTION,
+  HEADLESS_COLLAPSE,
+  LAST_WORDS,
   PHASE_ORDER,
   REALIZE_BY_TEMPERAMENT,
-  WINNER_LINE,
   WINNER_REACTION,
   buildTimeline,
   defeatProfile,
@@ -38,27 +40,26 @@ import { CHAIR_LAND_S, beginDefeat, endDefeat, setDefeatPhase, useDefeat, type D
 const HEAVY_SPECIES = new Set(['panda', 'bear', 'koala', 'lion']);
 
 /**
- * 余波里 AI 赢家的一句很短的话：使用现有的角色语音（带优先级的队列，同一时间只有一个角色说话），
- * 遵守玩家的语音 / AI 台词设置。只在本机播放，不发送任何消息；真人玩家不会被“代替说话”。
+ * 出局处决前，输家最后一句很短的话（按动物性格）：字幕由画面层显示；声音使用现有的角色语音
+ * （带优先级的队列，同一时间只有一个角色说话），遵守玩家的语音设置。只在本机播放，不发送任何消息。
  */
-function winnerRemark(w: SeatView) {
+function lastWords(me: SeatView) {
+  const line = LAST_WORDS[me.profile.animal.species];
   const s = useSettings.getState();
-  if (!w.isAI || !s.aiTalk || !s.voiceEnabled || s.voiceVolume <= 0) return;
-  const line = WINNER_LINE[winnerStyle(w)];
+  if (!line || /^[…\s.]*$/.test(line.text) || !s.voiceEnabled || s.voiceVolume <= 0) return;
   const fx = useFx.getState();
-  const now = performance.now();
-  fx.speakStart(w.id, { emotion: line.emotion, until: now + 1400, voiced: false, rate: s.voiceRate });
+  fx.speakStart(me.id, { emotion: line.emotion, until: performance.now() + 1400, voiced: false, rate: s.voiceRate });
   void voice
-    .speak(line.text, resolveVoiceProfile(w.profile.animal), {
+    .speak(line.text, resolveVoiceProfile(me.profile.animal), {
       emotion: line.emotion,
       priority: 3,
       volume: s.voiceVolume,
       rate: s.voiceRate,
-      onStart: () => useFx.getState().speakUpdate(w.id, { start: performance.now(), voiced: true }),
-      onEnd: () => useFx.getState().speakEnd(w.id),
+      onStart: () => useFx.getState().speakUpdate(me.id, { start: performance.now(), voiced: true }),
+      onEnd: () => useFx.getState().speakEnd(me.id),
     })
     .then((r) => {
-      if (r !== 'spoken') useFx.getState().speakEnd(w.id);
+      if (r !== 'spoken') useFx.getState().speakEnd(me.id);
     });
 }
 
@@ -226,6 +227,7 @@ export function useDefeatDirector(view: TableView | null) {
     for (const ph of PHASE_ORDER) if (tl.times[ph] !== undefined) at[ph] = t0 + tl.times[ph]!;
     const lookers: Record<string, number> = {};
     const order = lookOrder(v.players, loserId, winnerId, Math.random, tl.scale);
+    const loserSpecies = v.players.find((p) => p.id === loserId)?.profile.animal.species;
     for (const o of order) lookers[o.id] = (at.reaction ?? t0) + o.delay;
     // 完整版：赢家在自己的特写里就已经看向输家
     if (winnerId && at.winner !== undefined && lookers[winnerId] !== undefined) lookers[winnerId] = at.winner + 350;
@@ -242,6 +244,8 @@ export function useDefeatDirector(view: TableView | null) {
       ratio: verdict.ratio,
       profile,
       reduced,
+      // 完整版（出局）：处决——头部飞向哪一侧（镜头也在那一侧）与最后一句话
+      ...(verdict.cut === 'full' ? { decap: { side: Math.random() < 0.5 ? (1 as const) : (-1 as const), lastWords: loserSpecies ? LAST_WORDS[loserSpecies].text : '……' } } : {}),
     };
     if (!beginDefeat(seq)) return;
 
@@ -352,7 +356,33 @@ export function useDefeatDirector(view: TableView | null) {
       });
     }
 
-    // ── 静止：一切突然停止（0.1~0.2 秒） ──
+    // ── 出局处决：最后一句话 → 处决准备（心跳越来越响）；静止前最后一声重心跳 ──
+    if (full && at.lastword !== undefined) {
+      when(at.lastword, () => {
+        const me = seat(loserId);
+        sound.setMix({ music: 0.06, ambient: 0.05, sfx: 0.05 }, 0.5);
+        sound.cineBreath('inhale', 0.05);
+        if (me) lastWords(me);
+      });
+    }
+    if (full && at.prep !== undefined) {
+      when(at.prep, () => {
+        sound.setMix({ music: 0.03, ambient: 0.04, sfx: 0.04 }, 0.8);
+        sound.cineBreath('shaky', 0.2);
+        // 处决者（赢家）冷冷地盯着输家
+        if (winnerId) fx.play(winnerId, 'stare');
+      });
+      const span = (at.ecu ?? at.prep + 1200) - at.prep;
+      [0, 0.3, 0.56, 0.8].forEach((k, i) => when(at.prep! + span * k, () => sound.cineHeartbeat(0.95 + i * 0.07)));
+    }
+    if (at.insert === undefined && at.silence !== undefined && at.ecu !== undefined) {
+      when(at.silence - 70, () => {
+        sound.cineHeartbeat(1.45);
+        haptic('tap');
+      });
+    }
+
+    // ── 静止：一切突然停止 ──
     if (at.silence !== undefined) {
       when(at.silence, () => {
         sound.setMix({ music: 0, ambient: 0, sfx: 0 }, 0.025);
@@ -364,28 +394,63 @@ export function useDefeatDirector(view: TableView | null) {
     // ── 冲击：闪光、震动、低频、烟雾、粒子、桌面反应；输家倒下，其他人被吓一跳 ──
     if (at.impact !== undefined) {
       when(at.impact, () => {
-        sound.cineImpact(full ? 1 : 0.65);
-        sound.cineRing(0.35);
-        sound.play('chips', 0.45);
-        fx.doShake(profile.shake);
-        haptic(full ? 'defeat' : 'impact');
         const sp = species(loserId);
-        const collapse: AnimName = full ? (sp ? COLLAPSE_BY_SPECIES[sp] : 'collapseSlump') : 'defeatRecoil';
-        fx.play(loserId, collapse);
+        if (full) {
+          // 处决的一瞬间：破风 → 撞击 → 低频重击 → 房间混响；头部在 DECAP_CUT_MS 后脱离身体（DefeatFX）
+          sound.cineExecution(DECAP_CUT_MS / 1000, 1);
+          fx.doShake(profile.shake * 1.3);
+          haptic('defeat');
+          fx.speakEnd(loserId);
+          timers.later(() => useDefeat.getState().seq?.key === key && fx.play(loserId, 'headlessJolt'), DECAP_CUT_MS);
+        } else {
+          sound.cineImpact(0.65);
+          sound.cineRing(0.35);
+          sound.play('chips', 0.45);
+          fx.doShake(profile.shake);
+          haptic('impact');
+          fx.play(loserId, 'defeatRecoil');
+        }
         sound.cineChair(CHAIR_LAND_S, !!sp && HEAVY_SPECIES.has(sp), full ? 1 : 0.5);
         for (const o of order) timers.later(() => useDefeat.getState().seq?.key === key && fx.play(o.id, 'flinch'), 40 + Math.random() * 120);
       });
-      when(at.impact + 320, () => sound.setMix({ music: 0, ambient: 0.12, sfx: 0.25 }, 0.5));
+      when(at.impact + 320, () => sound.setMix(full ? { music: 0, ambient: 0.05, sfx: 0.18 } : { music: 0, ambient: 0.12, sfx: 0.25 }, 0.5));
+    }
+
+    // ── 处决之后：失去头部的身体失去支撑、倒下（头部的掉落与落地声由 DefeatFX 按轨迹播放） ──
+    if (full && at.collapse !== undefined) {
+      when(at.collapse, () => {
+        const sp = species(loserId);
+        let anim: AnimName = sp ? HEADLESS_COLLAPSE[sp] : 'headlessTopple';
+        // 侧倒的方向跟着头部飞去的一侧（镜头也在那一侧）：身体倒向镜头，不会被椅背挡住
+        // （roll 为正时身体倒向座位的局部 -X，换算到世界坐标正好是 side = -1 的方向）
+        if (anim === 'headlessTopple' && seq.decap?.side === 1) anim = 'headlessToppleR';
+        fx.play(loserId, anim);
+        sound.cineBodyFall(anim === 'headlessSlump', anim === 'headlessSlump' ? 0.85 : 0.95);
+      });
     }
 
     // ── 余波：烟雾散去、牌落下、房间安静；赢家与旁观者的余韵反应 ──
-    if (at.aftermath !== undefined) {
-      // 音乐在余波里非常慢地回来一点点；输家慢慢呼出一口气；AI 赢家说一句很短的话
+    if (full && at.aftermath !== undefined) {
+      // 出局处决的余波：死寂。没有音乐、没有人说话；几枚还在滚动的筹码，最后一枚倒下；所有动物按性格僵住
+      when(at.aftermath, () => {
+        sound.setMix({ music: 0, ambient: 0.06, sfx: 0.14 }, 0.8);
+        sound.cineChipSettle(0.5);
+        [winnerId, ...order.map((o) => o.id)]
+          .filter((id, i, all): id is string => !!id && id !== loserId && all.indexOf(id) === i)
+          .forEach((id, i) =>
+            timers.later(() => {
+              if (useDefeat.getState().seq?.key !== key) return;
+              const sp = species(id);
+              const r = sp ? EXECUTION_REACTION[sp] : null;
+              if (!r) return;
+              fx.play(id, r.anim);
+              fx.setMood(id, '', r.face, 3200);
+            }, 200 + i * 220),
+          );
+      });
+    } else if (at.aftermath !== undefined) {
+      // 简短版：音乐在余波里非常慢地回来一点点；输家慢慢呼出一口气
       when(at.aftermath + 900, () => sound.cineBreath('exhale'));
-      if (full && winnerId) {
-        const w = seat(winnerId);
-        if (w) when(at.aftermath + 1200, () => winnerRemark(w));
-      }
       when(at.aftermath, () => {
         sound.setMix({ music: 0.12, ambient: 0.3, sfx: 0.35 }, 1.6);
         if (winnerId) {

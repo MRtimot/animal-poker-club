@@ -9,7 +9,10 @@ export type AnimName =
   // 失败演出（animation/defeat）：意识到输了 / 冲击后的倒下（按动物种类）/ 赢家与旁观者的反应
   | 'realizeDisbelief' | 'realizePanic' | 'realizeFade' | 'realizeAccept' | 'realizeAnger' | 'realizeRecheck' | 'realizeDeflate' | 'realizeDignity'
   | 'collapseSlump' | 'collapseFaint' | 'collapseDignified' | 'collapseSeethe' | 'collapseDrama' | 'collapseAnnoyed' | 'collapseEmbarrassed'
-  | 'dread' | 'defeatRecoil' | 'stackChips' | 'leanBack' | 'gatherCards' | 'stare' | 'lookAway' | 'whisper' | 'shrug' | 'uneasy' | 'flinch';
+  | 'dread' | 'defeatRecoil' | 'stackChips' | 'leanBack' | 'gatherCards' | 'stare' | 'lookAway' | 'whisper' | 'shrug' | 'uneasy' | 'flinch'
+  // 出局处决（完整版）：失去头部的身体先被震得一挺、摇晃，然后失去支撑倒下；旁观者按性格僵住 / 后退 / 低头
+  | 'headlessJolt' | 'headlessSlump' | 'headlessTopple' | 'headlessToppleR'
+  | 'composedShock' | 'fearFrozen' | 'backAway' | 'lookDown' | 'freeze' | 'gravePause';
 
 export const ANIM_DURATION: Record<AnimName, number> = {
   idle: 0, talk: 1.6, happy: 1.6, sad: 2.2, nervous: 2, angry: 1.8, surprised: 1.4,
@@ -20,6 +23,9 @@ export const ANIM_DURATION: Record<AnimName, number> = {
   // 倒下后保持倒下的姿势，直到演出结束（结束时播放 settle 回到坐姿；完整版在黑屏中恢复）
   collapseSlump: 40, collapseFaint: 40, collapseDignified: 40, collapseSeethe: 40, collapseDrama: 40, collapseAnnoyed: 40, collapseEmbarrassed: 40,
   dread: 3.2, defeatRecoil: 2.4, stackChips: 3.2, leanBack: 4, gatherCards: 3.2, stare: 4.5, lookAway: 3, whisper: 2.6, shrug: 1.6, uneasy: 3, flinch: 0.9,
+  // 处决后的姿势保持到演出结束（结束时播放 settle 恢复）
+  headlessJolt: 40, headlessSlump: 40, headlessTopple: 40, headlessToppleR: 40,
+  composedShock: 7, fearFrozen: 7, backAway: 7, lookDown: 7, freeze: 7, gravePause: 7,
 };
 
 /** 表情（情绪系统）：会改变动物脸部，并在头顶短暂显示 */

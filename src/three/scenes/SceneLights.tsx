@@ -33,11 +33,15 @@ const DEFEAT_LIGHT: Partial<Record<DefeatPhase, [number, number]>> = {
   winner: [0.68, 0.86],
   reaction: [0.52, 0.76],
   tension: [0.42, 0.68],
+  lastword: [0.36, 0.6],
+  prep: [0.32, 0.56],
   ecu: [0.36, 0.62],
   insert: [0.38, 0.62],
-  silence: [0.36, 0.6],
+  silence: [0.32, 0.56],
   impact: [0.46, 0.62],
-  aftermath: [0.42, 0.6],
+  headfall: [0.38, 0.58],
+  collapse: [0.36, 0.56],
+  aftermath: [0.36, 0.54],
   blackout: [0.3, 0.42],
   defeated: [0.3, 0.42],
 };
@@ -56,6 +60,9 @@ function defeatLight(now: number): [number, number, number] {
   if (t0 !== undefined && !d.seq.reduced) {
     const t = (now - t0) / 1000;
     if (t >= 0.05 && t < 0.9) flicker = 0.45 + 0.55 * Math.abs(Math.sin(t * 31) * Math.sin(t * 7.3));
+    // 出局处决的余波：死寂中吊灯又不稳地闪了几下
+    const ta = d.seq.cut === 'full' && d.seq.at.aftermath !== undefined ? (now - d.seq.at.aftermath) / 1000 : -1;
+    if (ta >= 0.4 && ta < 1.5) flicker = Math.min(flicker, 0.7 + 0.3 * Math.abs(Math.sin(ta * 23) * Math.sin(ta * 5.1 + 0.7)));
   }
   if (d.phase === 'recover') env = key = 1;
   return [env, key, flicker];

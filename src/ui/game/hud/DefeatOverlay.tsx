@@ -1,4 +1,5 @@
 // 失败演出的画面层：电影遮幅、暗角与克制的暗红边缘、冲击闪光、黑屏、“出局”画面、跳过按钮。
+// 出局处决（完整版）：最后一句话的字幕、处决瞬间横过画面的一道刀光与“白 → 暗红”的闪光。
 // 状态全部来自失败演出（animation/defeat）；这里不计时、不判断结果。
 import { useEffect } from 'react';
 import type { TableView } from '../../../core/game/view';
@@ -10,9 +11,9 @@ import { useGame } from '../../../store/gameStore';
 import { session } from '../../../net/session';
 import { formatChips } from '../../../utils/format';
 
-const BARS: DefeatPhase[] = ['realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath'];
-const TENSE: DefeatPhase[] = ['tension', 'ecu', 'insert', 'silence'];
-const SKIPPABLE: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout'];
+const BARS: DefeatPhase[] = ['realize', 'winner', 'reaction', 'tension', 'lastword', 'prep', 'ecu', 'insert', 'silence', 'impact', 'headfall', 'collapse', 'aftermath'];
+const TENSE: DefeatPhase[] = ['tension', 'lastword', 'prep', 'ecu', 'insert', 'silence'];
+const SKIPPABLE: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'lastword', 'prep', 'ecu', 'insert', 'silence', 'impact', 'headfall', 'collapse', 'aftermath', 'blackout'];
 
 export function DefeatOverlay({ view }: { view: TableView }) {
   const seq = useDefeat((s) => s.seq);
@@ -46,7 +47,15 @@ export function DefeatOverlay({ view }: { view: TableView }) {
       <div className={`dcine-vig${tense ? ' tense' : ''}${phase !== 'result' && phase !== 'recover' ? ' on' : ''}`} aria-hidden />
       <div className={`dcine-bar top${bars ? ' on' : ''}`} aria-hidden />
       <div className={`dcine-bar bottom${bars ? ' on' : ''}`} aria-hidden />
-      {phase === 'impact' && !skipped && <div key={seq.key} className="dcine-flash" style={{ ['--flash' as string]: seq.profile.flash }} aria-hidden />}
+      {phase === 'impact' && !skipped && <div key={seq.key} className={`dcine-flash${full ? ' exec' : ''}`} style={{ ['--flash' as string]: seq.profile.flash }} aria-hidden />}
+      {/* 处决的一瞬间：一道刀光横过画面（减少动态效果时不显示，只保留柔和的闪光） */}
+      {full && phase === 'impact' && !skipped && !seq.reduced && <div key={seq.key + '-slash'} className={`dcine-slash${seq.decap?.side === -1 ? ' flip' : ''}`} aria-hidden />}
+      {/* 最后一句话：字幕（声音由角色语音播放；关闭语音时只有字幕） */}
+      {full && phase === 'lastword' && !skipped && seq.decap?.lastWords && (
+        <div key={seq.key + '-lw'} className="dcine-lastword" role="status">
+          「{seq.decap.lastWords}」
+        </div>
+      )}
       {full && <div className={`dcine-black${dark ? ' on' : ''}`} aria-hidden />}
       {/* 黑屏之后边缘极淡的暗红残影，几秒内消失（不会一直留着） */}
       {full && phase === 'defeated' && !skipped && <div key={`${seq.key}-after`} className="dcine-after" aria-hidden />}

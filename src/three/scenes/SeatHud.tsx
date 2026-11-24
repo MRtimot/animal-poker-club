@@ -32,7 +32,8 @@ function clampedPosition(el: THREE.Object3D, camera: THREE.Camera, size: { width
 /** 头顶的情绪表情：弹出 → 漂浮 → 淡出 */
 function MoodBadge({ playerId }: { playerId: string }) {
   const m = useFx((s) => s.moods[playerId]);
-  if (!m) return null;
+  // 没有表情符号：只改变脸上的表情（例如处决后所有人一言不发地僵住），不弹出空的气泡
+  if (!m || !m.emoji) return null;
   return (
     <div key={m.start} className="mood-pop" style={{ animationDuration: `${Math.max(800, m.until - m.start)}ms` }}>
       {m.emoji}

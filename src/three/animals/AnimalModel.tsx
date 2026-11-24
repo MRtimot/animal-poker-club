@@ -8,6 +8,7 @@ import { LOOKS, TailType } from './species';
 import { animatePose, basePose, speechMotion } from '../../animation/animalAnimations';
 import { AnimName, useFx } from '../../store/fxStore';
 import { damp, ease } from '../../animation/motion';
+import { registerHead, unregisterHead } from '../../animation/defeat/decapitation';
 
 type V3 = [number, number, number];
 type GeoKey = keyof typeof GEO;
@@ -498,6 +499,16 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   const defeatLookRef = useRef(defeatLook);
   defeatLookRef.current = defeatLook;
   // 换帽子：帽子从上方落到头上
+  // 出局处决：登记这只动物的头部（失败演出用它的复制品表现头部掉落，原来的头部暂时隐藏，演出结束后恢复）
+  useEffect(() => {
+    if (!animKey) return;
+    const h = head.current;
+    registerHead(animKey, h);
+    return () => {
+      unregisterHead(animKey, h);
+      h.visible = true;
+    };
+  }, [animKey]);
   const hatDrop = useRef(-10);
   const firstHat = useRef(true);
   useEffect(() => {
@@ -855,7 +866,7 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
           )}
 
           {/* 头 */}
-          <group ref={head} position={[0, 1.38, 0.02]}>
+          <group ref={head} name="animal-head" position={[0, 1.38, 0.02]}>
             <group scale={headScale}>
               <M c={fur} s={[0.44, 0.42, 0.42]} m={{ rough: 0.85 }} cast />
               {f.lion &&

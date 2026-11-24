@@ -19,7 +19,12 @@ import {
   phaseEnd,
   winnerStyle,
   WINNER_REACTION,
+  DECAP_CUT_MS,
+  EXECUTION_REACTION,
+  HEADLESS_COLLAPSE,
+  LAST_WORDS,
 } from '../src/animation/defeat/defeatRules';
+import { headLaunch, sampleHeadFall, simulateHeadFall } from '../src/animation/defeat/decapitation';
 import { CHAIR_LAND_S, beginDefeat, chairJolt, endDefeat, resetDefeatForTest, tableJolt, useDefeat, type DefeatSequence } from '../src/animation/defeat/defeatStore';
 import { animatePose, basePose } from '../src/animation/animalAnimations';
 import { ANIM_DURATION, type AnimName } from '../src/store/fxStore';
@@ -69,7 +74,7 @@ describe('触发条件：只读取真实的牌局结果', () => {
 });
 
 describe('时间表', () => {
-  it('DEF-03 完整版：阶段按顺序推进，最后是“出局”画面；冲击前有 0.1~0.2 秒的完全安静', () => {
+  it('DEF-03 完整版（出局处决）：阶段按顺序推进，最后是“出局”画面；处决前有一段完全安静', () => {
     const tl = buildTimeline('full', null)!;
     let last = -1;
     for (const ph of PHASE_ORDER) {
@@ -78,19 +83,27 @@ describe('时间表', () => {
       expect(t).toBeGreaterThan(last);
       last = t;
     }
-    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeGreaterThanOrEqual(100);
-    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeLessThanOrEqual(200);
+    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeGreaterThanOrEqual(150);
+    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeLessThanOrEqual(400);
     expect(phaseAt(tl.times, 0)).toBe('result');
     expect(phaseAt(tl.times, FULL_TIMELINE.impact! + 1)).toBe('impact');
     expect(phaseAt(tl.times, 99999)).toBe('defeated');
-    // 顺序：输家先意识到 → 赢家反应 → 所有人转头 → 灯光变暗 → 极近特写 → 环境特写 → 静止 → 冲击
-    const order = ['realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout', 'defeated'] as const;
+    // 顺序：输家先意识到 → 赢家反应 → 所有人转头 → 灯光变暗 → 最后一句话 → 处决准备 → 眼睛特写 → 静止
+    //       → 处决（切开）→ 头部落入画面 → 身体倒下 → 余波 → 黑屏 → 出局
+    const order = ['realize', 'winner', 'reaction', 'tension', 'lastword', 'prep', 'ecu', 'silence', 'impact', 'headfall', 'collapse', 'aftermath', 'blackout', 'defeated'] as const;
     for (let i = 1; i < order.length; i++) expect(FULL_TIMELINE[order[i]]!).toBeGreaterThan(FULL_TIMELINE[order[i - 1]]!);
     // 不赶：冲击前至少 8 秒的铺垫，余波至少 2 秒，黑屏不超过 1 秒
     expect(FULL_TIMELINE.impact!).toBeGreaterThanOrEqual(8000);
     expect(FULL_TIMELINE.blackout! - FULL_TIMELINE.aftermath!).toBeGreaterThanOrEqual(2000);
     expect(FULL_TIMELINE.defeated! - FULL_TIMELINE.blackout!).toBeLessThanOrEqual(1000);
     expect(phaseEnd(tl.times, 'defeated')).toBe(Infinity);
+    // 镜头切开（桌面）的时间足够让头部在切回之前离开身体；切回时头部还在空中
+    expect(DECAP_CUT_MS).toBeLessThan(FULL_TIMELINE.headfall! - FULL_TIMELINE.impact!);
+    expect(FULL_TIMELINE.headfall! - FULL_TIMELINE.impact! - DECAP_CUT_MS).toBeLessThan(500);
+    // 完整版没有旧的“环境特写”；简短版（还没出局）没有处决
+    expect(FULL_TIMELINE.insert).toBeUndefined();
+    const short = buildTimeline('short', null)!.times;
+    for (const ph of ['lastword', 'prep', 'headfall', 'collapse'] as const) expect(short[ph]).toBeUndefined();
   });
 
   it('DEF-04 简短版必须在下一手开始前演完：按剩余时间压缩，时间不够就不演（不拖延牌局）', () => {
@@ -241,6 +254,7 @@ describe('角色与设备', () => {
       'realizeDisbelief', 'realizePanic', 'realizeFade', 'realizeAccept', 'realizeAnger', 'realizeRecheck', 'realizeDeflate', 'realizeDignity',
       'collapseSlump', 'collapseFaint', 'collapseDignified', 'collapseSeethe', 'collapseDrama', 'collapseAnnoyed', 'collapseEmbarrassed',
       'dread', 'defeatRecoil', 'stackChips', 'leanBack', 'gatherCards', 'stare', 'lookAway', 'whisper', 'shrug', 'uneasy', 'flinch',
+      'headlessJolt', 'headlessSlump', 'headlessTopple', 'headlessToppleR', 'composedShock', 'fearFrozen', 'backAway', 'lookDown', 'freeze', 'gravePause',
     ];
     for (const n of names) {
       expect(ANIM_DURATION[n]).toBeGreaterThan(0);
@@ -254,6 +268,64 @@ describe('角色与设备', () => {
     expect(slumped.lean).toBeGreaterThan(0.6);
     // 兔子向后晕倒
     expect(animatePose(basePose(10, 1, true, false, false, 'rabbit'), 'collapseFaint', 10, true).lean).toBeLessThan(-0.4);
+    // 失去头部的身体：倒下后一直保持（向前倒在桌上 / 歪倒在扶手上）
+    expect(animatePose(basePose(10, 1, true, false, false, 'bear'), 'headlessSlump', 10, true).lean).toBeGreaterThan(0.8);
+    expect(animatePose(basePose(10, 1, true, false, false, 'cat'), 'headlessTopple', 10, true).roll).toBeGreaterThan(0.8);
+    expect(animatePose(basePose(10, 1, true, false, false, 'cat'), 'headlessToppleR', 10, true).roll).toBeLessThan(-0.8);
+  });
+
+  it('DEF-14 头部掉落：轨迹有限、不会穿过地面、一定会停住；落地有声音时刻；不会飞到别的座位', () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let k = 0; k < 40; k++) {
+      const a = (k / 40) * Math.PI * 2;
+      const dir: [number, number] = [Math.sin(a), Math.cos(a)];
+      const side: [number, number] = [-dir[1], dir[0]];
+      const { vel, spin } = headLaunch(dir, side, rand);
+      const start: [number, number, number] = [dir[0] * 4.15, 1.6 + rand() * 0.5, dir[1] * 4.15];
+      const r = 0.25 + rand() * 0.2;
+      const fall = simulateHeadFall({ start, vel, spin, radius: r, floorY: 0.01 });
+      expect(fall.restAt).toBeLessThanOrEqual(3.2);
+      expect(fall.contacts.length).toBeGreaterThan(0);
+      // 第一次落地最重，之后的弹跳越来越轻
+      for (let i = 1; i < fall.contacts.length; i++) expect(fall.contacts[i].speed).toBeLessThan(fall.contacts[i - 1].speed);
+      for (const sm of fall.samples) {
+        for (const v of [...sm.p, ...sm.q]) expect(Number.isFinite(v)).toBe(true);
+        expect(sm.p[1]).toBeGreaterThanOrEqual(0.01 + r - 1e-6);
+        expect(Math.abs(Math.hypot(...sm.q) - 1)).toBeLessThan(1e-6);
+      }
+      const end = sampleHeadFall(fall, 99);
+      const travel = Math.hypot(end.p[0] - start[0], end.p[2] - start[2]);
+      // 落在椅子旁边：至少离开身体 0.8 米，不超过 3 米（8 人桌相邻座位约 3.2 米）
+      expect(travel).toBeGreaterThan(0.8);
+      expect(travel).toBeLessThan(3);
+      // 停在地上
+      expect(end.p[1]).toBeCloseTo(0.01 + r, 5);
+      // 时间在两个样本之间：插值结果在两端之间
+      const mid = sampleHeadFall(fall, fall.contacts[0].t / 2);
+      expect(mid.p[1]).toBeGreaterThan(0.01 + r);
+    }
+  });
+
+  it('DEF-15 出局处决：每种动物都有最后一句话、倒下方式、处决后的反应；规格里列出的反应', () => {
+    for (const sp of ALL_SPECIES) {
+      expect(LAST_WORDS[sp].text.length).toBeGreaterThan(0);
+      expect([...LAST_WORDS[sp].text].length).toBeLessThanOrEqual(12); // 很短
+      expect(['headlessSlump', 'headlessTopple']).toContain(HEADLESS_COLLAPSE[sp]);
+      expect(EXECUTION_REACTION[sp].anim).toBeTruthy();
+    }
+    expect(LAST_WORDS.wolf.text).toContain('结束');
+    expect(LAST_WORDS.rabbit.text).toContain('等');
+    expect(LAST_WORDS.fox.text).toContain('不');
+    expect(EXECUTION_REACTION.cat.anim).toBe('composedShock');
+    expect(EXECUTION_REACTION.rabbit.anim).toBe('fearFrozen');
+    expect(EXECUTION_REACTION.fox.anim).toBe('backAway');
+    expect(EXECUTION_REACTION.bear.anim).toBe('lookDown');
+    expect(EXECUTION_REACTION.panda.anim).toBe('freeze');
+    expect(EXECUTION_REACTION.monkey.anim).toBe('freeze');
+    expect(EXECUTION_REACTION.tiger.anim).toBe('stare');
+    expect(EXECUTION_REACTION.wolf.anim).toBe('stare');
+    expect(EXECUTION_REACTION.lion.anim).toBe('gravePause');
   });
 
   it('DEF-10 手机档位：粒子更少、镜头震动更小；减少动态效果：不震动、闪光很弱、镜头几乎不动', () => {
@@ -274,7 +346,7 @@ describe('角色与设备', () => {
     expect(buildTimeline('full', null)!.times).toEqual(FULL_TIMELINE);
   });
 
-  it('DEF-11 演出只是画面表现：不发送任何网络消息、不修改牌局；没有血腥元素', () => {
+  it('DEF-11 演出只是画面表现：不发送任何网络消息、不修改牌局；风格化，没有写实的血腥元素', () => {
     const read = (f: string) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
     const director = read('../src/animation/defeat/useDefeatDirector.ts');
     expect(director).not.toMatch(/net\.|session\.(action|chat|start)|\.send\(/);

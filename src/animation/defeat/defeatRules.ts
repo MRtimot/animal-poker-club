@@ -57,17 +57,21 @@ export type DefeatPhase =
   | 'realize' // 输家特写：意识到输了（缓慢推近），倒吸一口气、心跳开始
   | 'winner' // 赢家特写：赢家按性格反应
   | 'reaction' // 反应镜头：其他动物一个接一个转头看向输家（跟焦）
-  | 'tension' // 过肩镜头：灯光变暗、克制的暗红轮廓光，所有人都盯着输家
-  | 'ecu' // 极近特写：输家的脸，心跳与呼吸占满声音
-  | 'insert' // 环境特写：桌上的牌与筹码随心跳轻轻颤动，最后一声重心跳
-  | 'silence' // 一切突然停止（0.1~0.2 秒的完全安静）
-  | 'impact' // 冲击：闪光 + 震动 + 低频 + 烟雾 + 粒子 + 桌面反应，输家倒下
-  | 'aftermath' // 余波：烟雾散去、牌落下、筹码停稳、房间安静
+  | 'tension' // 过肩镜头：灯光变暗、深红的点缀光，所有人都盯着输家
+  | 'lastword' // （完整版）输家特写：最后一句很短的话（字幕 + 角色语音）
+  | 'prep' // （完整版）处决准备：镜头从中景慢慢推到近景，输家看向处决者（赢家），心跳越来越响
+  | 'ecu' // 极近特写：输家的眼睛，心跳与呼吸占满声音
+  | 'insert' // （简短版不用；保留给旧的环境特写）
+  | 'silence' // 一切突然停止（完全安静）
+  | 'impact' // 冲击。完整版：处决的一瞬间——镜头切开到桌面、刀光一闪、闪光、重击声，头部在这一刻脱离身体
+  | 'headfall' // （完整版）镜头切回：头部正落入画面，翻滚、落地、弹一下、滚动、停住
+  | 'collapse' // （完整版）失去头部的身体失去支撑，倒下
+  | 'aftermath' // 余波：死寂、镜头慢慢后退、散落的牌与筹码、灯光闪烁、所有人僵住
   | 'blackout' // 黑屏
   | 'defeated' // “出局”画面（等待玩家）/ 简短版的字幕
   | 'recover'; // 恢复：镜头、灯光、声音回到牌桌
 
-export const PHASE_ORDER: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout', 'defeated', 'recover'];
+export const PHASE_ORDER: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'lastword', 'prep', 'ecu', 'insert', 'silence', 'impact', 'headfall', 'collapse', 'aftermath', 'blackout', 'defeated', 'recover'];
 
 /** 完整版：每个阶段的开始时间（毫秒，从赢家演出开始算起）；defeated 之后等玩家选择 */
 export const FULL_TIMELINE: Partial<Record<DefeatPhase, number>> = {
@@ -76,14 +80,20 @@ export const FULL_TIMELINE: Partial<Record<DefeatPhase, number>> = {
   winner: 3000,
   reaction: 4200,
   tension: 5600,
-  ecu: 6700,
-  insert: 7900,
-  silence: 8500,
-  impact: 8680,
-  aftermath: 9300,
-  blackout: 11600,
-  defeated: 12400,
+  lastword: 6900,
+  prep: 8700,
+  ecu: 9900,
+  silence: 11100,
+  impact: 11350,
+  headfall: 11700,
+  collapse: 12700,
+  aftermath: 13900,
+  blackout: 17000,
+  defeated: 17800,
 };
+
+/** 处决：头部在冲击开始后多久脱离身体（与重击声、闪光的峰值对齐；这时镜头正切开到桌面） */
+export const DECAP_CUT_MS = 90;
 
 /** 简短版（基准时间，会按下一手开始前剩余的时间压缩）：没有赢家特写、过肩、极近特写与环境特写，没有黑屏 */
 export const SHORT_TIMELINE: Partial<Record<DefeatPhase, number>> = {
@@ -307,6 +317,72 @@ export const BYSTANDER_REACTION: Record<Species, { anim: AnimName; face: MoodFac
   fox: { anim: 'shrug', face: 'smug', emoji: '🤷' },
   panda: { anim: 'lookAway', face: 'sad', emoji: '😶' },
   bear: { anim: 'uneasy', face: 'sad', emoji: '😟' },
+};
+
+// ───────────────────────── 出局处决（完整版） ─────────────────────────
+
+/**
+ * 输家最后一句很短的话（按动物的性格）：知道自己马上就要死了。
+ * 只在本机显示字幕、播放这只动物的声音，不发送任何消息。
+ */
+export const LAST_WORDS: Record<Species, { text: string; emotion: AnimalEmotion }> = {
+  wolf: { text: '……原来是这样结束的。', emotion: 'sad' },
+  cat: { text: '……真的假的？', emotion: 'surprised' },
+  rabbit: { text: '等、等一下……', emotion: 'nervous' },
+  fox: { text: '……不。', emotion: 'sad' },
+  tiger: { text: '我早就知道会这样。', emotion: 'neutral' },
+  lion: { text: '……来吧。', emotion: 'confident' },
+  bear: { text: '……', emotion: 'sad' },
+  panda: { text: '……唉。', emotion: 'sad' },
+  monkey: { text: '……一点都不好玩了。', emotion: 'sad' },
+  frog: { text: '呱……？', emotion: 'surprised' },
+  dog: { text: '……对不起。', emotion: 'sad' },
+  penguin: { text: '……好冷。', emotion: 'nervous' },
+  koala: { text: '……让我再睡一会儿。', emotion: 'sad' },
+  raccoon: { text: '……别这样。', emotion: 'nervous' },
+  dragon: { text: '……哼。', emotion: 'angry' },
+};
+
+/** 失去头部的身体怎么倒下：重的动物向前倒在桌上，其他动物歪倒在椅子扶手上 */
+export const HEADLESS_COLLAPSE: Record<Species, AnimName> = {
+  bear: 'headlessSlump',
+  panda: 'headlessSlump',
+  koala: 'headlessSlump',
+  lion: 'headlessSlump',
+  dragon: 'headlessSlump',
+  tiger: 'headlessSlump',
+  cat: 'headlessTopple',
+  fox: 'headlessTopple',
+  raccoon: 'headlessTopple',
+  rabbit: 'headlessTopple',
+  frog: 'headlessTopple',
+  penguin: 'headlessTopple',
+  dog: 'headlessTopple',
+  wolf: 'headlessTopple',
+  monkey: 'headlessTopple',
+};
+
+/**
+ * 处决之后旁观者的反应（按性格，所有人都不说话）：
+ * 猫先震惊再强行冷静、兔子明显恐惧僵住、狐狸慢慢后退、熊低头看着、狼冷静但眼神变了、
+ * 熊猫完全停住、老虎冷冷看着、狮子保持威严短暂沉默、猴子完全不说话。
+ */
+export const EXECUTION_REACTION: Record<Species, { anim: AnimName; face: MoodFace }> = {
+  cat: { anim: 'composedShock', face: 'doubt' },
+  rabbit: { anim: 'fearFrozen', face: 'wide' },
+  fox: { anim: 'backAway', face: 'doubt' },
+  bear: { anim: 'lookDown', face: 'sad' },
+  wolf: { anim: 'stare', face: 'doubt' },
+  panda: { anim: 'freeze', face: 'wide' },
+  tiger: { anim: 'stare', face: 'normal' },
+  lion: { anim: 'gravePause', face: 'normal' },
+  monkey: { anim: 'freeze', face: 'wide' },
+  frog: { anim: 'freeze', face: 'wide' },
+  dog: { anim: 'fearFrozen', face: 'wide' },
+  penguin: { anim: 'lookAway', face: 'sad' },
+  koala: { anim: 'freeze', face: 'wide' },
+  raccoon: { anim: 'backAway', face: 'doubt' },
+  dragon: { anim: 'stare', face: 'normal' },
 };
 
 // ───────────────────────── 设备档位 ─────────────────────────

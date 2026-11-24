@@ -207,7 +207,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     const tt = performance.now() / 1000;
     if (!calm) {
       // 失败演出的紧张阶段：克制的手持感稍微明显一些
-      const hand = dShot && (ds.phase === 'tension' || ds.phase === 'ecu' || ds.phase === 'insert' || ds.phase === 'reaction') ? 2.4 : 1;
+      const hand = dShot && (ds.phase === 'tension' || ds.phase === 'lastword' || ds.phase === 'prep' || ds.phase === 'ecu' || ds.phase === 'insert' || ds.phase === 'reaction') ? 2.4 : 1;
       camera.position.x += Math.sin(tt * 0.37) * 0.012 * hand + (hand > 1 ? Math.sin(tt * 2.3) * 0.006 : 0);
       camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008 * hand + (hand > 1 ? Math.sin(tt * 1.7 + 2) * 0.005 : 0);
     }

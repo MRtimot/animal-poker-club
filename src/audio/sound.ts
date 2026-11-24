@@ -244,6 +244,88 @@ class SoundEngine {
     this.tone(3150, t, 2.6, { type: 'sine', vol: 0.012, attack: 0.25, dest: this.cine });
   }
 
+  /**
+   * 出局处决的一瞬间（电影式的处决冲击，不是游戏里的“砍刀音”）：
+   * 极短的暗色破风声（从高到低扫过）→ 干脆的一下撞击 → 很深的低频重击 → 整个房间的混响 → 回到死寂。
+   * hitAt：撞击相对现在的时刻（秒）
+   */
+  cineExecution(hitAt = 0.09, power = 1) {
+    if (!this.ctx || this.ctx.state !== 'running' || !this.noiseBuf) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const c = this.cine;
+    // 1. 破风：带通噪声从 5.5 kHz 快速扫到 700 Hz
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 2.2;
+    f.frequency.setValueAtTime(5500, t);
+    f.frequency.exponentialRampToValueAtTime(700, t + hitAt + 0.04);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32 * power, t + hitAt * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + hitAt + 0.07);
+    src.connect(f).connect(g).connect(c);
+    src.start(t, Math.random());
+    src.stop(t + hitAt + 0.15);
+    const h = t + hitAt;
+    // 2. 撞击：短促、干脆的瞬态（不带“叮”的金属回响，只有一点几乎听不到的余音）
+    this.noise(h, 0.045, { freq: 3200, q: 0.7, type: 'highpass', vol: 0.5 * power, dest: c });
+    this.noise(h, 0.16, { freq: 900, q: 0.9, vol: 0.45 * power, dest: c });
+    this.tone(2380, h, 0.32, { type: 'sine', vol: 0.014 * power, attack: 0.002, dest: c });
+    // 3. 低频重击：很深、很长的下滑
+    this.tone(46, h, 1.6, { type: 'sine', vol: 1.0 * power, attack: 0.004, glide: 24, dest: c });
+    this.tone(92, h, 0.34, { type: 'triangle', vol: 0.42 * power, attack: 0.003, glide: 40, dest: c });
+    this.noise(h + 0.02, 1.1, { freq: 180, q: 0.8, type: 'lowpass', vol: 0.12 * power, attack: 0.04, dest: c });
+    // 4. 房间混响：整个房间都听到了，然后慢慢回到死寂
+    if (this.reverbSend) {
+      this.reverbSend.gain.cancelScheduledValues(h);
+      this.reverbSend.gain.setValueAtTime(0.16 + 0.6 * power, h);
+      this.reverbSend.gain.setTargetAtTime(0.16, h + 0.5, 0.6);
+    }
+  }
+
+  /** 头部撞到地面：沉闷、有重量的一声（弹起后的落地更轻）；speed：撞击速度（米 / 秒） */
+  cineThud(speed: number, delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    const c = this.cine;
+    const k = Math.max(0.15, Math.min(1, speed / 6));
+    this.tone(96, t, 0.18, { type: 'triangle', vol: 0.5 * k, attack: 0.003, glide: 54, dest: c });
+    this.tone(62, t, 0.3, { type: 'sine', vol: 0.45 * k, attack: 0.004, glide: 38, dest: c });
+    this.noise(t, 0.09, { freq: 420, q: 0.9, type: 'lowpass', vol: 0.22 * k, dest: c });
+    this.noise(t, 0.03, { freq: 1300, q: 3, vol: 0.05 * k, dest: c });
+  }
+
+  /** 头部在地上滚动：很轻的低沉摩擦声，逐渐停下 */
+  cineRoll(seconds: number, delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    this.noise(t, Math.max(0.2, seconds), { freq: 260, q: 1.4, vol: 0.035, attack: 0.05, dest: this.cine });
+  }
+
+  /** 失去头部的身体倒下：沉重地撞在桌上 / 椅子扶手上，桌上的筹码被震得一响 */
+  cineBodyFall(heavy: boolean, delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    const c = this.cine;
+    this.tone(heavy ? 70 : 88, t, 0.34, { type: 'sine', vol: heavy ? 0.6 : 0.42, attack: 0.004, glide: heavy ? 40 : 52, dest: c });
+    this.noise(t, 0.14, { freq: 520, q: 0.8, type: 'lowpass', vol: 0.18, dest: c });
+    this.noise(t - 0.12, 0.2, { freq: 1500, q: 0.6, vol: 0.03, attack: 0.06, dest: c });
+    for (let i = 0; i < 4; i++) this.tone(2200 + Math.random() * 1800, t + 0.04 + i * 0.05 + Math.random() * 0.03, 0.04, { type: 'triangle', vol: 0.02, dest: c });
+  }
+
+  /** 余波里还在滚动的筹码：几声很轻的滚动与碰撞，最后一枚倒下 */
+  cineChipSettle(delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    const c = this.cine;
+    this.noise(t, 0.9, { freq: 3800, q: 2.5, vol: 0.012, attack: 0.1, dest: c });
+    // 最后一枚筹码在桌上“嗒啦嗒啦”地转着倒下
+    for (let i = 0; i < 6; i++) this.tone(3000 + i * 120, t + 0.9 + i * (0.11 - i * 0.012), 0.035, { type: 'triangle', vol: 0.02 * (1 - i * 0.1), dest: c });
+  }
+
   /** 河牌等关键时刻：音乐与环境声短暂降低，然后恢复 */
   duck(level: number, ms: number) {
     if (!this.ctx) return;

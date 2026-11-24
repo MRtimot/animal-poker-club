@@ -1,12 +1,17 @@
 // 失败演出的 3D 效果（只在演出期间挂载，结束后全部卸载并释放显存）：
 // · 灯光：克制的暗红轮廓光（危险信号）、孤立输家的冷色顶光、冲击瞬间的闪光
 // · 冲击：烟雾（爆开 → 扩散 → 慢慢散去）、灰尘与碎屑、纸牌碎片、散开的筹码
-// 没有任何血液、伤口或身体碎片；粒子数量按设备档位（手机 / 低画质 / 减少动态效果）减少。
+// · 出局处决（完整版）：头部脱离身体（头部的复制品沿预先算好的轨迹翻滚、落地、弹起、滚动、停住），
+//   断开处迸出风格化的暗红 / 黑色碎片（简化的细长粒子，很快消失）——没有写实的伤口、身体内部或血液模拟。
+// 粒子数量按设备档位（手机 / 低画质 / 减少动态效果）减少。
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { setDefeatPhase, useDefeat, type DefeatSequence } from '../../animation/defeat/defeatStore';
-import { PHASE_ORDER, type DefeatPhase } from '../../animation/defeat/defeatRules';
+import { DECAP_CUT_MS, PHASE_ORDER, type DefeatPhase } from '../../animation/defeat/defeatRules';
+import { getHead, headLaunch, sampleHeadFall, simulateHeadFall, type HeadFall } from '../../animation/defeat/decapitation';
+import { sound } from '../../audio/sound';
+import { useFx } from '../../store/fxStore';
 import { TABLE_Y, type SeatLayout } from '../layout';
 import { FACE_DROP } from '../camera/defeatCamera';
 
@@ -17,8 +22,42 @@ const GRAVITY = -7.5;
  * 注意：演出不新增任何灯光（新增 / 显示灯光会让 three.js 重新编译所有材质，造成明显卡顿）：
  * 红色轮廓光复用场景的轮廓光（SceneLights），孤立顶光复用赢家聚光灯（WinnerLight），闪光是现有灯光的瞬间增亮。
  */
-export const DEFEAT_RED: Partial<Record<DefeatPhase, number>> = { reaction: 0.3, tension: 0.85, ecu: 1, insert: 1, silence: 0.95, impact: 0.9, aftermath: 0.4, blackout: 0, defeated: 0 };
-export const DEFEAT_ISOLATE: Partial<Record<DefeatPhase, number>> = { realize: 0.55, winner: 0.5, reaction: 0.8, tension: 1, ecu: 1, insert: 0.9, silence: 0.9, impact: 0.7, aftermath: 0.75, blackout: 0.5, defeated: 0.4 };
+export const DEFEAT_RED: Partial<Record<DefeatPhase, number>> = {
+  reaction: 0.3,
+  tension: 0.85,
+  lastword: 0.9,
+  prep: 1,
+  ecu: 1,
+  insert: 1,
+  silence: 0.95,
+  impact: 1,
+  headfall: 0.95,
+  collapse: 0.8,
+  // 余波：暗红慢慢褪去，黑屏前完全消失
+  aftermath: 0.45,
+  blackout: 0,
+  defeated: 0,
+};
+export const DEFEAT_ISOLATE: Partial<Record<DefeatPhase, number>> = {
+  realize: 0.55,
+  winner: 0.5,
+  reaction: 0.8,
+  tension: 1,
+  lastword: 1,
+  prep: 1,
+  ecu: 1,
+  insert: 0.9,
+  silence: 0.9,
+  impact: 0.7,
+  headfall: 0.85,
+  collapse: 0.85,
+  aftermath: 0.75,
+  blackout: 0.5,
+  defeated: 0.4,
+};
+
+/** 地面高度（地毯表面稍高一点） */
+const FLOOR_Y = 0.01;
 
 /**
  * 当前这一帧的房间灯光状态（SceneLights 每帧写入）：环境里的壁灯、桌边与烟雾按它变暗、染上克制的暗红。
@@ -294,12 +333,211 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
   );
 }
 
+interface Shard {
+  v: THREE.Vector3;
+  len: number;
+  width: number;
+  life: number;
+  delay: number;
+}
+
+/** 断开处迸出的风格化碎片：细长的暗红 / 黑色粒子，从断开处向上、向两侧散开，0.4~0.8 秒内缩小消失 */
+function makeShards(n: number, along: THREE.Vector3): Shard[] {
+  const out: Shard[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.2 + Math.random() * 2.6;
+    out.push({
+      v: new THREE.Vector3(Math.cos(a) * sp * 0.6 + along.x * 0.6, 1.4 + Math.random() * 2.4, Math.sin(a) * sp * 0.6 + along.z * 0.6),
+      len: 0.07 + Math.random() * 0.14,
+      width: 0.018 + Math.random() * 0.02,
+      life: 0.4 + Math.random() * 0.4,
+      delay: Math.random() * 0.05,
+    });
+  }
+  return out;
+}
+
+const tmpPos = new THREE.Vector3();
+const tmpQuat = new THREE.Quaternion();
+const tmpScale = new THREE.Vector3();
+const tmpQ2 = new THREE.Quaternion();
+const tmpBox = new THREE.Box3();
+const restPose = new THREE.Object3D();
+const tmpSize = new THREE.Vector3();
+
+/**
+ * 出局处决：头部脱离身体并掉落。
+ * 斩首那一刻（冲击 + DECAP_CUT_MS，这时镜头正切开到桌面）：隐藏输家原来的头部，在同一位置放一个复制品
+ * （共用原来的几何体与材质：不上传新的显存、不编译新的着色器），复制品沿预先算好的轨迹运动；
+ * 每次落地播放一声闷响，开始滚动时播放滚动声。卸载（演出结束 / 跳过 / 离开牌桌）时移除复制品、恢复原来的头部。
+ */
+function SeveredHead({ seq, layout }: { seq: DefeatSequence; layout: Map<string, SeatLayout> }) {
+  const L = layout.get(seq.loserId);
+  const prof = seq.profile;
+  const root = useRef<THREE.Group>(null!);
+  const st = useRef<{
+    done: boolean;
+    src: THREE.Object3D | null;
+    clone: THREE.Object3D | null;
+    fall: HeadFall | null;
+    q0: THREE.Quaternion;
+    neck: THREE.Vector3;
+    played: number;
+    rolled: boolean;
+    restQ: THREE.Quaternion;
+    settle: [number, number];
+  }>({
+    done: false,
+    src: null,
+    clone: null,
+    fall: null,
+    q0: new THREE.Quaternion(),
+    neck: new THREE.Vector3(),
+    played: 0,
+    rolled: false,
+    restQ: new THREE.Quaternion(),
+    settle: [Infinity, Infinity],
+  });
+  const side = useMemo(() => {
+    const d = L ? new THREE.Vector2(L.seat[0], L.seat[2]).normalize() : new THREE.Vector2(0, 1);
+    const sg = seq.decap?.side ?? 1;
+    return { dir: [d.x, d.y] as [number, number], side: [-d.y * sg, d.x * sg] as [number, number] };
+  }, [L, seq.decap?.side]);
+  // 暗红与近黑两种颜色：两个同类型的材质（与灰尘 / 火星完全相同的设置，共用已经编译好的着色器）
+  const nRed = Math.max(4, Math.round(prof.fragments * 1.3));
+  const nDark = Math.max(2, Math.round(prof.fragments * 0.6));
+  const shardGeo = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  const redMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#5e0b17', transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }), []);
+  const darkMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#140507', transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }), []);
+  const shards = useMemo(() => {
+    const along = new THREE.Vector3(side.side[0], 0, side.side[1]);
+    return { red: makeShards(nRed, along), dark: makeShards(nDark, along) };
+  }, [nRed, nDark, side]);
+  const redRef = useRef<THREE.InstancedMesh>(null!);
+  const darkRef = useRef<THREE.InstancedMesh>(null!);
+
+  useEffect(
+    () => () => {
+      const s = st.current;
+      if (s.clone) s.clone.removeFromParent();
+      // 复制品与原来的头部共用几何体与材质：只移除，不释放（释放会让原来的头部也消失）
+      if (s.src) s.src.visible = true;
+      s.clone = null;
+      s.src = null;
+      shardGeo.dispose();
+      redMat.dispose();
+      darkMat.dispose();
+    },
+    [shardGeo, redMat, darkMat],
+  );
+
+  const updateShards = (mesh: THREE.InstancedMesh | null, list: Shard[], t: number, neck: THREE.Vector3) => {
+    if (!mesh) return;
+    mesh.visible = t >= 0 && t < 1;
+    list.forEach((sh, i) => {
+      const tt = t - sh.delay;
+      const alive = tt >= 0 && tt < sh.life;
+      const k = alive ? 1 - tt / sh.life : 0;
+      tmpObj.position.set(neck.x + sh.v.x * Math.max(0, tt), neck.y + sh.v.y * Math.max(0, tt) + 0.5 * GRAVITY * Math.max(0, tt) * Math.max(0, tt), neck.z + sh.v.z * Math.max(0, tt));
+      tmpV.set(sh.v.x, sh.v.y + GRAVITY * Math.max(0, tt), sh.v.z).normalize();
+      tmpObj.quaternion.setFromUnitVectors(UP, tmpV);
+      tmpObj.scale.set(alive ? sh.width * (0.4 + 0.6 * k) : 0.0001, alive ? sh.len * (0.5 + 0.5 * k) : 0.0001, 1);
+      tmpObj.updateMatrix();
+      mesh.setMatrixAt(i, tmpObj.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+
+  useFrame(() => {
+    const t0 = seq.at.impact;
+    if (t0 === undefined || !L) return;
+    const cutAt = t0 + DECAP_CUT_MS;
+    const now = performance.now();
+    const s = st.current;
+    if (!s.done && now >= cutAt) {
+      s.done = true;
+      const src = getHead(seq.loserId);
+      if (src && root.current) {
+        src.updateWorldMatrix(true, true);
+        src.matrixWorld.decompose(tmpPos, tmpQuat, tmpScale);
+        const clone = src.clone(true);
+        clone.name = 'severed-head';
+        clone.visible = true;
+        clone.position.copy(tmpPos);
+        clone.quaternion.copy(tmpQuat);
+        clone.scale.copy(tmpScale);
+        root.current.add(clone);
+        // 头部的近似半径：水平尺寸的一半（不算帽子的高度）
+        tmpBox.setFromObject(src).getSize(tmpSize);
+        const radius = Math.max(0.12, ((tmpSize.x + tmpSize.z) / 4) * 0.85);
+        const { vel, spin } = headLaunch(side.dir, side.side);
+        s.fall = simulateHeadFall({ start: [tmpPos.x, tmpPos.y, tmpPos.z], vel, spin, radius, floorY: FLOOR_Y });
+        s.q0.copy(tmpQuat);
+        s.neck.set(tmpPos.x, tmpPos.y - radius * 0.75, tmpPos.z);
+        // 停住时的朝向：脸（头部的 +Z）转向镜头所在的一侧，微微仰起、侧躺——一眼就能认出是这只动物的头
+        // （最后一次落地之后的滚动里慢慢转到这个朝向）
+        const fwd = tmpV.set(side.side[0] * 2.9 + side.dir[0] * 1.3, 0, side.side[1] * 2.9 + side.dir[1] * 1.3).normalize();
+        restPose.position.set(0, 0, 0);
+        restPose.quaternion.identity();
+        restPose.lookAt(fwd);
+        restPose.rotateX(-0.45);
+        restPose.rotateZ(0.55 * (seq.decap?.side ?? 1));
+        s.restQ.copy(restPose.quaternion);
+        const lastHit = s.fall.contacts.length ? s.fall.contacts[s.fall.contacts.length - 1].t : 0.6;
+        s.settle = [lastHit, Math.max(lastHit + 0.5, s.fall.restAt + 0.25)];
+        src.visible = false;
+        s.src = src;
+        s.clone = clone;
+      }
+    }
+    const t = (now - cutAt) / 1000;
+    if (s.clone && s.fall) {
+      const { p, q } = sampleHeadFall(s.fall, t);
+      s.clone.position.set(p[0], p[1], p[2]);
+      s.clone.quaternion.copy(tmpQ2.set(q[0], q[1], q[2], q[3]).multiply(s.q0));
+      const [a, b] = s.settle;
+      if (t > a) {
+        const x = Math.min(1, (t - a) / (b - a));
+        s.clone.quaternion.slerp(s.restQ, x * x * (3 - 2 * x));
+      }
+      // 落地的闷响与画面同步；第一次落地时镜头轻轻一震
+      const contacts = s.fall.contacts;
+      while (s.played < contacts.length && contacts[s.played].t <= t) {
+        const c = contacts[s.played++];
+        sound.cineThud(c.speed);
+        if (s.played === 1 && !seq.reduced) useFx.getState().doShake(prof.shake * 0.35);
+      }
+      if (!s.rolled && contacts.length && t >= contacts[contacts.length - 1].t + 0.02) {
+        s.rolled = true;
+        sound.cineRoll(Math.max(0.2, s.fall.restAt - contacts[contacts.length - 1].t));
+      }
+    }
+    if (s.clone) {
+      updateShards(redRef.current, shards.red, t, s.neck);
+      updateShards(darkRef.current, shards.dark, t, s.neck);
+    }
+  });
+
+  return (
+    <group ref={root}>
+      <instancedMesh ref={redRef} args={[shardGeo, redMat, shards.red.length]} visible={false} frustumCulled={false} />
+      <instancedMesh ref={darkRef} args={[shardGeo, darkMat, shards.dark.length]} visible={false} frustumCulled={false} />
+    </group>
+  );
+}
+
 /** 失败演出的 3D 部分：只在演出期间挂载（灯光变化在 SceneLights / WinnerLight 里，不新增灯光） */
 export function DefeatFX({ layout }: { layout: Map<string, SeatLayout> }) {
   const seq = useDefeat((s) => s.seq);
   const skipped = useDefeat((s) => s.skipped);
   if (!seq || skipped) return null;
-  return <ImpactBurst key={seq.key} seq={seq} layout={layout} />;
+  return (
+    <>
+      <ImpactBurst key={seq.key} seq={seq} layout={layout} />
+      {seq.cut === 'full' && seq.decap && <SeveredHead key={seq.key + '-head'} seq={seq} layout={layout} />}
+    </>
+  );
 }
 
 /**

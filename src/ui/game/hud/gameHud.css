@@ -1816,6 +1816,109 @@ body.defeat-cine .toasts {
     opacity: 0;
   }
 }
+/* 出局处决：先是一瞬间的白光，然后转成深暗红，再退去 */
+.dcine-flash.exec {
+  animation: dcineExecFlash 520ms linear both;
+}
+@keyframes dcineExecFlash {
+  0% {
+    opacity: 0;
+    background: #fff6ea;
+  }
+  8% {
+    opacity: var(--flash, 0.85);
+    background: #fff6ea;
+  }
+  22% {
+    opacity: calc(var(--flash, 0.85) * 0.75);
+    background: #5a0710;
+  }
+  60% {
+    opacity: calc(var(--flash, 0.85) * 0.35);
+    background: #2a0308;
+  }
+  100% {
+    opacity: 0;
+    background: #2a0308;
+  }
+}
+/* 一道刀光：很细的亮线带暗红边，斜着横过画面，140 毫秒内划过并消失 */
+.dcine-slash {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: 46%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(255, 246, 234, 0.95) 45%, #fffaf2 50%, rgba(255, 246, 234, 0.95) 55%, transparent);
+  box-shadow: 0 0 0 1px rgba(120, 10, 22, 0.55), 0 0 14px rgba(150, 14, 30, 0.6);
+  transform: rotate(-12deg) scaleX(0);
+  transform-origin: 0 50%;
+  opacity: 0;
+  animation: dcineSlash 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.dcine-slash.flip {
+  transform-origin: 100% 50%;
+  animation-name: dcineSlashFlip;
+}
+@keyframes dcineSlash {
+  0% {
+    opacity: 1;
+    transform: rotate(-12deg) scaleX(0);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(-12deg) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-12deg) scaleX(1);
+  }
+}
+@keyframes dcineSlashFlip {
+  0% {
+    opacity: 1;
+    transform: rotate(12deg) scaleX(0);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(12deg) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(12deg) scaleX(1);
+  }
+}
+/* 最后一句话：电影字幕，放在下方遮幅里 */
+.dcine-lastword {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + var(--bar-h) * 0.32);
+  transform: translateX(-50%);
+  max-width: min(680px, calc(100vw - 32px));
+  text-align: center;
+  font-size: clamp(16px, 2.2vw, 22px);
+  letter-spacing: 1px;
+  color: #efe6d4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  animation: dcineLastword 1.7s ease both;
+}
+@keyframes dcineLastword {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dcine-flash.exec {
+    animation-duration: 700ms;
+  }
+}
 .dcine-black {
   position: absolute;
   inset: 0;

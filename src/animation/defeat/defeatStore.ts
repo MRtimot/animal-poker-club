@@ -22,6 +22,8 @@ export interface DefeatSequence {
   ratio: number;
   profile: DefeatProfile;
   reduced: boolean;
+  /** 完整版（出局处决）：头部飞向哪一侧（+1 / -1，镜头也在这一侧），输家最后一句话 */
+  decap?: { side: 1 | -1; lastWords: string };
 }
 
 export interface DefeatState {
@@ -92,9 +94,9 @@ export function tableJolt(x: number, z: number, now: number, seed = 0): Jolt {
   const s = useDefeat.getState().seq;
   const t0 = s?.at.impact;
   if (!s || t0 === undefined) return ZERO;
-  // 冲击前的环境特写：输家面前的牌和筹码随着心跳轻轻颤动；静止的那 0.18 秒完全不动
+  // 冲击前（环境特写 / 处决前的极近特写）：输家面前的牌和筹码随着心跳轻轻颤动；静止的那一刻完全不动
   if (now < t0) {
-    const a = s.at.insert;
+    const a = s.at.insert ?? s.at.ecu;
     const b = s.at.silence;
     if (a === undefined || b === undefined || now < a || now >= b || s.reduced) return ZERO;
     const near0 = Math.max(0, 1 - Math.hypot(x - s.origin[0], z - s.origin[1]) / 3.2);

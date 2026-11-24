@@ -1,11 +1,12 @@
 // 失败演出的分镜：每个阶段一个镜头，镜头之间是“剪辑”（直接切换），镜头内只有缓慢的推拉。
-// 全景 → 输家特写 → 赢家特写 → 反应镜头（跟焦）→ 过肩镜头 → 极近特写 → 环境特写（牌与筹码）→ 冲击 → 余波 → 黑屏
+// 全景 → 输家特写 → 赢家特写 → 反应镜头（跟焦）→ 过肩镜头 → 最后一句话（输家特写）→ 处决准备（中景推到近景）
+// → 眼睛的极近特写 → 处决瞬间切开到桌面 → 切回：头部落入画面、身体倒下（侧面）→ 余波（升高、慢慢后退）→ 黑屏
 import * as THREE from 'three';
 import type { SeatLayout } from '../layout';
 import { phaseEnd, type DefeatPhase } from '../../animation/defeat/defeatRules';
 import type { DefeatSequence } from '../../animation/defeat/defeatStore';
 
-export type ShotName = 'wide' | 'winnerCU' | 'loserCU' | 'reaction' | 'ots' | 'ecu' | 'insert' | 'impact' | 'aftermath';
+export type ShotName = 'wide' | 'winnerCU' | 'loserCU' | 'reaction' | 'ots' | 'lastword' | 'prep' | 'ecu' | 'insert' | 'impact' | 'severed' | 'aftermath' | 'aftermathWide';
 
 const FULL_SHOTS: Partial<Record<DefeatPhase, ShotName>> = {
   result: 'wide',
@@ -13,13 +14,18 @@ const FULL_SHOTS: Partial<Record<DefeatPhase, ShotName>> = {
   realize: 'loserCU',
   reaction: 'reaction',
   tension: 'ots',
+  lastword: 'lastword',
+  prep: 'prep',
   ecu: 'ecu',
   insert: 'insert',
-  silence: 'insert',
-  impact: 'impact',
-  aftermath: 'aftermath',
-  blackout: 'aftermath',
-  defeated: 'aftermath',
+  silence: 'ecu',
+  // 处决的一瞬间：镜头切开到桌面（牌与筹码被震起），闪光；切回时头部已经在下落
+  impact: 'insert',
+  headfall: 'severed',
+  collapse: 'severed',
+  aftermath: 'aftermathWide',
+  blackout: 'aftermathWide',
+  defeated: 'aftermathWide',
 };
 const SHORT_SHOTS: Partial<Record<DefeatPhase, ShotName>> = {
   realize: 'loserCU',
@@ -59,6 +65,7 @@ function facing(from: SeatLayout, to: SeatLayout | undefined, k = 0.85): THREE.V
   return f.multiplyScalar(Math.cos(yaw)).add(side.multiplyScalar(Math.sin(yaw)));
 }
 const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+const ease3 = (x: number) => 1 - Math.pow(1 - Math.max(0, Math.min(1, x)), 3);
 
 /** 当前应该使用的镜头；没有演出 / 恢复阶段返回 null（交还给普通镜头） */
 export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number, layout: Map<string, SeatLayout>, portrait: boolean): DefeatShot | null {
@@ -134,14 +141,33 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       range = 3.5;
       break;
     }
+    case 'lastword': {
+      // 最后一句话：输家的近景，镜头几乎不动
+      pos = head.clone().add(lf.clone().multiplyScalar((2.3 - p * 0.2) * k)).add(up(0.12));
+      look = head.clone().add(up(-0.04));
+      focus = head.clone();
+      fov = cu;
+      range = 1.8;
+      break;
+    }
+    case 'prep': {
+      // 处决准备：从中景慢慢推到近景（输家看向处决者）
+      const d = 3.6 - ease3(p) * 1.5;
+      pos = head.clone().add(lf.clone().multiplyScalar(d * k)).add(up(0.35 - p * 0.2));
+      look = head.clone().add(up(-0.12 + p * 0.08));
+      focus = head.clone();
+      fov = portrait ? 54 : 38;
+      range = 2.2 - p * 0.6;
+      break;
+    }
     case 'ecu': {
-      // 极近特写：只有输家的脸，镜头几乎贴上去、极慢地推近；背景完全虚化
+      // 眼睛的极近特写：几乎贴上去、极慢地推近；背景完全虚化
       const eyes = head.clone().add(up(0.05));
-      pos = eyes.clone().add(lf.clone().multiplyScalar((2.0 - p * 0.3) * k)).add(up(0.02));
+      pos = eyes.clone().add(lf.clone().multiplyScalar((seq.cut === 'full' ? 1.55 - p * 0.2 : 2.0 - p * 0.3) * k)).add(up(0.02));
       look = eyes.clone();
       focus = eyes.clone();
-      fov = portrait ? 44 : 30;
-      range = 1.1;
+      fov = portrait ? (seq.cut === 'full' ? 38 : 44) : seq.cut === 'full' ? 26 : 30;
+      range = 1.0;
       break;
     }
     case 'insert': {
@@ -161,6 +187,31 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       look = head.clone().add(up(-0.55));
       focus = head.clone();
       range = 4;
+      break;
+    }
+    case 'severed': {
+      // 头部落入画面 → 落地 → 滚动；身体失去支撑倒下：从头部飞去的那一侧、椅子外侧略低的位置拍
+      // （镜头在牌桌外面，桌面不会挡住地面）
+      const sd = side.clone().multiplyScalar(seq.decap?.side ?? 1);
+      const seat = new THREE.Vector3(L.seat[0], 0, L.seat[2]);
+      pos = seat.clone().add(sd.clone().multiplyScalar(4.4 * k)).add(dir.clone().multiplyScalar(1.7 * k)).add(up(1.95 + p * 0.1));
+      // 竖屏：牌局界面为底部操作区留出的镜头偏移在演出中仍然存在（操作区已隐藏），视线抬高一点，让身体与头部在画面中间
+      look = seat.clone().add(sd.clone().multiplyScalar(1.1)).add(dir.clone().multiplyScalar(0.2)).add(up(0.95 - p * 0.15 + (portrait ? 0.65 : 0)));
+      focus = seat.clone().add(sd.clone().multiplyScalar(1.1)).add(up(0.7));
+      fov = portrait ? 62 : 46;
+      range = 3;
+      break;
+    }
+    case 'aftermathWide': {
+      // 余波：镜头慢慢后退、升高——倒下的身体、地上的头部、散乱的牌与筹码、一动不动的其他动物
+      const sd = side.clone().multiplyScalar(seq.decap?.side ?? 1);
+      const seat = new THREE.Vector3(L.seat[0], 0, L.seat[2]);
+      const back = p * 1.1;
+      pos = seat.clone().add(sd.clone().multiplyScalar((3.7 + back * 0.5) * k)).add(dir.clone().multiplyScalar((2.6 + back) * k)).add(up(3.3 + back * 0.6));
+      look = seat.clone().add(sd.clone().multiplyScalar(0.9)).add(dir.clone().multiplyScalar(-0.6)).add(up(0.5 + (portrait ? 0.9 : 0)));
+      focus = seat.clone().add(sd.clone().multiplyScalar(0.6)).add(up(0.6));
+      fov = portrait ? 62 : 46;
+      range = 5;
       break;
     }
     case 'aftermath':

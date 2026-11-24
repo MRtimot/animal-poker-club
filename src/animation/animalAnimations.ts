@@ -773,6 +773,150 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       o.face = 'wide';
       break;
     }
+    // ───── 出局处决（完整版）：头部已经被另外的“头”接管，这里只控制失去头部的身体 ─────
+    case 'headlessJolt': {
+      // 斩首瞬间：身体被震得往后一挺、双臂张开；随后僵直地坐着、轻轻摇晃（已经失去平衡）
+      const rec = t < 0.28 ? Math.sin((t / 0.28) * Math.PI) : 0;
+      const sway = clamp01((t - 0.28) / 0.6);
+      o.lean = -0.28 * rec + Math.sin(t * 2.2) * 0.05 * sway;
+      o.roll = Math.sin(t * 1.7 + 0.4) * 0.07 * sway;
+      o.y = 0.06 * rec;
+      o.squash = 1;
+      o.armLX = o.armRX = lerp(lerp(restX, -1.7, rec), -0.4, sway);
+      o.armLZ = 0.9 * rec + 0.14 * (1 - rec);
+      o.armRZ = -0.9 * rec - 0.14 * (1 - rec);
+      o.headX = o.headY = o.headZ = 0;
+      o.tail = 0;
+      o.ear = 0;
+      o.mouth = 0;
+      break;
+    }
+    case 'headlessSlump': {
+      // 重的动物：身体失去支撑，越来越快地向前倒在桌上，落桌时轻轻一弹，然后一动不动
+      const k = clamp01(t / 0.85);
+      const fall = k * k;
+      const land = t > 0.85 ? Math.sin(clamp01((t - 0.85) / 0.25) * Math.PI) * 0.05 : 0;
+      o.lean = lerp(0.05, 0.95, fall) - land;
+      o.roll = 0.08 * fall;
+      o.y = lerp(0, -0.14, fall);
+      o.squash = lerp(1, 0.93, fall);
+      o.armLX = o.armRX = lerp(-0.4, -1.25, fall);
+      o.armLZ = lerp(0.14, 0.35, fall);
+      o.armRZ = lerp(-0.14, -0.4, fall);
+      o.headX = o.headY = o.headZ = 0;
+      o.tail = 0;
+      o.ear = 0;
+      o.mouth = 0;
+      break;
+    }
+    case 'headlessTopple':
+    case 'headlessToppleR': {
+      // 其他动物：身体向一侧歪倒在椅子扶手上，双臂垂下，然后一动不动（R：向另一侧，倒向镜头所在的一侧）
+      const sg = name === 'headlessToppleR' ? -1 : 1;
+      const k = clamp01(t / 0.95);
+      const fall = k * k;
+      const land = t > 0.95 ? Math.sin(clamp01((t - 0.95) / 0.22) * Math.PI) * 0.06 : 0;
+      o.roll = sg * (0.95 * fall - land);
+      o.lean = 0.3 * fall;
+      o.y = -0.18 * fall;
+      o.squash = 1;
+      o.armLX = o.armRX = lerp(-0.4, -0.12, fall);
+      o.armLZ = sg > 0 ? 0.14 + 0.45 * fall : 0.14 + 0.3 * fall;
+      o.armRZ = sg > 0 ? -0.14 + 0.3 * fall : -0.14 - 0.45 * fall;
+      o.headX = o.headY = o.headZ = 0;
+      o.tail = 0;
+      o.ear = 0;
+      o.mouth = 0;
+      break;
+    }
+    case 'composedShock': {
+      // 猫：先被吓得一缩，然后强行保持冷静——一动不动，耳朵微微后压
+      const k = Math.sin(clamp01(t / 0.6) * Math.PI);
+      o.lean = -0.2 * k + 0.04;
+      o.armLX = o.armRX = lerp(restX, -1.3, k);
+      o.headX = 0.04;
+      o.headY = 0;
+      o.eyeOpen = t < 0.6 ? 1.4 : 0.8;
+      o.ear = -0.6;
+      o.mouth = 0;
+      o.tail = 0;
+      o.face = t < 0.6 ? 'wide' : 'doubt';
+      break;
+    }
+    case 'fearFrozen': {
+      // 兔子 / 狗：明显的恐惧——身体僵住、微微发抖、呼吸很快，耳朵贴平
+      o.lean = -0.12;
+      o.roll = Math.sin(t * 37) * 0.012;
+      o.squash = 1 + Math.sin(t * 11) * 0.02;
+      o.armLX = o.armRX = restX - 0.4;
+      o.armLZ = base.armLZ + 0.25;
+      o.armRZ = base.armRZ - 0.25;
+      o.headX = -0.04;
+      o.headY = 0;
+      o.eyeOpen = 1.4;
+      o.ear = -1;
+      o.mouth = 0.25;
+      o.tail = 0;
+      o.face = 'wide';
+      break;
+    }
+    case 'backAway': {
+      // 狐狸：表情复杂，没有尖叫，只是慢慢往后靠、身体微微转开
+      const k = smooth(t / 2.2);
+      o.lean = -0.22 * k;
+      o.turn = base.turn + 0.18 * k;
+      o.headY = -0.2 * k;
+      o.headX = 0.06;
+      o.armLX = o.armRX = lerp(restX, restX + 0.5, k);
+      o.eyeOpen = 0.9;
+      o.ear = -0.4;
+      o.mouth = 0;
+      o.tail = 0;
+      o.face = 'doubt';
+      break;
+    }
+    case 'lookDown': {
+      // 熊：沉默，慢慢低头看着现场
+      const k = smooth(t / 1.6);
+      o.headX = 0.5 * k;
+      o.headY = 0;
+      o.lean = 0.08 * k;
+      o.squash = 1;
+      o.eyeOpen = 0.75;
+      o.mouth = 0;
+      o.tail = 0;
+      o.face = 'sad';
+      break;
+    }
+    case 'freeze': {
+      // 熊猫 / 猴子等：原本放松或活泼，现在完全停住——连呼吸的起伏都停了
+      o.roll = 0;
+      o.squash = 1;
+      o.lean = base.lean;
+      o.headX = 0.02;
+      o.headY = 0;
+      o.headZ = 0;
+      o.armLX = o.armRX = restX;
+      o.eyeOpen = 1.15;
+      o.mouth = 0;
+      o.ear = -0.2;
+      o.tail = 0;
+      o.face = 'wide';
+      break;
+    }
+    case 'gravePause': {
+      // 狮子：保持威严，坐直，只是短暂地沉默
+      o.lean = -0.04;
+      o.roll = 0;
+      o.squash = 1;
+      o.headX = 0.12 * smooth(t / 1.2);
+      o.headY = 0;
+      o.eyeOpen = 0.8;
+      o.mouth = 0;
+      o.tail = 0;
+      o.face = 'normal';
+      break;
+    }
     default:
       return base;
   }
