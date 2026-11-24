@@ -217,7 +217,13 @@ export function CreatorScreen({ onAnim }: { onAnim: (a: { name: AnimName; start:
           <div className="field" style={{ marginBottom: 4 }}>
             <label>动物名字（显示在头顶）</label>
             <input className="input" value={name} maxLength={12} placeholder="例如：小橘" onChange={(e) => setName(e.target.value)} />
-            {signedIn && nicknameError(name) && <div className="small err-text" style={{ marginTop: 4 }}>{nicknameError(name)}（不会保存）</div>}
+            {nicknameError(name) && (
+              <div className="small err-text" style={{ marginTop: 4 }}>
+                {/* 游客可以在本机使用这个名字，但在线房间会改用系统分配的名字：提前告诉玩家，而不是进房间后才发现名字变了 */}
+                {nicknameError(name)}
+                {signedIn ? '（不会保存）' : '（在线房间里会显示为系统分配的名字）'}
+              </div>
+            )}
           </div>
           <div className="name-ideas">
             {NAME_IDEAS.slice(0, 8).map((n) => (

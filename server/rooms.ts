@@ -123,6 +123,18 @@ export interface RoomServerOptions {
 }
 
 const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
+/**
+ * 客户端发来的 AI 性格是否真实存在。不能用 `x in PERSONALITIES`：
+ * constructor / toString / __proto__ 这些原型链上的名字也会通过，之后读取它的名字列表时让整个请求处理失败。
+ */
+const isPersonality = (x: unknown): x is AIPersonality => typeof x === 'string' && Object.prototype.hasOwnProperty.call(PERSONALITIES, x);
+/** 游客昵称不合规时的替代名字：由玩家 ID 决定（没有 ID 时随机） */
+export function fallbackName(seed?: string): string {
+  if (!seed) return '玩家' + Math.floor(1000 + Math.random() * 9000);
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return '玩家' + (1000 + ((h >>> 0) % 9000));
+}
 const SESSION_TTL = 24 * 3600_000;
 const sessKey = (id: string) => `apc:sess:${id}`;
 
@@ -486,8 +498,6 @@ export class RoomServer {
   // ───────────── 会话 ─────────────
 
   private async hello(conn: Connection, sessionId: string | undefined, profileIn: any, userId: string | null, rotate: boolean): Promise<Session> {
-    // 登录玩家：昵称、动物、等级、头像全部来自服务器数据库，忽略客户端发来的资料
-    const profile = this.profileFor(userId, profileIn);
     const validId = typeof sessionId === 'string' && /^[A-Za-z0-9]{8,64}$/.test(sessionId);
     let s = validId ? this.sessions.get(sessionId!) : undefined;
     if (!s && validId) {
@@ -506,6 +516,10 @@ export class RoomServer {
     // 会话属于另一个账号（或账号已退出）时不能复用，防止冒用他人的座位
     if (s && s.userId && s.userId !== userId) s = undefined;
     const resumed = !!s;
+    // 登录玩家：昵称、动物、等级、头像全部来自服务器数据库，忽略客户端发来的资料。
+    // 先确定玩家 ID：游客昵称不合规时的替代名字由它决定，刷新 / 重连后保持不变
+    const playerId = s?.playerId ?? 'u_' + randomId(10);
+    const profile = this.profileFor(userId, profileIn, playerId);
     if (s) {
       s.userId = userId;
       if (s.offlineTimer) {
@@ -527,7 +541,7 @@ export class RoomServer {
       s.sent = undefined;
       s.lastRoomJson = undefined;
     } else {
-      s = { sessionId: randomId(24), userId, playerId: 'u_' + randomId(10), profile, conn, roomCode: null };
+      s = { sessionId: randomId(24), userId, playerId, profile, conn, roomCode: null };
       this.sessions.set(s.sessionId, s);
       void this.saveSession(s);
     }
@@ -653,7 +667,8 @@ export class RoomServer {
     }
   }
 
-  private profileFor(userId: string | null, p: any): PlayerProfile {
+  /** seed：玩家 ID。游客昵称不合规时用它生成固定的替代名字（同一名玩家每次重连都一样，不会一会儿一个名字） */
+  private profileFor(userId: string | null, p: any, seed?: string): PlayerProfile {
     if (userId && this.accounts) {
       try {
         return this.accounts.publicProfile(userId);
@@ -665,7 +680,7 @@ export class RoomServer {
     // 游客不能显示头像，也不能自称高等级
     clean.level = Math.min(clean.level ?? 1, 10);
     // 游客昵称同样不能冒充系统 / 管理员或包含不当内容
-    if (nicknameError(clean.name)) clean.name = '玩家' + Math.floor(1000 + Math.random() * 9000);
+    if (nicknameError(clean.name)) clean.name = fallbackName(seed);
     return clean;
   }
 
@@ -751,7 +766,7 @@ export class RoomServer {
     if (!code) {
       if (msg.t === 'action' && typeof msg.actionId === 'string') s.conn?.send({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
       else if (['ready', 'chat', 'emote', 'resync', 'pause'].includes(msg.t)) return;
-      else if (msg.t === 'updateProfile') s.profile = this.profileFor(s.userId, msg.profile);
+      else if (msg.t === 'updateProfile') s.profile = this.profileFor(s.userId, msg.profile, s.playerId);
       else err('你不在任何房间中');
       return;
     }
@@ -763,7 +778,7 @@ export class RoomServer {
         return;
       }
       case 'updateProfile':
-        s.profile = this.profileFor(s.userId, msg.profile);
+        s.profile = this.profileFor(s.userId, msg.profile, s.playerId);
         void this.saveSession(s);
         await this.mutate(code, s, (tx) => {
           const m = tx.room?.members.find((x) => x.id === s.playerId);
@@ -975,7 +990,7 @@ export class RoomServer {
     const blinds = BLIND_OPTIONS.find(([sb, bb]) => sb === Number(x.smallBlind) && bb === Number(x.bigBlind));
     if (!blinds) return null;
     const opponents = x.opponents.map((o: any) => ({
-      personality: (o?.personality in PERSONALITIES ? o.personality : 'smartCat') as AIPersonality,
+      personality: isPersonality(o?.personality) ? o.personality : 'smartCat',
       difficulty: (DIFFS.includes(o?.difficulty) ? o.difficulty : 'easy') as AIDifficulty,
       // 玩家保存的角色：名字与外观都在服务器端重新校验
       ...(o?.character && typeof o.character === 'object' ? { character: { name: this.profileFor(null, { name: o.character.name }).name, animal: sanitizeAnimal(o.character.animal) } } : {}),
@@ -984,7 +999,7 @@ export class RoomServer {
   }
 
   private pushAI(room: RoomRec, p: any, d: any, character?: { name: string; animal: PlayerProfile['animal'] }) {
-    const personality: AIPersonality = p in PERSONALITIES ? p : 'smartCat';
+    const personality: AIPersonality = isPersonality(p) ? p : 'smartCat';
     const difficulty: AIDifficulty = DIFFS.includes(d) ? d : 'normal';
     const used = new Set(room.members.map((m) => m.profile.name));
     let name = character?.name ?? AI_NAMES[personality].find((n) => !used.has(n)) ?? PERSONALITIES[personality].name + room.members.length;

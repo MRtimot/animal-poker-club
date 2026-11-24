@@ -1,4 +1,4 @@
-import { Component, Fragment, ReactNode, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo } from 'react';
+import { Component, Fragment, ReactNode, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ErrorInfo, type LazyExoticComponent } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -44,15 +44,53 @@ const loadLobby = () => import('./ui/lobby/RoomLobby');
 const loadCollection = () => import('./ui/collection/CollectionScreen');
 const loadSettings = () => import('./ui/settings/SettingsScreen');
 const loadPostFX = () => import('./three/PostFX');
-const GameScene = lazy(() => loadGameScene().then((m) => ({ default: m.GameScene })));
-const GameHUD = lazy(() => loadGameHUD().then((m) => ({ default: m.GameHUD })));
-const CreatorScreen = lazy(() => loadCreator().then((m) => ({ default: m.CreatorScreen })));
-const HubScreen = lazy(() => loadHub().then((m) => ({ default: m.HubScreen })));
-const OnlineScreen = lazy(() => loadOnline().then((m) => ({ default: m.OnlineScreen })));
-const RoomLobby = lazy(() => loadLobby().then((m) => ({ default: m.RoomLobby })));
-const CollectionScreen = lazy(() => loadCollection().then((m) => ({ default: m.CollectionScreen })));
-const SettingsScreen = lazy(() => loadSettings().then((m) => ({ default: m.SettingsScreen })));
-const PostFXLazy = lazy(loadPostFX);
+/** 是否是“页面代码下载失败”（网络问题），而不是代码或显卡出错（各浏览器的提示不同） */
+function isLoadError(message: string): boolean {
+  return /dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk|Failed to fetch/i.test(message);
+}
+
+/** 下载失败、等待重新下载的页面代码（错误边界恢复时统一换成新的加载器） */
+const failedLoads = new Set<() => void>();
+/** 错误边界恢复（切换页面、点“重试” / “返回首页”）时调用：之前下载失败的页面代码下次显示时重新下载 */
+function retryFailedLoads() {
+  for (const reset of failedLoads) reset();
+  failedLoads.clear();
+}
+
+/**
+ * 可以重试的按需加载：React.lazy 会永远记住第一次下载失败（手机网络抖动一下，之后整个页面会话里
+ * 牌桌 3D / 这个页面都无法再显示，只能刷新网页）。
+ * 下载失败时只做记录，不立即换新的加载器：React 出错后会马上再渲染一次，那时如果已经换成新的加载器，
+ * 就会立刻重新下载、再失败、再下载……（无限请求，错误界面也出不来）。
+ * 只有错误边界真正恢复时（retryFailedLoads）才换新的加载器；浏览器会重新请求失败的模块。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyRetry<C extends ComponentType<any>>(load: () => Promise<{ default: C }>): C {
+  const make = (): LazyExoticComponent<C> =>
+    lazy(async () => {
+      try {
+        return await load();
+      } catch (e) {
+        failedLoads.add(() => (current = make()));
+        throw e;
+      }
+    });
+  let current = make();
+  const LazyRetry = (props: ComponentProps<C>) => {
+    const L = current as unknown as ComponentType<ComponentProps<C>>;
+    return <L {...props} />;
+  };
+  return LazyRetry as unknown as C;
+}
+const GameScene = lazyRetry(() => loadGameScene().then((m) => ({ default: m.GameScene })));
+const GameHUD = lazyRetry(() => loadGameHUD().then((m) => ({ default: m.GameHUD })));
+const CreatorScreen = lazyRetry(() => loadCreator().then((m) => ({ default: m.CreatorScreen })));
+const HubScreen = lazyRetry(() => loadHub().then((m) => ({ default: m.HubScreen })));
+const OnlineScreen = lazyRetry(() => loadOnline().then((m) => ({ default: m.OnlineScreen })));
+const RoomLobby = lazyRetry(() => loadLobby().then((m) => ({ default: m.RoomLobby })));
+const CollectionScreen = lazyRetry(() => loadCollection().then((m) => ({ default: m.CollectionScreen })));
+const SettingsScreen = lazyRetry(() => loadSettings().then((m) => ({ default: m.SettingsScreen })));
+const PostFXLazy = lazyRetry(loadPostFX);
 
 /** 首屏完成后，在浏览器空闲时预取其他页面的代码（失败也没关系，真正进入时会重试） */
 function prefetchScreens() {
@@ -178,19 +216,29 @@ class SceneErrorBoundary extends Component<{ children: ReactNode; resetKey: stri
     this.props.onError();
   }
   componentDidUpdate(prev: { resetKey: string }) {
-    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
+    if (this.state.error && prev.resetKey !== this.props.resetKey) {
+      retryFailedLoads();
+      this.setState({ error: null });
+    }
   }
   render() {
     if (this.state.error)
       return (
-        <div className="webgl-fallback" role="status">
-          <div className="webgl-fallback-note">
+        <>
+          <div className="webgl-fallback" aria-hidden />
+          {/* 提示不能放在背景里面：背景是固定定位的全屏层，会把提示压在整个界面层（牌桌操作栏、页面）下面，“重试”按不到 */}
+          <div className={`webgl-fallback-note${this.props.resetKey === 'game' ? ' in-game' : ''}`} role="status">
             <b>😿 3D 场景无法显示</b>
-            <span>浏览器可能不支持 WebGL 或显卡驱动有问题。页面其他功能仍可使用；也可以在设置中把画质调到「低」后重试。</span>
+            <span>
+              {isLoadError(this.state.error)
+                ? '3D 画面没有下载完成，可能是网络不稳定。页面其他功能仍可使用，网络恢复后点“重试”。'
+                : '浏览器可能不支持 WebGL 或显卡驱动有问题。页面其他功能仍可使用；也可以在设置中把画质调到「低」后重试。'}
+            </span>
             <Btn
               size="sm"
               kind="ghost"
               onClick={() => {
+                retryFailedLoads();
                 this.setState({ error: null });
                 this.props.onRetry();
               }}
@@ -198,7 +246,7 @@ class SceneErrorBoundary extends Component<{ children: ReactNode; resetKey: stri
               重试
             </Btn>
           </div>
-        </div>
+        </>
       );
     return this.props.children;
   }
@@ -217,7 +265,10 @@ class ScreenErrorBoundary extends Component<{ children: ReactNode; screen: Scree
     console.error(`[界面] 「${this.props.screen}」页面出错：`, e, info.componentStack);
   }
   componentDidUpdate(prev: { screen: Screen }) {
-    if (this.state.error && prev.screen !== this.props.screen) this.setState({ error: null });
+    if (this.state.error && prev.screen !== this.props.screen) {
+      retryFailedLoads();
+      this.setState({ error: null });
+    }
   }
   render() {
     if (!this.state.error) return this.props.children;
@@ -230,6 +281,7 @@ class ScreenErrorBoundary extends Component<{ children: ReactNode; screen: Scree
           <Btn
             onClick={() => {
               session.leave('home');
+              retryFailedLoads();
               this.setState({ error: null });
             }}
           >
@@ -281,6 +333,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: stri
           <Btn
             onClick={() => {
               session.leave('home');
+              retryFailedLoads();
               this.setState((s) => ({ error: null, generation: s.generation + 1 }));
             }}
           >

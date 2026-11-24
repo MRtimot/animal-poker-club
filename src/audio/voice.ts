@@ -218,8 +218,11 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
     this.current = job;
     const r = this.resolve(job.profile, job.opts.emotion);
     if (!r.voice || !job.plan.segments.length) {
+      // 这一句无法朗读（只显示字幕）：继续播放排在后面的台词，否则它们会一直卡在队列里
       this.current = null;
       job.resolve('text-only');
+      const next = this.queue.shift();
+      if (next) this.play(next);
       return;
     }
     const v = r.voice;

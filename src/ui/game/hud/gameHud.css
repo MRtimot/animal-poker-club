@@ -497,6 +497,12 @@
   font-size: 9px;
   opacity: 0.45;
 }
+/* 快捷键提示只对有键盘的电脑有用：触屏手机 / 平板（包括横屏、宽度超过 760px 的手机）不显示 */
+@media (hover: none) and (pointer: coarse) {
+  .act kbd {
+    display: none;
+  }
+}
 .act-fold {
   color: #ffd6cf;
   border-color: rgba(226, 83, 63, 0.35);

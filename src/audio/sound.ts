@@ -529,6 +529,9 @@ class SoundEngine {
       this.intensityUntil = 0;
     }
     this.intensity += (Math.max(this.baseIntensity, this.intensityTarget) - this.intensity) * 0.08;
+    // 计时器被浏览器延后（标签页在后台、系统休眠后恢复）：跳过已经错过的音符，
+    // 不能把错过的几秒、几分钟的音符一次性补上（会瞬间同时响起一大串声音，也会创建大量声音节点）
+    if (this.nextNoteTime < ctx.currentTime - 0.05) this.nextNoteTime = ctx.currentTime + 0.05;
     while (this.nextNoteTime < ctx.currentTime + 0.4) {
       const t = this.nextNoteTime;
       const step = this.musicStep;
