@@ -19,6 +19,8 @@ import { WinnerPresentation } from './hud/WinnerPresentation';
 import { HandFeed } from './hud/HandFeed';
 import './hud/gameHud.css';
 import { haptic } from '../../display/haptics';
+import { DefeatOverlay } from './hud/DefeatOverlay';
+import { defeatActive, useDefeat } from '../../animation/defeat/defeatStore';
 
 /** 屏幕中央的大字提示：全押！/ 翻牌 / 转牌 / 河牌 / 平局！ */
 function Announcer() {
@@ -61,15 +63,17 @@ function GameOver({ view }: { view: TableView }) {
   const playerId = useGame((s) => s.playerId);
   const go = view.gameOver;
   const [show, setShow] = useState(false);
+  // 失败演出进行中：先让演出（包括“出局”画面）播完，再显示结算
+  const defeatOn = useDefeat((s) => s.seq !== null);
   useEffect(() => {
     if (!go) return setShow(false);
     const t = setTimeout(() => {
       setShow(true);
-      sound.play(go.winnerId === view.viewerId ? 'win' : 'lose');
+      if (!defeatActive()) sound.play(go.winnerId === view.viewerId ? 'win' : 'lose');
     }, 1500);
     return () => clearTimeout(t);
   }, [!!go]); // eslint-disable-line
-  if (!go || !show) return null;
+  if (!go || !show || defeatOn) return null;
   const meWon = go.winnerId === view.viewerId;
   const isHost = room?.hostId === playerId;
   const medal = (n: number) => (n === 1 ? '🥇' : n === 2 ? '🥈' : n === 3 ? '🥉' : `${n}`);
@@ -227,6 +231,8 @@ export function GameHUD({ view }: { view: TableView }) {
       <Announcer />
       <NextHandCountdown view={view} />
       <GameOver view={view} />
+      {/* 失败演出的画面层（遮幅、闪光、黑屏、“出局”画面） */}
+      <DefeatOverlay view={view} />
       <Tutorial />
       {rules && <RulesModal onClose={() => setRules(false)} />}
       {settings && (

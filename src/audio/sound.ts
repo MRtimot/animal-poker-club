@@ -21,6 +21,10 @@ class SoundEngine {
   /** 当前音效的输出节点（空间音频时指向声像器） */
   private out: AudioNode | null = null;
   private reverbSend!: GainNode;
+  /** 电影化演出（失败演出）的专用声音通道：不受牌桌音效压低的影响，音量跟随“音效”设置 */
+  cine!: GainNode;
+  /** 演出期间的混音倍率（音乐 / 环境声 / 牌桌音效）；1 = 正常。duck() 的恢复也会遵守它，避免演出中途被“恢复”成正常音量 */
+  private mixMul = { music: 1, ambient: 1, sfx: 1 };
   /** 音乐紧张度 0~1：正常 → 大底池 → 全押 / 摊牌 */
   private intensity = 0;
   private intensityTarget = 0;
@@ -46,6 +50,8 @@ class SoundEngine {
     this.music = ctx.createGain();
     this.ambient = ctx.createGain();
     this.sfx.connect(this.master);
+    this.cine = ctx.createGain();
+    this.cine.connect(this.master);
     this.music.connect(this.master);
     this.ambient.connect(this.master);
     // 房间混响：用衰减噪声合成的脉冲响应（小型木质房间）
@@ -66,6 +72,7 @@ class SoundEngine {
     this.reverbSend = ctx.createGain();
     this.reverbSend.gain.value = 0.16;
     this.sfx.connect(this.reverbSend);
+    this.cine.connect(this.reverbSend);
     this.reverbSend.connect(conv).connect(damp).connect(this.master);
     this.applyVolumes();
     // 噪声缓冲
@@ -80,9 +87,142 @@ class SoundEngine {
     if (!this.ctx) return;
     const s = useSettings.getState();
     const t = this.ctx.currentTime;
-    this.sfx.gain.setTargetAtTime(s.sfxVolume, t, 0.05);
-    this.music.gain.setTargetAtTime(s.musicVolume * 0.5, t, 0.2);
-    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6, t, 0.2);
+    const m = this.mixMul;
+    this.sfx.gain.setTargetAtTime(s.sfxVolume * m.sfx, t, 0.05);
+    this.cine.gain.setTargetAtTime(s.sfxVolume, t, 0.05);
+    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * m.music, t, 0.2);
+    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * m.ambient, t, 0.2);
+  }
+
+  /**
+   * 演出混音：把音乐 / 环境声 / 牌桌音效分别压到指定倍率（tc 为过渡时间常数，秒）。
+   * 例如紧张阶段 music 0.4（约 -8 dB）、ambient 0.25（约 -12 dB）、sfx 0.18（约 -15 dB）。
+   */
+  setMix(m: { music: number; ambient: number; sfx: number }, tc = 0.35) {
+    this.mixMul = { ...m };
+    if (!this.ctx) return;
+    const s = useSettings.getState();
+    const t = this.ctx.currentTime;
+    this.sfx.gain.setTargetAtTime(s.sfxVolume * m.sfx, t, tc);
+    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * m.music, t, tc);
+    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * m.ambient, t, tc);
+  }
+
+  /** 恢复正常混音（演出结束 / 被打断时一定会调用） */
+  resetMix(tc = 0.6) {
+    this.setMix({ music: 1, ambient: 1, sfx: 1 }, tc);
+    if (this.ctx && this.reverbSend) this.reverbSend.gain.setTargetAtTime(0.16, this.ctx.currentTime, 0.3);
+  }
+
+  // ───────── 失败演出的合成声音（全部走 cine 通道） ─────────
+
+  /** 心跳：“咚—咚”，strength 越大越重 */
+  cineHeartbeat(strength = 1, delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    const v = Math.min(1.4, strength);
+    this.tone(64, t, 0.2, { type: 'sine', vol: 0.42 * v, attack: 0.008, glide: 40, dest: this.cine });
+    this.noise(t, 0.08, { freq: 140, q: 0.7, type: 'lowpass', vol: 0.22 * v, dest: this.cine });
+    this.tone(56, t + 0.17, 0.16, { type: 'sine', vol: 0.3 * v, attack: 0.008, glide: 36, dest: this.cine });
+  }
+
+  /** 呼吸：gasp = 倒吸一口气；shaky = 发抖的呼吸 */
+  cineBreath(kind: 'gasp' | 'shaky', delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    if (kind === 'gasp') {
+      this.noise(t, 0.34, { freq: 1500, q: 1.4, vol: 0.07, attack: 0.09, dest: this.cine });
+      this.noise(t + 0.02, 0.28, { freq: 3200, q: 2, vol: 0.025, attack: 0.08, dest: this.cine });
+    } else {
+      for (let i = 0; i < 3; i++) this.noise(t + i * 0.55, 0.42, { freq: 900 + i * 80, q: 1.1, vol: 0.035, attack: 0.18, dest: this.cine });
+    }
+  }
+
+  /** 紧张的低频铺底（返回 stop：演出结束 / 被打断时一定会停止） */
+  cineDrone(): { stop: (fade?: number) => void } {
+    if (!this.ctx || this.ctx.state !== 'running') return { stop: () => undefined };
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.11, t + 1.6);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 260;
+    const oscs = [49, 49.7, 73.4].map((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = i === 2 ? 'triangle' : 'sawtooth';
+      o.frequency.value = f;
+      o.connect(lp);
+      o.start(t);
+      return o;
+    });
+    lp.connect(g).connect(this.cine);
+    let stopped = false;
+    return {
+      stop: (fade = 0.12) => {
+        if (stopped || !this.ctx) return;
+        stopped = true;
+        const n = this.ctx.currentTime;
+        g.gain.cancelScheduledValues(n);
+        g.gain.setTargetAtTime(0.0001, n, fade);
+        for (const o of oscs) o.stop(n + fade * 6 + 0.05);
+        window.setTimeout(() => {
+          try {
+            g.disconnect();
+            lp.disconnect();
+          } catch {
+            /* 已断开 */
+          }
+        }, (fade * 6 + 0.3) * 1000);
+      },
+    };
+  }
+
+  /**
+   * 冲击：多层叠加——低频重击 + 瞬态 + 房间里的物体反应 + 牌与筹码 + 房间混响尾音。
+   * power：完整版 1，简短版更轻
+   */
+  cineImpact(power = 1) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+    const c = this.cine;
+    // 1. 低频重击（很长的下滑）
+    this.tone(52, t, 1.7, { type: 'sine', vol: 0.95 * power, attack: 0.004, glide: 22, dest: c });
+    this.tone(104, t, 0.32, { type: 'triangle', vol: 0.4 * power, attack: 0.002, glide: 38, dest: c });
+    // 2. 瞬态（爆裂的“啪”）
+    this.noise(t, 0.07, { freq: 2600, q: 0.6, type: 'highpass', vol: 0.55 * power, dest: c });
+    this.noise(t, 0.26, { freq: 850, q: 0.8, vol: 0.42 * power, dest: c });
+    this.tone(1900, t, 0.05, { type: 'square', vol: 0.05 * power, glide: 320, dest: c });
+    // 3. 房间里的物体：玻璃杯、吊灯、木头的零碎反应
+    for (let i = 0; i < 9; i++) {
+      const d = 0.05 + Math.random() * 0.75;
+      this.noise(t + d, 0.04 + Math.random() * 0.06, { freq: 2200 + Math.random() * 4200, q: 6, vol: (0.03 + Math.random() * 0.04) * power, dest: c });
+    }
+    this.noise(t + 0.03, 0.9, { freq: 320, q: 7, vol: 0.06 * power, dest: c, attack: 0.02 });
+    // 4. 牌与筹码落下
+    for (let i = 0; i < 6; i++) this.tone(2400 + Math.random() * 1600, t + 0.45 + i * 0.09 + Math.random() * 0.05, 0.05, { type: 'triangle', vol: 0.03 * power, dest: c });
+    this.noise(t + 0.6, 0.5, { freq: 4200, q: 1.5, vol: 0.03 * power, attack: 0.05, dest: c });
+    // 5. 房间混响尾音：整个房间都听到了，然后很快恢复
+    if (this.reverbSend) {
+      this.reverbSend.gain.cancelScheduledValues(t);
+      this.reverbSend.gain.setValueAtTime(0.16 + 0.5 * power, t);
+      this.reverbSend.gain.setTargetAtTime(0.16, t + 0.35, 0.45);
+    }
+  }
+
+  /** “出局”画面出现时的低沉和弦（克制，不是街机式的失败音效） */
+  cineSting(delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    [[98, 0.09], [116.5, 0.05], [146.8, 0.05], [196, 0.025]].forEach(([f, v], i) => this.tone(f, t + i * 0.05, 3.2, { type: 'sine', vol: v, attack: 0.4, dest: this.cine }));
+  }
+
+  /** 冲击后耳鸣般的高频余音（非常轻，几秒内消失） */
+  cineRing(delay = 0) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime + delay;
+    this.tone(3150, t, 2.6, { type: 'sine', vol: 0.012, attack: 0.25, dest: this.cine });
   }
 
   /** 河牌等关键时刻：音乐与环境声短暂降低，然后恢复 */
@@ -90,8 +230,8 @@ class SoundEngine {
     if (!this.ctx) return;
     const s = useSettings.getState();
     const t = this.ctx.currentTime;
-    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * level, t, 0.15);
-    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * level, t, 0.15);
+    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * level * this.mixMul.music, t, 0.15);
+    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * level * this.mixMul.ambient, t, 0.15);
     window.setTimeout(() => this.applyVolumes(), ms);
   }
 
@@ -269,8 +409,9 @@ class SoundEngine {
   }
 
   /** 合成的动物叫声 */
-  animal(species: Species, mood: 'happy' | 'sad' | 'neutral' = 'neutral', delay = 0) {
+  animal(species: Species, mood: 'happy' | 'sad' | 'neutral' = 'neutral', delay = 0, bus: 'sfx' | 'cine' = 'sfx') {
     if (!this.ctx || this.ctx.state !== 'running') return;
+    const dest = bus === 'cine' ? this.cine : this.sfx;
     const t = this.ctx.currentTime + delay;
     const m = mood === 'happy' ? 1.15 : mood === 'sad' ? 0.85 : 1;
     const voice = (f0: number, f1: number, f2: number, dur: number, type: OscillatorType = 'sawtooth', vol = 0.06) => {
@@ -287,7 +428,7 @@ class SoundEngine {
       filt.frequency.exponentialRampToValueAtTime(f1 * 4, t + dur * 0.5);
       filt.Q.value = 2;
       this.env(g, t, 0.03, vol, dur);
-      o.connect(filt).connect(g).connect(this.sfx);
+      o.connect(filt).connect(g).connect(dest);
       o.start(t);
       o.stop(t + dur + 0.1);
     };
@@ -328,7 +469,7 @@ class SoundEngine {
         break;
       case 'dragon':
         voice(90, 140, 60, 0.9, 'sawtooth', 0.1);
-        this.noise(t, 0.8, { freq: 600, q: 0.5, vol: 0.1, attack: 0.1 });
+        this.noise(t, 0.8, { freq: 600, q: 0.5, vol: 0.1, attack: 0.1, dest });
         break;
       default:
         voice(250, 330, 200, 0.35, 'sawtooth', 0.07);

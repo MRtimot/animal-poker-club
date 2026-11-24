@@ -7,6 +7,7 @@ import { sound } from '../../audio/sound';
 import { DUR, STAGGER, clamp01, ease, settle } from '../../animation/motion';
 import { shadowGeo, shadowMaterial } from '../realism';
 import { TABLE_Y } from '../layout';
+import { tableJolt } from '../../animation/defeat/defeatStore';
 
 /** 赌场筹码配色（低饱和、接近真实粘土筹码） */
 export const DENOMS: { value: number; color: string; label: string }[] = [
@@ -171,9 +172,14 @@ export function ChipPile({ amount, position, delay = DUR.chipFlight + 120, layou
   }, [shown]);
   useFrame(() => {
     if (!ref.current) return;
-    const t = (performance.now() - pop.current) / 1000;
+    const now = performance.now();
+    const t = (now - pop.current) / 1000;
     const k = t < 0.5 ? settle(t, 0.04, 26, 10) : 0;
     ref.current.scale.set(1, 1 + k, 1);
+    // 失败演出的冲击：筹码堆震动、滑开一点再滑回（只是画面，筹码数量不变）
+    const j = tableJolt(position[0], position[2], now, position[0] * 5.3 + position[2] * 2.1);
+    ref.current.position.set(position[0] + j.dx, position[1] + j.lift * 0.35, position[2] + j.dz);
+    ref.current.rotation.set(j.rx * 0.25, rotY, j.rz * 0.25);
   });
   if (shown <= 0) return null;
   return (

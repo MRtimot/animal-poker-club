@@ -21,6 +21,10 @@ import { BetTag, PotPlaque, SeatPlate, TableStatus } from './SeatHud';
 import { TableMarkings, TurnGlow } from '../environment/TableMarkings';
 import { eventShown, presentedBets } from '../../ui/game/hud/model';
 import { sound } from '../../audio/sound';
+import { useDefeat } from '../../animation/defeat/defeatStore';
+import { DefeatFX, DefeatWarmup } from '../effects/DefeatFX';
+import { DEFEAT_ISOLATE } from '../effects/DefeatFX';
+import { FACE_DROP } from '../camera/defeatCamera';
 
 interface RetireCard {
   key: string;
@@ -44,6 +48,17 @@ export function holeTarget(p: SeatView, layout: SeatLayout, i: number): { pos: V
         layout.cards[2] + tangent[1] * side * spread,
       ];
   return { pos, yaw: layout.angle + (p.folded ? 0.6 + i * 0.4 : side * 0.06), tilt: layout.isViewer && !p.folded ? 0.55 : 0 };
+}
+
+/** 从某个座位看向另一个座位需要转头的角度（相对于正对牌桌中心） */
+function yawToward(from: SeatLayout, to: SeatLayout): number {
+  const fx = -Math.sin(from.angle);
+  const fz = -Math.cos(from.angle);
+  const rx = -Math.cos(from.angle);
+  const rz = Math.sin(from.angle);
+  const dx = to.seat[0] - from.seat[0];
+  const dz = to.seat[2] - from.seat[2];
+  return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
 }
 
 const HOP: Partial<Record<Species, boolean>> = { rabbit: true, frog: true, monkey: true };
@@ -144,6 +159,17 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, deal
 }) {
   const rotY = layout.angle + Math.PI;
   const thinking = view.currentPlayerId === p.id;
+  // 失败演出：其他动物一个接一个转头看向输家；输家看向赢家。出局的输家在演出结束前继续显示
+  const dseq = useDefeat((s) => s.seq);
+  const defeatLook = useMemo(() => {
+    if (!dseq) return null;
+    const targetId = p.id === dseq.loserId ? dseq.winnerId : dseq.loserId;
+    const from = p.id === dseq.loserId ? dseq.at.realize : dseq.lookers[p.id];
+    const t = targetId ? allLayout.get(targetId) : undefined;
+    if (!t || from === undefined) return null;
+    return { yaw: yawToward(layout, t), from };
+  }, [dseq, p.id, layout, allLayout]);
+  const keepVisible = !!dseq && dseq.loserId === p.id;
   const showdown = view.phase === 'showdown' || view.phase === 'complete';
   // 摊牌时按顺序逐个亮牌
   const showOrder = Math.max(0, showdownOrder.indexOf(p.id));
@@ -151,13 +177,7 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, deal
   const lookYaw = useMemo(() => {
     const cur = view.currentPlayerId && view.currentPlayerId !== p.id ? allLayout.get(view.currentPlayerId) : undefined;
     if (!cur) return null;
-    const fx = -Math.sin(layout.angle);
-    const fz = -Math.cos(layout.angle);
-    const rx = -Math.cos(layout.angle);
-    const rz = Math.sin(layout.angle);
-    const dx = cur.seat[0] - layout.seat[0];
-    const dz = cur.seat[2] - layout.seat[2];
-    return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+    return yawToward(layout, cur);
   }, [view.currentPlayerId, p.id, layout, allLayout]);
   return (
     <group>
@@ -169,8 +189,8 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, deal
         chair={<Chair position={[layout.seat[0], 0, layout.seat[2]]} rotY={rotY} />}
       >
         <group position={layout.seat} rotation={[0, rotY, 0]}>
-          {!p.busted && !p.sittingOut && (
-            <AnimalModel config={p.profile.animal} animKey={p.id} seated folded={p.folded} thinking={thinking} seed={seedIndex} lookYaw={lookYaw} />
+          {(!p.busted || keepVisible) && !p.sittingOut && (
+            <AnimalModel config={p.profile.animal} animKey={p.id} seated folded={p.folded} thinking={thinking} seed={seedIndex} lookYaw={lookYaw} defeatLook={defeatLook} />
           )}
         </group>
       </SeatEntrance>
@@ -285,7 +305,25 @@ function WinnerLight({ layout }: { layout: Map<string, SeatLayout> }) {
   const light = useRef<THREE.SpotLight>(null!);
   const target = useMemo(() => new THREE.Object3D(), []);
   const level = useRef(0);
+  const warm = useMemo(() => new THREE.Color('#ffe2b0'), []);
+  const cool = useMemo(() => new THREE.Color('#dfe6ff'), []);
+  const coolK = useRef(0);
   useFrame((_, dt) => {
+    // 失败演出：这盏聚光灯改为从输家头顶打下的冷色光，把输家从变暗的房间里孤立出来；
+    // 演出期间一直保持“可见”（只改亮度），避免显示 / 隐藏灯光造成所有材质重新编译而卡顿
+    const d = useDefeat.getState();
+    const loser = d.seq && d.phase && d.phase !== 'recover' ? layout.get(d.seq.loserId) : undefined;
+    coolK.current = damp(coolK.current, loser ? 1 : 0, 3, dt);
+    if (loser) {
+      const want = (DEFEAT_ISOLATE[d.phase!] ?? 0.05) * (d.seq!.cut === 'short' ? 0.6 : 1);
+      level.current = damp(level.current, want, 2.4, dt);
+      target.position.set(loser.head[0], loser.head[1] - FACE_DROP - 0.2, loser.head[2]);
+      light.current.position.set(loser.seat[0] * 0.92, 6.6, loser.seat[2] * 0.92);
+      light.current.color.lerpColors(warm, cool, coolK.current);
+      light.current.intensity = level.current * 60;
+      light.current.visible = true;
+      return;
+    }
     const cue = useFx.getState().cue;
     const seat = cue && cue.type === 'win' && cue.playerId ? layout.get(cue.playerId) : undefined;
     const t = cue ? (performance.now() - cue.start) / cue.duration : 1;
@@ -295,6 +333,7 @@ function WinnerLight({ layout }: { layout: Map<string, SeatLayout> }) {
       target.position.set(seat.seat[0], 1.6, seat.seat[2]);
       light.current.position.set(seat.seat[0] * 0.35, 7.2, seat.seat[2] * 0.35);
     }
+    light.current.color.lerpColors(warm, cool, coolK.current);
     light.current.intensity = level.current * 70;
     light.current.visible = level.current > 0.01;
   });
@@ -442,6 +481,9 @@ export function GameScene({ view }: { view: TableView }) {
       <ChipFlights />
       <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />
       <DealerButton layout={view.dealerId ? layout.get(view.dealerId) : undefined} />
+      {/* 失败演出的灯光、烟雾与粒子（只在演出期间挂载） */}
+      <DefeatFX layout={layout} />
+      <DefeatWarmup />
       <CameraRig mode={cameraMode} layout={layout} />
     </>
   );

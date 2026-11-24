@@ -14,6 +14,8 @@ import { dialogueAllowed, playDialogue } from './dialoguePlayback';
 import { useGame } from '../store/gameStore';
 import { EMOTE_ANIM } from './animalAnimations';
 import type { ChatMessage } from '../core/protocol';
+import { defeatVerdict } from './defeat/defeatRules';
+import { defeatActive } from './defeat/defeatStore';
 
 const GAP: Partial<Record<GameEvent['type'], number>> = {
   handStart: 200,
@@ -284,6 +286,8 @@ export function useTableDirector(view: TableView | null) {
           for (const sh of view.summary?.shown ?? []) if (winners.has(sh.playerId)) best = Math.max(best, sh.category);
           const tier = e.uncontested ? -1 : best >= 9 ? 5 : best >= 8 ? 4 : best >= 7 ? 3 : best >= 4 ? 2 : best >= 2 ? 1 : 0;
           const bestName = view.summary?.shown.find((sh) => winners.has(sh.playerId) && sh.category === best)?.handName;
+          // 自己输掉了关键一手：由失败演出接管自己的反应与声音（这里不再播放普通的“输了”动作和音效）
+          const defeatPlanned = !!defeatVerdict(view, winners, e.uncontested);
           at(() => {
             let biggest = e.awards[0];
             for (const a of e.awards) if (a.amount > (biggest?.amount ?? 0)) biggest = a;
@@ -335,6 +339,7 @@ export function useTableDirector(view: TableView | null) {
               for (const p of view.players) {
                 if (winners.has(p.id) || !p.inHand) continue;
                 if (!p.folded) {
+                  if (p.id === viewer && defeatPlanned) continue;
                   timers.later(() => {
                     play(p.id, 'lose');
                     mood(p.id, '😨', 'wide', 1400);
@@ -350,7 +355,7 @@ export function useTableDirector(view: TableView | null) {
               if (me) sound.animal(me.profile.animal.species, 'happy', 0.4 + payoutDelay / 1000);
             } else if (tier >= 5) {
               timers.later(() => sound.play('royal'), payoutDelay);
-            } else if (me && me.inHand && !me.folded && showdownHappened) {
+            } else if (me && me.inHand && !me.folded && showdownHappened && !defeatPlanned) {
               sound.play('lose');
             } else {
               const l = biggest ? layout.get(biggest.playerId) : undefined;
@@ -389,6 +394,8 @@ export function useChatReactions(view: TableView | null) {
       if (m.kind === 'system') continue;
       // 角色台词：由服务器决定，所有客户端同步播放（本地语音 + 说话动画）
       if (m.dialogue) {
+        // 失败演出进行中：保持安静（只是不在本机播放，不影响其他玩家）
+        if (defeatActive()) continue;
         // 重连 / 收到历史记录时不重播旧台词
         const age = Date.now() + (g.mode === 'online' ? g.clockOffset : 0) - m.time;
         if (age > 6000 || !dialogueAllowed(m.dialogue)) continue;

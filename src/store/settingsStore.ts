@@ -43,6 +43,8 @@ export interface SettingsState {
   fullscreenPreference: FullscreenPreference;
   /** 手机触感反馈（震动），只在支持的浏览器上生效 */
   haptics: boolean;
+  /** 已经完整看过一次失败演出：之后允许跳过（只跳过画面，牌局结果不变） */
+  defeatSeen: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -107,6 +109,7 @@ export const useSettings = create<SettingsState>()(
       subtitles: true,
       fullscreenPreference: 'auto',
       haptics: true,
+      defeatSeen: false,
       set: (patch) => set(patch),
     }),
     {
@@ -140,6 +143,7 @@ export const useSettings = create<SettingsState>()(
           subtitles: bool(p.subtitles, current.subtitles),
           fullscreenPreference: (['auto', 'on', 'off'] as const).includes(p.fullscreenPreference) ? p.fullscreenPreference : current.fullscreenPreference,
           haptics: bool(p.haptics, current.haptics),
+          defeatSeen: bool(p.defeatSeen, current.defeatSeen),
         };
       },
     },

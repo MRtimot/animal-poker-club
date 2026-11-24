@@ -400,6 +400,246 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       o.armRZ = 0.15 * k;
       break;
     }
+    // ───────── 失败演出（animation/defeat）：卡通式的夸张反应，没有任何伤口或血腥画面 ─────────
+    case 'realizeDisbelief': {
+      // 傲慢：先愣住，慢慢摇头不相信，最后低下头
+      o.eyeOpen = t < 0.6 ? 1.3 : 1;
+      o.mouth = t < 0.6 ? 0.15 : 0.05;
+      o.face = t < 0.6 ? 'wide' : t < 1.9 ? 'doubt' : 'sad';
+      o.roll = 0;
+      o.headY = t > 0.6 && t < 1.9 ? Math.sin((t - 0.6) * 5) * 0.26 * (1 - (t - 0.6) / 1.5) : 0;
+      o.headX = lerp(-0.05, 0.36, smooth((t - 1.8) / 0.9));
+      o.lean = lerp(-0.08, 0.06, smooth((t - 1.8) / 0.9));
+      o.tail = 0;
+      break;
+    }
+    case 'realizePanic': {
+      // 紧张：急促呼吸，左右张望，双手护在脸前，微微发抖
+      o.squash = 1 + Math.sin(t * 14) * 0.035;
+      o.headY = Math.sin(t * 6.5) * 0.42 * (1 - smooth((t - 2) / 0.8));
+      o.headX = -0.05;
+      o.roll = Math.sin(t * 38) * 0.022;
+      o.eyeOpen = 1.4;
+      o.mouth = 0.35 + Math.sin(t * 14) * 0.15;
+      o.armLX = o.armRX = -1.65;
+      o.armLZ = 0.45;
+      o.armRZ = -0.45;
+      o.ear = 1.2;
+      o.face = 'wide';
+      break;
+    }
+    case 'realizeFade': {
+      // 爱玩：还带着得意的笑 → 笑容僵住 → 慢慢消失
+      const k = smooth((t - 0.8) / 0.8);
+      o.face = t < 0.8 ? 'smug' : t < 1.6 ? 'wide' : 'sad';
+      o.mouth = t < 0.8 ? 0.2 : lerp(0.3, 0, smooth((t - 1.6) / 0.6));
+      o.headZ = 0.15 * k;
+      o.headX = lerp(0, 0.3, smooth((t - 1.6) / 0.9));
+      o.lean = lerp(-0.05, 0.04, k);
+      o.squash = lerp(1, 0.96, smooth((t - 1.6) / 0.9));
+      break;
+    }
+    case 'realizeAccept': {
+      // 冷静：长长地呼一口气，慢慢闭眼、低头，接受结果
+      const k = smooth((t - 0.3) / 1.4);
+      o.squash = lerp(1, 0.93, k);
+      o.headX = lerp(0, 0.4, k) + Math.sin(clamp01((t - 2.1) / 0.5) * Math.PI) * 0.08;
+      o.eyeOpen = lerp(1, 0.25, k);
+      o.lean = lerp(0, 0.06, k);
+      o.roll = 0;
+      o.tail = 0;
+      o.face = 'sad';
+      break;
+    }
+    case 'realizeAnger': {
+      // 好斗：身体前倾、握紧拳头发抖，最后一拳砸在桌上
+      const slam = t > 1.8 && t < 2.3 ? Math.sin(((t - 1.8) / 0.5) * Math.PI) : 0;
+      o.lean = 0.18;
+      o.headX = 0.1;
+      o.roll = Math.sin(t * 30) * 0.02;
+      o.armLX = o.armRX = restX - 0.35 + (t > 1.8 ? Math.min(1, (t - 1.8) / 0.12) * 0.4 : 0);
+      o.y = slam * 0.06;
+      o.mouth = 0.25;
+      o.face = 'angry';
+      o.tail = Math.sin(t * 14) * 0.5;
+      break;
+    }
+    case 'collapseSlump':
+    case 'collapseFaint':
+    case 'collapseDignified':
+    case 'collapseRage':
+    case 'collapseDrama':
+    case 'collapseAnnoyed':
+    case 'collapseEmbarrassed': {
+      // 冲击瞬间：所有动物都先被震得后仰（双手张开、眼睛瞪大）
+      const rec = t < 0.35 ? Math.sin((t / 0.35) * Math.PI) : 0;
+      o.lean = -0.35 * rec;
+      o.y = 0.12 * rec;
+      o.armLZ = 1.2 * rec + (1 - rec) * base.armLZ;
+      o.armRZ = -1.2 * rec + (1 - rec) * base.armRZ;
+      o.armLX = o.armRX = lerp(restX, -1.6, rec);
+      o.eyeOpen = 1.5;
+      o.mouth = rec;
+      o.face = 'wide';
+      o.roll = 0;
+      o.tail = 0;
+      o.ear = rec * 1.5;
+      if (t < 0.35) break;
+      if (name === 'collapseSlump') {
+        // 熊 / 熊猫：先摇晃，再沉重地趴到桌上
+        const wob = clamp01(1 - (t - 0.35) / 1.2);
+        const k = smooth((t - 1.0) / 1.5);
+        o.roll = Math.sin(t * 6) * 0.08 * wob;
+        o.lean = lerp(0, 0.85, k);
+        o.headX = lerp(0.1, 0.55, k);
+        o.y = lerp(0, -0.12, k);
+        o.armLX = o.armRX = lerp(restX, -1.35, k);
+        o.armLZ = 0.25;
+        o.armRZ = -0.25;
+        o.squash = lerp(1, 0.92, k);
+        o.mouth = lerp(0.4, 0.15, k);
+        o.face = t > 1.8 ? 'x' : 'wide';
+      } else if (name === 'collapseFaint') {
+        // 兔子 / 青蛙 / 企鹅 / 狗：晃了晃，向后晕倒在椅背上
+        const wob = Math.sin(clamp01((t - 0.35) / 0.8) * Math.PI);
+        const k = smooth((t - 1.0) / 1.0);
+        o.roll = Math.sin(t * 9) * 0.15 * wob;
+        o.lean = lerp(-0.1, -0.6, k);
+        o.headX = lerp(0, -0.45, k);
+        o.headZ = 0.18 * k;
+        o.y = lerp(0, -0.18, k);
+        o.armLX = o.armRX = lerp(restX, -0.3, k);
+        o.armLZ = lerp(0.6, 0.7, k);
+        o.armRZ = lerp(-0.6, -0.7, k);
+        o.mouth = 0.5;
+        o.ear = 0;
+        o.face = t > 1.4 ? 'x' : 'wide';
+      } else if (name === 'collapseDignified') {
+        // 老虎 / 狼 / 龙：保持尊严——不倒下，慢慢低头、闭上眼睛
+        const k = smooth((t - 0.4) / 2.0);
+        o.lean = lerp(-0.1, 0.06, k);
+        o.headX = lerp(-0.05, 0.42, k);
+        o.eyeOpen = lerp(1.2, 0, k);
+        o.squash = lerp(1, 0.97, k);
+        o.armLX = o.armRX = restX;
+        o.armLZ = base.armLZ;
+        o.armRZ = base.armRZ;
+        o.mouth = 0;
+        o.ear = 0;
+        o.face = k > 0.5 ? 'sad' : 'wide';
+      } else if (name === 'collapseRage') {
+        // 狮子：愤怒地站起来砸桌子，然后重重地坐回去、垂下头
+        const up = smooth((t - 0.35) / 0.35) * (1 - smooth((t - 1.6) / 0.6));
+        const slam = t > 0.6 && t < 1.1 ? Math.sin(((t - 0.6) / 0.5) * Math.PI) : 0;
+        const k = smooth((t - 1.7) / 0.9);
+        o.y = 0.45 * up + lerp(0, -0.1, k);
+        o.lean = 0.25 * up + 0.35 * k;
+        o.armLX = o.armRX = t < 1.1 ? -2.2 + slam * 1.6 : lerp(-0.6, seated ? -0.45 : 0, k);
+        o.armLZ = 0.3 * (1 - k);
+        o.armRZ = -0.3 * (1 - k);
+        o.headX = lerp(-0.15, 0.5, k);
+        o.roll = t > 1.1 && t < 1.6 ? Math.sin(t * 30) * 0.03 : 0;
+        o.mouth = k > 0.5 ? 0.05 : 0.6;
+        o.face = k > 0.5 ? 'sad' : 'angry';
+      } else if (name === 'collapseDrama') {
+        // 猴子：夸张地抱头摇晃，然后向一侧倒下
+        const k = smooth((t - 1.5) / 0.9);
+        o.armLX = o.armRX = lerp(-2.6, -0.4, k);
+        o.armLZ = lerp(0.6, 0.9, k);
+        o.armRZ = lerp(-0.6, -0.9, k);
+        o.roll = Math.sin(t * 5) * 0.25 * (1 - k) + 0.75 * k;
+        o.lean = 0.1 * k;
+        o.y = lerp(0, -0.15, k);
+        o.headX = -0.1 + 0.25 * k;
+        o.mouth = lerp(0.9, 0.4, k);
+        o.face = k > 0.5 ? 'x' : 'wide';
+      } else if (name === 'collapseAnnoyed') {
+        // 猫：不相信 → 恼火地瞪着 → 带着不爽慢慢滑下去
+        const k = smooth((t - 1.5) / 1.3);
+        o.face = 'doubt';
+        o.eyeOpen = 0.7;
+        o.headZ = 0.12;
+        o.tail = Math.sin(t * 10) * 0.8 * (1 - k * 0.6);
+        o.y = lerp(0, -0.2, k);
+        o.roll = lerp(0, -0.35, k);
+        o.lean = lerp(0, -0.2, k);
+        o.armLX = o.armRX = lerp(restX, -0.4, k);
+        o.armLZ = base.armLZ;
+        o.armRZ = base.armRZ;
+        o.mouth = 0.05;
+        o.ear = -0.5;
+      } else {
+        // 狐狸 / 浣熊：先震惊，然后尴尬地笑着挠头，滑下椅子
+        const smile = t > 1.3;
+        const k = smooth((t - 2.0) / 1.0);
+        o.face = smile ? 'happy' : 'wide';
+        o.mouth = smile ? 0.35 : 0.8;
+        o.headZ = smile ? 0.2 : 0;
+        o.armRX = smile ? lerp(-2.4, -0.4, k) : restX;
+        o.armRZ = smile ? lerp(-0.4, -0.6, k) : base.armRZ;
+        o.armLX = lerp(restX, -0.4, k);
+        o.armLZ = base.armLZ;
+        o.y = lerp(0, -0.22, k);
+        o.lean = lerp(0, -0.3, k);
+        o.ear = -0.4;
+      }
+      break;
+    }
+    case 'defeatRecoil': {
+      // 简短版：被震得后仰，然后垂头丧气地坐着，再慢慢恢复
+      const rec = t < 0.3 ? Math.sin((t / 0.3) * Math.PI) : 0;
+      const k = smooth((t - 0.3) / 0.5);
+      o.lean = -0.3 * rec + 0.3 * k;
+      o.y = 0.1 * rec;
+      o.headX = 0.45 * k;
+      o.squash = lerp(1, 0.94, k);
+      o.armLZ = 1.0 * rec + base.armLZ * (1 - rec);
+      o.armRZ = -1.0 * rec + base.armRZ * (1 - rec);
+      o.eyeOpen = rec > 0 ? 1.5 : 0.8;
+      o.mouth = rec;
+      o.face = rec > 0 ? 'wide' : 'sad';
+      o.tail = 0;
+      break;
+    }
+    case 'stackChips': {
+      // 嚣张的赢家：低头慢条斯理地整理刚赢来的筹码
+      o.headX = 0.18;
+      o.lean = 0.08;
+      o.armLX = restX - 0.2 - Math.max(0, Math.sin(t * 9)) * 0.25;
+      o.armRX = restX - 0.2 - Math.max(0, Math.sin(t * 9 + Math.PI)) * 0.25;
+      o.face = 'smug';
+      o.tail = Math.sin(t * 4) * 0.5;
+      break;
+    }
+    case 'stare': {
+      // 冷酷：一动不动地盯着输家
+      o.roll = 0;
+      o.headY = 0;
+      o.headZ = 0;
+      o.headX = 0.05;
+      o.lean = 0.12;
+      o.eyeOpen = 0.75;
+      o.tail = 0;
+      o.face = 'doubt';
+      break;
+    }
+    case 'lookAway': {
+      // 不忍心看：移开视线
+      o.headY = -0.6 * smooth(t / 0.4);
+      o.headX = 0.15;
+      o.face = 'sad';
+      break;
+    }
+    case 'flinch': {
+      // 冲击时旁观者被吓得一缩
+      const k = Math.sin(clamp01(t / 0.9) * Math.PI);
+      o.lean = -0.25 * k;
+      o.y = 0.06 * k;
+      o.armLX = o.armRX = lerp(restX, -1.4, k);
+      o.eyeOpen = 1.4;
+      o.face = 'wide';
+      break;
+    }
     default:
       return base;
   }

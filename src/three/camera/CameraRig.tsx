@@ -8,6 +8,8 @@ import { SeatLayout, boardPos } from '../layout';
 import { DUR, ease, smoothDamp } from '../../animation/motion';
 import { prefersReducedMotion } from '../../utils/reducedMotion';
 import { isPC } from '../../utils/pc';
+import { useDefeat } from '../../animation/defeat/defeatStore';
+import { defeatShot } from './defeatCamera';
 
 /** 当前镜头焦点（景深使用） */
 export const cameraFocus = new THREE.Vector3(0, 1, 0);
@@ -36,6 +38,9 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
   const introStart = useRef(performance.now());
   const tmpPos = useRef(new THREE.Vector3()).current;
   const tmpLook = useRef(new THREE.Vector3()).current;
+  /** 失败演出当前的镜头（切换镜头时直接剪辑） */
+  const lastShot = useRef<string | null>(null);
+  const cineFrame = useRef(false);
 
   // 从自由视角切回：从当前位置平滑过渡
   useEffect(() => {
@@ -74,9 +79,13 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     const auto = useSettings.getState().autoCamera;
     const calm = prefersReducedMotion();
 
+    // 失败演出：电影分镜（优先于所有自动镜头；自由视角时不接管）
+    const ds = useDefeat.getState();
+    const dShot = ds.seq && ds.phase ? defeatShot(ds.seq, ds.phase, performance.now(), layout, portrait) : null;
+
     // 竖屏（手机）水平视野很窄：加大视场角，保证两侧的动物也在画面内
     const cam = camera as THREE.PerspectiveCamera;
-    const wantFov = portrait ? (mode === 'overview' ? 64 : 58) : 45;
+    const wantFov = dShot ? dShot.fov : portrait ? (mode === 'overview' ? 64 : 58) : 45;
     const fovDiff = wantFov - cam.fov;
     if (Math.abs(fovDiff) > 0.01) {
       cam.fov = Math.abs(fovDiff) < 0.1 ? wantFov : cam.fov + fovDiff * Math.min(1, dt * 4);
@@ -100,7 +109,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     }
 
     let speed = 2.2;
-    const cue = auto ? useFx.getState().cue : null;
+    const cue = auto && !dShot ? useFx.getState().cue : null;
     // 减少动态效果：镜头只做很小的提示性移动，不环绕、不震动
     const amp = calm ? 0.35 : 1;
     if (cue) {
@@ -154,6 +163,34 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     const ip = Math.min(1, (performance.now() - introStart.current) / DUR.intro);
     if (ip < 1) speed = Math.min(speed, 0.6 + ease.inOutCubic(ip) * 1.8);
 
+    // 失败演出时牌桌界面隐藏：取消为 HUD 预留的取景偏移，结束后恢复
+    if (!!dShot !== cineFrame.current) {
+      cineFrame.current = !!dShot;
+      if (dShot) cam.clearViewOffset();
+      else {
+        const { top, bottom } = hudInsets(size.width, size.height);
+        cam.setViewOffset(size.width, size.height, 0, Math.round((bottom - top) / 2), size.width, size.height);
+      }
+      cam.updateProjectionMatrix();
+    }
+    if (dShot) {
+      tmpPos.copy(dShot.pos);
+      tmpLook.copy(dShot.look);
+      speed = 4;
+      if (lastShot.current !== dShot.key) {
+        // 剪辑：直接切到新机位（电影的硬切），不从上一个镜头“飞”过去
+        lastShot.current = dShot.key;
+        base.current.copy(dShot.pos);
+        look.current.copy(dShot.look);
+        const V0 = vel.current;
+        V0.px.v = V0.py.v = V0.pz.v = V0.lx.v = V0.ly.v = V0.lz.v = 0;
+        cam.fov = dShot.fov;
+        cam.updateProjectionMatrix();
+      }
+    } else {
+      lastShot.current = null;
+    }
+
     // 带惯性的镜头运动：speed 越大，跟随越快（平滑时间越短）
     const smooth = 1.1 / speed;
     const V = vel.current;
@@ -167,8 +204,10 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     // 极轻微的手持感（几乎察觉不到），重大时刻再叠加一次克制的震动（减少动态效果时都关闭）
     const tt = performance.now() / 1000;
     if (!calm) {
-      camera.position.x += Math.sin(tt * 0.37) * 0.012;
-      camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008;
+      // 失败演出的紧张阶段：克制的手持感稍微明显一些
+      const hand = dShot && (ds.phase === 'tension' || ds.phase === 'insert' || ds.phase === 'reaction') ? 2.4 : 1;
+      camera.position.x += Math.sin(tt * 0.37) * 0.012 * hand + (hand > 1 ? Math.sin(tt * 2.3) * 0.006 : 0);
+      camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008 * hand + (hand > 1 ? Math.sin(tt * 1.7 + 2) * 0.005 : 0);
     }
     const sh = useFx.getState().shake;
     const st = (performance.now() - sh.start) / 1000;
@@ -177,7 +216,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
       camera.position.x += Math.sin(st * 41) * a;
       camera.position.y += Math.sin(st * 33 + 1.3) * a * 0.5;
     }
-    cameraFocus.copy(L);
+    cameraFocus.copy(dShot ? dShot.focus : L);
     camera.lookAt(look.current);
   });
   return null;

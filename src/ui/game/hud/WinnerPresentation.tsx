@@ -4,6 +4,7 @@ import type { TableView } from '../../../core/game/view';
 import { useFx } from '../../../store/fxStore';
 import { formatChips } from '../../../utils/format';
 import { HudCard, SeatAvatar } from './bits';
+import { useDefeat } from '../../../animation/defeat/defeatStore';
 
 export function WinnerPresentation({ view }: { view: TableView }) {
   const p = useFx((s) => s.presentation);
@@ -21,8 +22,10 @@ export function WinnerPresentation({ view }: { view: TableView }) {
     };
   }, [p?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 失败演出接管画面后（赢家特写 / 输家特写开始）不再显示，避免挡住镜头
+  const defeatTook = useDefeat((s) => !!s.phase && s.phase !== 'result');
   // 下一手已经开始 / 整场结束 / 已播完：不再显示
-  if (!p || hidden === p.id || p.hand !== view.handNumber || view.gameOver) return null;
+  if (!p || hidden === p.id || p.hand !== view.handNumber || view.gameOver || defeatTook) return null;
   const seat = (id: string) => view.players.find((x) => x.id === id);
   const viewerWon = p.winners.some((w) => w.playerId === view.viewerId);
   const title = p.tie ? '平分底池' : viewerWon ? '你赢了' : '赢家';

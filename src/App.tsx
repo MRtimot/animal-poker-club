@@ -28,6 +28,7 @@ import { BootProbe } from './boot/BootProbe';
 import { markBoot, markBootDegraded, useBoot } from './boot/boot';
 import { homeTimeline } from './ui/home/homeTimeline';
 import { FullscreenNotice } from './ui/common/FullscreenUI';
+import { useDefeatDirector } from './animation/defeat/useDefeatDirector';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
@@ -297,6 +298,8 @@ function Directors() {
   const screen = useGame((s) => s.screen);
   const active = screen === 'game' ? view : null;
   useTableDirector(active);
+  // 失败演出：自己输掉关键一手（出局 / 一手输掉一半以上筹码）时的电影化演出（只是画面表现）
+  useDefeatDirector(active);
   useChatReactions(active);
   useProgressTracker(view, mode);
   // 离开牌桌 / 关闭角色语音：立刻停止所有角色说话（不留下排队中的台词）

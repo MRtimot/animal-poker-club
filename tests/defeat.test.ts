@@ -1,0 +1,206 @@
+// 失败演出：触发条件（只读真实结果）、时间表、转头顺序、去重、桌面反应、设备档位、动画
+import { describe, it, expect, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import {
+  COLLAPSE_BY_SPECIES,
+  FULL_TIMELINE,
+  PHASE_ORDER,
+  REALIZE_BY_SPECIES,
+  BYSTANDER_REACTION,
+  SHORT_MIN_MS,
+  buildTimeline,
+  defeatProfile,
+  defeatVerdict,
+  lookOrder,
+  phaseAt,
+  phaseEnd,
+  winnerStyle,
+  WINNER_REACTION,
+} from '../src/animation/defeat/defeatRules';
+import { beginDefeat, endDefeat, resetDefeatForTest, tableJolt, useDefeat, type DefeatSequence } from '../src/animation/defeat/defeatStore';
+import { animatePose, basePose } from '../src/animation/animalAnimations';
+import { ANIM_DURATION, type AnimName } from '../src/store/fxStore';
+import type { TableView } from '../src/core/game/view';
+import type { Species } from '../src/core/player/profile';
+
+const ALL_SPECIES: Species[] = ['cat', 'dog', 'fox', 'panda', 'rabbit', 'bear', 'raccoon', 'frog', 'lion', 'tiger', 'koala', 'monkey', 'penguin', 'wolf', 'dragon'];
+
+function seat(id: string, o: Record<string, unknown> = {}) {
+  return { id, name: id, seat: 0, chips: 0, bet: 0, totalBet: 0, folded: false, allIn: false, inHand: true, sittingOut: false, busted: false, isAI: id !== 'me', connected: true, profile: { animal: { species: 'cat' } }, lastAction: null, hole: [], ...o };
+}
+function view(players: ReturnType<typeof seat>[], events: unknown[] = [], bigBlind = 20): TableView {
+  return { viewerId: 'me', handNumber: 5, phase: 'complete', board: [], potCollected: 0, potTotal: 0, pots: [], currentBet: 0, currentPlayerId: null, dealerId: null, sbId: null, bbId: null, smallBlind: bigBlind / 2, bigBlind, players, legal: null, turnDeadline: null, turnTotalMs: 0, events, summary: null, gameOver: null, nextHandAt: null, serverTime: 0, paused: false } as unknown as TableView;
+}
+
+beforeEach(() => resetDefeatForTest());
+
+describe('触发条件：只读取真实的牌局结果', () => {
+  it('DEF-01 摊牌输光 → 完整版；输掉一半以上（且至少 10 个大盲）→ 简短版；小额输 / 弃牌 / 无人跟注 / 赢了任意一个池 → 不演', () => {
+    // 输光
+    expect(defeatVerdict(view([seat('me', { chips: 0, totalBet: 1000 }), seat('a', { chips: 2000 })]), ['a'], false)).toEqual({ cut: 'full', lost: 1000, ratio: 1 });
+    // 输掉 600 / 1000
+    const heavy = defeatVerdict(view([seat('me', { chips: 400, totalBet: 600 }), seat('a')]), ['a'], false);
+    expect(heavy?.cut).toBe('short');
+    expect(heavy?.ratio).toBeCloseTo(0.6);
+    // 只输 30%
+    expect(defeatVerdict(view([seat('me', { chips: 700, totalBet: 300 }), seat('a')]), ['a'], false)).toBeNull();
+    // 输了一半以上，但金额不到 10 个大盲（很小的筹码量）→ 不演
+    expect(defeatVerdict(view([seat('me', { chips: 50, totalBet: 150 }), seat('a')]), ['a'], false)).toBeNull();
+    // 弃牌、没有摊牌
+    expect(defeatVerdict(view([seat('me', { chips: 0, totalBet: 1000, folded: true }), seat('a')]), ['a'], false)).toBeNull();
+    expect(defeatVerdict(view([seat('me', { chips: 0, totalBet: 1000 }), seat('a')]), ['a'], true)).toBeNull();
+    // 赢了边池（即使主池输了）→ 不算失败
+    expect(defeatVerdict(view([seat('me', { chips: 0, totalBet: 1000 }), seat('a')]), ['a', 'me'], false)).toBeNull();
+    // 本手没参与
+    expect(defeatVerdict(view([seat('me', { chips: 0, inHand: false }), seat('a')]), ['a'], false)).toBeNull();
+  });
+
+  it('DEF-02 退回的多余下注不算输掉', () => {
+    // 下注 1000，退回 600（对手筹码不够），实际只输 400 / 1000 → 不演
+    const v = view([seat('me', { chips: 600, totalBet: 1000 }), seat('a')], [{ seq: 9, type: 'refund', playerId: 'me', amount: 600 }]);
+    expect(defeatVerdict(v, ['a'], false)).toBeNull();
+    // 退回 200：实际输 800 / 1000 → 简短版
+    const v2 = view([seat('me', { chips: 200, totalBet: 1000 }), seat('a')], [{ seq: 9, type: 'refund', playerId: 'me', amount: 200 }]);
+    expect(defeatVerdict(v2, ['a'], false)).toMatchObject({ cut: 'short', lost: 800 });
+  });
+});
+
+describe('时间表', () => {
+  it('DEF-03 完整版：阶段按顺序推进，最后是“出局”画面；冲击前有 0.1~0.2 秒的完全安静', () => {
+    const tl = buildTimeline('full', null)!;
+    let last = -1;
+    for (const ph of PHASE_ORDER) {
+      const t = tl.times[ph];
+      if (t === undefined) continue;
+      expect(t).toBeGreaterThan(last);
+      last = t;
+    }
+    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeGreaterThanOrEqual(100);
+    expect(FULL_TIMELINE.impact! - FULL_TIMELINE.silence!).toBeLessThanOrEqual(200);
+    expect(phaseAt(tl.times, 0)).toBe('result');
+    expect(phaseAt(tl.times, FULL_TIMELINE.impact! + 1)).toBe('impact');
+    expect(phaseAt(tl.times, 99999)).toBe('defeated');
+    expect(phaseEnd(tl.times, 'defeated')).toBe(Infinity);
+  });
+
+  it('DEF-04 简短版必须在下一手开始前演完：按剩余时间压缩，时间不够就不演（不拖延牌局）', () => {
+    const tl = buildTimeline('short', 3400)!;
+    expect(tl.scale).toBeLessThan(1);
+    expect(Math.max(...Object.values(tl.times) as number[])).toBeLessThanOrEqual(3400);
+    expect(buildTimeline('short', SHORT_MIN_MS - 1)).toBeNull();
+    expect(buildTimeline('short', 99999)!.scale).toBe(1);
+  });
+
+  it('DEF-05 其他动物一个接一个看向输家：赢家最先，间隔 0.15~0.35 秒，不包括输家和已出局的玩家', () => {
+    const players = [seat('me'), seat('a'), seat('w'), seat('b'), seat('gone', { busted: true })];
+    const order = lookOrder(players as never, 'me', 'w', () => 0.5);
+    expect(order.map((o) => o.id)).toEqual(['w', 'a', 'b']);
+    expect(order[0].delay).toBe(0);
+    for (let i = 1; i < order.length; i++) {
+      const gap = order[i].delay - order[i - 1].delay;
+      expect(gap).toBeGreaterThanOrEqual(150);
+      expect(gap).toBeLessThanOrEqual(350);
+    }
+  });
+});
+
+describe('演出状态', () => {
+  const seq = (key: string): DefeatSequence => ({
+    key,
+    hand: 1,
+    cut: 'full',
+    loserId: 'me',
+    winnerId: 'a',
+    at: { result: 1000, impact: 2000 },
+    lookers: {},
+    origin: [0, 4],
+    lost: 100,
+    ratio: 1,
+    profile: defeatProfile({ mobile: false, quality: 'high', reduced: false }),
+    reduced: false,
+  });
+
+  it('DEF-06 同一个结果（手数 + 事件序号）只演一次：重复事件不会造成重复演出', () => {
+    expect(beginDefeat(seq('5:30'))).toBe(true);
+    expect(beginDefeat(seq('5:30'))).toBe(false);
+    endDefeat('5:30');
+    expect(useDefeat.getState().seq).toBeNull();
+    expect(beginDefeat(seq('5:30'))).toBe(false);
+    expect(beginDefeat(seq('6:41'))).toBe(true);
+    // 记录只保留最近的一部分，不会无限增长
+    for (let i = 0; i < 60; i++) {
+      endDefeat();
+      beginDefeat(seq(`k${i}`));
+    }
+    expect(useDefeat.getState().played.length).toBeLessThanOrEqual(24);
+  });
+
+  it('DEF-07 桌面反应只是画面偏移：冲击前、远处、1.8 秒后都为 0，离冲击中心越近越大', () => {
+    expect(tableJolt(0, 4, 2300).lift).toBe(0); // 没有演出
+    beginDefeat(seq('j'));
+    expect(tableJolt(0, 4, 1999).lift).toBe(0); // 冲击前
+    const near = tableJolt(0, 3.6, 2300, 1);
+    const far = tableJolt(0, 0.5, 2300, 1);
+    expect(near.lift).toBeGreaterThan(0);
+    expect(far.lift).toBeLessThan(near.lift);
+    expect(tableJolt(0, -4, 2300).lift).toBe(0); // 桌子另一边
+    expect(tableJolt(0, 3.6, 2000 + 1900)).toEqual({ lift: 0, rx: 0, rz: 0, dx: 0, dz: 0 }); // 已恢复
+  });
+});
+
+describe('角色与设备', () => {
+  it('DEF-08 每种动物都有“意识到输了”、倒下、旁观反应；规格里列出的动物倒下方式各不相同', () => {
+    for (const sp of ALL_SPECIES) {
+      expect(REALIZE_BY_SPECIES[sp]).toBeTruthy();
+      expect(COLLAPSE_BY_SPECIES[sp]).toBeTruthy();
+      expect(BYSTANDER_REACTION[sp]).toBeTruthy();
+    }
+    const listed: Species[] = ['cat', 'fox', 'rabbit', 'bear', 'tiger', 'monkey', 'lion'];
+    expect(new Set(listed.map((s) => COLLAPSE_BY_SPECIES[s])).size).toBe(listed.length);
+    // 赢家按 AI 性格优先，其次按动物
+    expect(winnerStyle({ aiPersonality: 'aggressiveFox', profile: { animal: { species: 'panda' } } } as never)).toBe('cocky');
+    expect(winnerStyle({ profile: { animal: { species: 'wolf' } } } as never)).toBe('ruthless');
+    expect(Object.keys(WINNER_REACTION).sort()).toEqual(['calm', 'cocky', 'elegant', 'playful', 'ruthless']);
+  });
+
+  it('DEF-09 新动画：每一帧的姿态都是有限数值；倒下后保持倒下（不会自己弹回坐姿），直到演出结束', () => {
+    const names: AnimName[] = ['realizeDisbelief', 'realizePanic', 'realizeFade', 'realizeAccept', 'realizeAnger', 'collapseSlump', 'collapseFaint', 'collapseDignified', 'collapseRage', 'collapseDrama', 'collapseAnnoyed', 'collapseEmbarrassed', 'defeatRecoil', 'stackChips', 'stare', 'lookAway', 'flinch'];
+    for (const n of names) {
+      expect(ANIM_DURATION[n]).toBeGreaterThan(0);
+      for (let t = 0; t < Math.min(ANIM_DURATION[n], 6); t += 0.05) {
+        const p = animatePose(basePose(t, 1, true, false, false, 'cat'), n, t, true);
+        for (const [k, v] of Object.entries(p)) if (k !== 'face') expect(Number.isFinite(v as number)).toBe(true);
+      }
+    }
+    // 熊趴到桌上：10 秒后仍然前倾很多
+    const slumped = animatePose(basePose(10, 1, true, false, false, 'bear'), 'collapseSlump', 10, true);
+    expect(slumped.lean).toBeGreaterThan(0.6);
+    // 兔子向后晕倒
+    expect(animatePose(basePose(10, 1, true, false, false, 'rabbit'), 'collapseFaint', 10, true).lean).toBeLessThan(-0.4);
+  });
+
+  it('DEF-10 手机档位：粒子更少、镜头震动更小；减少动态效果：不震动、闪光很弱、镜头几乎不动', () => {
+    const desk = defeatProfile({ mobile: false, quality: 'high', reduced: false });
+    const phone = defeatProfile({ mobile: true, quality: 'high', reduced: false });
+    const calm = defeatProfile({ mobile: true, quality: 'high', reduced: true });
+    expect(phone.smoke).toBeLessThan(desk.smoke);
+    expect(phone.debris).toBeLessThan(desk.debris);
+    expect(phone.shake).toBeLessThan(desk.shake);
+    expect(calm.shake).toBe(0);
+    expect(calm.flash).toBeLessThanOrEqual(0.3);
+    expect(calm.move).toBeLessThan(0.3);
+    // 节奏不变：时间表与设备无关
+    expect(buildTimeline('full', null)!.times).toEqual(FULL_TIMELINE);
+  });
+
+  it('DEF-11 演出只是画面表现：不发送任何网络消息、不修改牌局；没有血腥元素', () => {
+    const read = (f: string) => fs.readFileSync(new URL(f, import.meta.url), 'utf8');
+    const director = read('../src/animation/defeat/useDefeatDirector.ts');
+    expect(director).not.toMatch(/net\.|session\.(action|chat|start)|\.send\(/);
+    for (const f of ['../src/animation/defeat/defeatRules.ts', '../src/animation/defeat/defeatStore.ts', '../src/three/effects/DefeatFX.tsx', '../src/ui/game/hud/DefeatOverlay.tsx']) {
+      const src = read(f);
+      expect(src).not.toMatch(/blood|gore|wound|血液喷|伤口特写/i);
+      expect(src).not.toMatch(/location\.reload/);
+    }
+  });
+});

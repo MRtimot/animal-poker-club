@@ -8,6 +8,7 @@ import { sound } from '../../audio/sound';
 import { DUR, arc, clamp01, damp, ease, settle } from '../../animation/motion';
 import { shadowGeo, shadowMaterial } from '../realism';
 import { TABLE_Y } from '../layout';
+import { tableJolt } from '../../animation/defeat/defeatStore';
 
 // —— 写实卡牌几何：圆角、真实厚度、纸张边缘 ——
 const CARD_T = 0.006;
@@ -283,9 +284,11 @@ export function Card3D({
       s.flip = want;
     }
     const jit = s.jitter * Math.exp(-since * 9);
-    g.position.set(s.pos.x, s.pos.y + bounce + flipLift, s.pos.z);
-    g.rotation.set(s.tilt, s.yaw + jit, s.flip, 'YXZ');
-    placeShadow(s.pos.x, s.pos.y + bounce + flipLift + (s.tilt ? 0.08 : 0), s.pos.z, s.yaw + jit);
+    // 失败演出的冲击：牌被掀起、翻转、落回原位（只是画面，牌的真实状态不变）
+    const j = tableJolt(s.pos.x, s.pos.z, now, s.moveTo.x * 13.1 + s.moveTo.z * 7.7);
+    g.position.set(s.pos.x + j.dx, s.pos.y + bounce + flipLift + j.lift, s.pos.z + j.dz);
+    g.rotation.set(s.tilt + j.rx, s.yaw + jit, s.flip + j.rz, 'YXZ');
+    placeShadow(s.pos.x + j.dx, s.pos.y + bounce + flipLift + j.lift + (s.tilt ? 0.08 : 0), s.pos.z + j.dz, s.yaw + jit);
 
     // 获胜牌发光 + 翻面光泽
     myGlow.opacity = damp(myGlow.opacity, highlight ? 0.55 + Math.sin(now / 200) * 0.2 : 0, 8, dt);

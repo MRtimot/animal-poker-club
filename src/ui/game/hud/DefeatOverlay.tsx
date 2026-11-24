@@ -1,0 +1,96 @@
+// 失败演出的画面层：电影遮幅、暗角与克制的暗红边缘、冲击闪光、黑屏、“出局”画面、跳过按钮。
+// 状态全部来自失败演出（animation/defeat）；这里不计时、不判断结果。
+import { useEffect } from 'react';
+import type { TableView } from '../../../core/game/view';
+import { useDefeat } from '../../../animation/defeat/defeatStore';
+import { finishDefeat, skipDefeat } from '../../../animation/defeat/useDefeatDirector';
+import type { DefeatPhase } from '../../../animation/defeat/defeatRules';
+import { useSettings } from '../../../store/settingsStore';
+import { useGame } from '../../../store/gameStore';
+import { session } from '../../../net/session';
+import { formatChips } from '../../../utils/format';
+
+const BARS: DefeatPhase[] = ['winner', 'realize', 'reaction', 'tension', 'insert', 'silence', 'impact', 'aftermath'];
+const TENSE: DefeatPhase[] = ['tension', 'insert', 'silence'];
+const SKIPPABLE: DefeatPhase[] = ['result', 'winner', 'realize', 'reaction', 'tension', 'insert', 'silence', 'impact', 'aftermath', 'blackout'];
+
+export function DefeatOverlay({ view }: { view: TableView }) {
+  const seq = useDefeat((s) => s.seq);
+  const phase = useDefeat((s) => s.phase);
+  const skipped = useDefeat((s) => s.skipped);
+  const seen = useSettings((s) => s.defeatSeen);
+  const mode = useGame((s) => s.mode);
+
+  // 电脑：Esc 跳过演出 / 在“出局”画面上继续
+  useEffect(() => {
+    if (!seq) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const ph = useDefeat.getState().phase;
+      if (ph && SKIPPABLE.includes(ph) && useSettings.getState().defeatSeen) skipDefeat();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [seq?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!seq || !phase) return null;
+  const full = seq.cut === 'full';
+  const bars = (full ? BARS : BARS.filter((p) => p !== 'winner')).includes(phase) || (!full && phase === 'defeated');
+  const tense = TENSE.includes(phase);
+  const dark = full && (phase === 'blackout' || phase === 'defeated');
+  const canSkip = seen && SKIPPABLE.includes(phase) && !(skipped && full);
+  const gameOver = !!view.gameOver;
+
+  return (
+    <div className={`dcine ${full ? 'full' : 'short'} ph-${phase}${seq.reduced ? ' reduced' : ''}`} aria-live="polite">
+      <div className={`dcine-vig${tense ? ' tense' : ''}${phase !== 'result' && phase !== 'recover' ? ' on' : ''}`} aria-hidden />
+      <div className={`dcine-bar top${bars ? ' on' : ''}`} aria-hidden />
+      <div className={`dcine-bar bottom${bars ? ' on' : ''}`} aria-hidden />
+      {phase === 'impact' && !skipped && <div key={seq.key} className="dcine-flash" style={{ ['--flash' as string]: seq.profile.flash }} aria-hidden />}
+      {full && <div className={`dcine-black${dark ? ' on' : ''}`} aria-hidden />}
+
+      {full && phase === 'defeated' && (
+        <div className="dcine-card" role="dialog" aria-modal="true" aria-labelledby="dcine-title">
+          <div className="dcine-eyebrow">DEFEATED</div>
+          <h2 id="dcine-title" className="dcine-title">
+            你出局了
+          </h2>
+          <div className="dcine-rule" aria-hidden />
+          <p className="dcine-sub">筹码全部输光。牌桌会记住这一手。</p>
+          <div className="dcine-actions">
+            {gameOver ? (
+              <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
+                查看结果
+              </button>
+            ) : (
+              <>
+                <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
+                  继续观战
+                </button>
+                <button type="button" className="dcine-btn" onClick={() => session.leave(mode === 'online' ? 'online' : 'home')}>
+                  {mode === 'online' ? '离开房间' : '返回俱乐部'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!full && (phase === 'defeated' || phase === 'recover') && (
+        <div className={`dcine-caption${phase === 'recover' ? ' out' : ''}`} role="status">
+          <div className="dcine-eyebrow">DEFEATED</div>
+          <div className="dcine-caption-title">这一手，你输了</div>
+          <div className="dcine-caption-sub">
+            输掉 {formatChips(seq.lost)} 筹码 · {Math.round(seq.ratio * 100)}%
+          </div>
+        </div>
+      )}
+
+      {canSkip && (
+        <button type="button" className="dcine-skip" onClick={skipDefeat} aria-label="跳过失败演出（结果不变）">
+          跳过 <span aria-hidden>›</span>
+        </button>
+      )}
+    </div>
+  );
+}

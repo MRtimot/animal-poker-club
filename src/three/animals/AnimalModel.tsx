@@ -440,9 +440,11 @@ export interface AnimalModelProps {
   seed?: number;
   /** 头部看向的方向（相对身体的偏航角），例如正在行动的玩家 */
   lookYaw?: number | null;
+  /** 失败演出：从 from（performance.now 毫秒）起转头看向某个方向（即使已弃牌也会看） */
+  defeatLook?: { yaw: number; from: number } | null;
 }
 
-export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, seated = false, folded = false, thinking = false, seed = 0, lookYaw = null }: AnimalModelProps) {
+export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, seated = false, folded = false, thinking = false, seed = 0, lookYaw = null, defeatLook = null }: AnimalModelProps) {
   const look = LOOKS[config.species];
   const sp = SPECIES_MAP[config.species];
   const furHex = FUR_COLORS.find((f) => f.id === config.furColor)?.hex || sp.color;
@@ -493,6 +495,8 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
   const lookCur = useRef(0);
   const lookRef = useRef(lookYaw);
   lookRef.current = lookYaw;
+  const defeatLookRef = useRef(defeatLook);
+  defeatLookRef.current = defeatLook;
   // 换帽子：帽子从上方落到头上
   const hatDrop = useRef(-10);
   const firstHat = useRef(true);
@@ -551,7 +555,9 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
       }
     }
     // 看向正在行动的玩家（平滑转头）
-    const lt = lookRef.current == null || folded ? 0 : Math.max(-0.75, Math.min(0.75, lookRef.current));
+    const dl = defeatLookRef.current;
+    const lookSrc = dl && nowMs >= dl.from ? dl.yaw : lookRef.current == null || folded ? null : lookRef.current;
+    const lt = lookSrc == null ? 0 : Math.max(-0.75, Math.min(0.75, lookSrc));
     lookCur.current = damp(lookCur.current, lt, 3.2, dt);
     pose.headY += lookCur.current;
     // 眼神：思考时看自己的牌，平时看桌面 / 正在行动的玩家；偶尔快速扫视（眼跳）
@@ -561,7 +567,7 @@ export const AnimalModel = memo(function AnimalModel({ config, animKey, anim, se
       gz.tx = (Math.random() - 0.5) * 0.36;
       gz.ty = (Math.random() - 0.5) * 0.18;
     }
-    const wantY = gz.tx + (lookRef.current == null ? 0 : Math.max(-0.4, Math.min(0.4, lookRef.current * 0.5))) + speechGazeY;
+    const wantY = (dl && nowMs >= dl.from ? 0 : gz.tx) + (lookSrc == null ? 0 : Math.max(-0.4, Math.min(0.4, lookSrc * 0.5))) + speechGazeY;
     const wantX = gz.ty + (seated ? (thinking ? 0.32 : 0.16) : 0) + (folded ? 0.2 : 0) + speechGazeX;
     gz.x = damp(gz.x, wantX, 22, dt);
     gz.y = damp(gz.y, wantY, 22, dt);

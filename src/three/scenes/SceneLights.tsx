@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
 import * as THREE from 'three';
@@ -6,6 +6,9 @@ import { useSettings, type Quality } from '../../store/settingsStore';
 import { useFx } from '../../store/fxStore';
 import { damp, ease } from '../../animation/motion';
 import { LAMP_Y } from '../environment/ClubEnvironment';
+import { useDefeat } from '../../animation/defeat/defeatStore';
+import type { DefeatPhase } from '../../animation/defeat/defeatRules';
+import { DEFEAT_RED, defeatFlash } from '../effects/DefeatFX';
 
 /** 不同牌局状态下的灯光：[环境亮度, 桌面主光] —— 变化自然、克制，不做 RGB 灯光秀 */
 const STATE_LIGHT: Record<string, [number, number]> = {
@@ -19,6 +22,43 @@ const STATE_LIGHT: Record<string, [number, number]> = {
   win: [0.72, 1.06],
   intro: [1, 1],
 };
+
+/**
+ * 失败演出时的房间灯光倍率 [环境, 主光]：逐步变暗，但输家始终看得清（不会整片黑掉）；
+ * 冲击后吊灯闪烁几下（房间对冲击的反应）。简短版变暗得少一些。
+ */
+const DEFEAT_LIGHT: Partial<Record<DefeatPhase, [number, number]>> = {
+  result: [0.9, 1],
+  winner: [0.82, 0.95],
+  realize: [0.66, 0.85],
+  reaction: [0.52, 0.76],
+  tension: [0.42, 0.68],
+  insert: [0.4, 0.64],
+  silence: [0.36, 0.6],
+  impact: [0.46, 0.62],
+  aftermath: [0.42, 0.6],
+  blackout: [0.3, 0.42],
+  defeated: [0.3, 0.42],
+};
+const DEFEAT_RIM = new THREE.Color('#9a1424');
+
+function defeatLight(now: number): [number, number, number] {
+  const d = useDefeat.getState();
+  if (!d.seq || !d.phase) return [1, 1, 1];
+  const base = DEFEAT_LIGHT[d.phase] ?? [1, 1];
+  const soft = d.seq.cut === 'short' ? 0.55 : 1;
+  let env = 1 - (1 - base[0]) * soft;
+  let key = 1 - (1 - base[1]) * soft;
+  // 冲击后吊灯闪烁（直接作用在亮度上，不经过平滑）
+  let flicker = 1;
+  const t0 = d.seq.at.impact;
+  if (t0 !== undefined && !d.seq.reduced) {
+    const t = (now - t0) / 1000;
+    if (t >= 0.05 && t < 0.9) flicker = 0.45 + 0.55 * Math.abs(Math.sin(t * 31) * Math.sin(t * 7.3));
+  }
+  if (d.phase === 'recover') env = key = 1;
+  return [env, key, flicker];
+}
 
 const FILL = {
   casino: { hemiSky: '#ffd9b0', hemiGround: '#2a1610', rim: '#9ab8ff', fill: '#ff9a60' },
@@ -40,7 +80,8 @@ export function SceneLights({ quality }: { quality: Quality }) {
   const amb = useRef<THREE.AmbientLight>(null!);
   const rim = useRef<THREE.DirectionalLight>(null!);
   const born = useRef(performance.now());
-  const lv = useRef({ env: 1, key: 1 });
+  const lv = useRef({ env: 1, key: 1, red: 0 });
+  const rimBase = useMemo(() => new THREE.Color(C.rim), [C.rim]);
 
   useFrame((_, dt) => {
     const now = performance.now();
@@ -48,7 +89,10 @@ export function SceneLights({ quality }: { quality: Quality }) {
     const intro = 0.1 + 0.9 * ease.inOutSine(Math.min(1, (now - born.current) / 1800));
     const fx = useFx.getState();
     const cue = fx.cue;
-    const [envW, keyW] = STATE_LIGHT[cue ? cue.type : 'none'] ?? STATE_LIGHT.none;
+    const [envW0, keyW0] = STATE_LIGHT[cue ? cue.type : 'none'] ?? STATE_LIGHT.none;
+    const [dEnv, dKey, flicker] = defeatLight(now);
+    const envW = envW0 * dEnv;
+    const keyW = keyW0 * dKey;
     // 大底池：环境略暗、桌面略亮
     const t = fx.tension;
     const l = fx.light;
@@ -57,10 +101,18 @@ export function SceneLights({ quality }: { quality: Quality }) {
     lv.current.env = damp(lv.current.env, envW * (1 - t * 0.18), 1.6, dt);
     lv.current.key = damp(lv.current.key, keyW * (1 + t * 0.08) * (1 + pulse * 0.12), 1.8, dt);
     const env = lv.current.env * intro;
-    if (spot.current) spot.current.intensity = 165 * intro * lv.current.key;
-    if (hemi.current) hemi.current.intensity = 0.32 * env;
-    if (amb.current) amb.current.intensity = 0.08 * env;
-    if (rim.current) rim.current.intensity = 0.55 * env;
+    // 失败演出：轮廓光慢慢变成克制的暗红（危险信号），冲击瞬间所有灯光短暂增亮（闪光）
+    const dd = useDefeat.getState();
+    const redWant = dd.seq && dd.phase ? (DEFEAT_RED[dd.phase] ?? 0) * (dd.seq.cut === 'short' ? 0.6 : 1) : 0;
+    lv.current.red = damp(lv.current.red, redWant, 2.2, dt);
+    const flash = defeatFlash(now);
+    if (spot.current) spot.current.intensity = 165 * intro * lv.current.key * flicker * (1 + flash * 1.4);
+    if (hemi.current) hemi.current.intensity = 0.32 * env + flash * 2.6;
+    if (amb.current) amb.current.intensity = 0.08 * env + flash * 1.2;
+    if (rim.current) {
+      rim.current.intensity = 0.55 * env * (1 + lv.current.red * 2.2);
+      rim.current.color.lerpColors(rimBase, DEFEAT_RIM, lv.current.red);
+    }
   });
 
   return (

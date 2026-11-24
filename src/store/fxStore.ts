@@ -5,13 +5,21 @@ export type AnimName =
   | 'idle' | 'talk' | 'happy' | 'sad' | 'nervous' | 'angry' | 'surprised'
   | 'win' | 'lose' | 'bet' | 'raise' | 'fold' | 'allin' | 'think'
   | 'laugh' | 'shock' | 'cool' | 'fire' | 'dead' | 'clap' | 'love' | 'wave'
-  | 'stretch' | 'settle' | 'doubt' | 'smug' | 'peek';
+  | 'stretch' | 'settle' | 'doubt' | 'smug' | 'peek'
+  // 失败演出（animation/defeat）：意识到输了 / 冲击后的倒下（按动物种类）/ 赢家与旁观者的反应
+  | 'realizeDisbelief' | 'realizePanic' | 'realizeFade' | 'realizeAccept' | 'realizeAnger'
+  | 'collapseSlump' | 'collapseFaint' | 'collapseDignified' | 'collapseRage' | 'collapseDrama' | 'collapseAnnoyed' | 'collapseEmbarrassed'
+  | 'defeatRecoil' | 'stackChips' | 'stare' | 'lookAway' | 'flinch';
 
 export const ANIM_DURATION: Record<AnimName, number> = {
   idle: 0, talk: 1.6, happy: 1.6, sad: 2.2, nervous: 2, angry: 1.8, surprised: 1.4,
   win: 3.6, lose: 3.2, bet: 1.1, raise: 1.4, fold: 1.5, allin: 2.6, think: 0,
   laugh: 2.2, shock: 1.8, cool: 3.5, fire: 2, dead: 2.4, clap: 2, love: 2.2, wave: 1.8,
   stretch: 2.2, settle: 1.2, doubt: 1.8, smug: 2, peek: 1.6,
+  realizeDisbelief: 2.8, realizePanic: 2.8, realizeFade: 2.8, realizeAccept: 2.8, realizeAnger: 2.8,
+  // 倒下后保持倒下的姿势，直到演出结束（结束时播放 settle 回到坐姿；完整版在黑屏中恢复）
+  collapseSlump: 40, collapseFaint: 40, collapseDignified: 40, collapseRage: 40, collapseDrama: 40, collapseAnnoyed: 40, collapseEmbarrassed: 40,
+  defeatRecoil: 2.4, stackChips: 2.4, stare: 4.5, lookAway: 3, flinch: 0.9,
 };
 
 /** 表情（情绪系统）：会改变动物脸部，并在头顶短暂显示 */
