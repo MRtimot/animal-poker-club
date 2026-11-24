@@ -35,7 +35,10 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
   const set = useGame((s) => s.set);
   const room = useGame((s) => s.room);
   const mode = useGame((s) => s.mode);
-  const music = useSettings((s) => s.musicVolume);
+  // 全部静音时音乐也算关着；这时点音乐按钮会取消静音
+  const musicVolume = useSettings((s) => s.musicVolume);
+  const muted = useSettings((s) => s.muted);
+  const music = muted ? 0 : musicVolume;
   const setS = useSettings((s) => s.set);
   const nextCam = () => {
     const next = CAMERA_ORDER[(CAMERA_ORDER.indexOf(cameraMode) + 1) % CAMERA_ORDER.length];
@@ -97,7 +100,7 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
           title={music > 0 ? '关闭音乐' : '打开音乐'}
           aria-label={music > 0 ? '关闭音乐' : '打开音乐'}
           aria-pressed={music > 0}
-          onClick={() => setS({ musicVolume: music > 0 ? 0 : 0.35 })}
+          onClick={() => setS(music > 0 ? { musicVolume: 0 } : { muted: false, musicVolume: musicVolume || 0.35 })}
         >
           <span aria-hidden>{music > 0 ? '🎵' : '🔇'}</span>
         </button>

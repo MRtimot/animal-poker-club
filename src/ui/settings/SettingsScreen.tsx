@@ -12,6 +12,9 @@ import { net } from '../../net/netClient';
 import { voice } from '../../audio/voice';
 import { DisplaySettings } from '../common/FullscreenUI';
 
+/** iPhone / iPad（包括“桌面版网站”模式的 iPad） */
+const IS_IOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
 export function QuickSettings() {
   const s = useSettings();
   const slider = (label: string, key: 'musicVolume' | 'sfxVolume' | 'ambientVolume') => (
@@ -44,6 +47,21 @@ export function QuickSettings() {
       </label>
       {/* 手机 / 平板：全屏与触感反馈（电脑版不显示） */}
       <DisplaySettings />
+      <label className="toggle">
+        <span>🔇 全部静音（音乐、音效、环境声、角色语音）</span>
+        <input type="checkbox" checked={s.muted} onChange={(e) => s.set({ muted: e.target.checked })} />
+      </label>
+      {IS_IOS && (
+        <>
+          <label className="toggle">
+            <span>📳 静音模式下也播放游戏声音</span>
+            <input type="checkbox" checked={s.silentModeSound} onChange={(e) => s.set({ silentModeSound: e.target.checked })} />
+          </label>
+          <div className="small muted" style={{ marginTop: -4, marginBottom: 10 }}>
+            需要 iOS 16.4 或更新版本。打开时可能会暂停其他 App 正在播放的音乐；较旧的系统请先关闭静音模式。
+          </div>
+        </>
+      )}
       {slider('🎵 背景音乐', 'musicVolume')}
       {slider('🔊 音效', 'sfxVolume')}
       {slider('🌃 环境声音', 'ambientVolume')}

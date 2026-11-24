@@ -14,9 +14,11 @@ import { useChatReactions, useTableDirector } from './animation/director';
 import { useProgressTracker } from './progress/tracker';
 import { net } from './net/netClient';
 import { voice } from './audio/voice';
+import { sound } from './audio/sound';
 import { LoginScreen, OnboardingScreen, ProfileLoading, ProfileScreen, SyncBadge, WelcomeBanner } from './ui/account/AccountScreens';
 import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import { NetDebugPanel } from './ui/debug/NetDebugPanel';
+import { AudioResumeHint } from './ui/common/AudioResumeHint';
 import { ConsentLayer } from './ui/privacy/ConsentUI';
 import type { AnimName } from './store/fxStore';
 import { useBrowserBack } from './ui/useBrowserBack';
@@ -360,6 +362,11 @@ function Directors() {
   useEffect(() => {
     if (screen !== 'game' || !voiceOn) voice.stop();
   }, [screen, voiceOn]);
+  // 任何方式离开牌桌（离开按钮、浏览器返回、房间关闭）：停掉还在响 / 已排程的牌桌与演出声音，不带到别的页面
+  useEffect(() => {
+    if (screen !== 'game') return;
+    return () => sound.stopTransient();
+  }, [screen]);
   // 首页是展示层：不在房间里时不保持多人连接
   useEffect(() => {
     if (screen === 'home') net.releaseIfIdle();
@@ -520,6 +527,7 @@ function AppContent() {
       <ProfileLoading />
       <WelcomeBanner />
       <SyncBadge />
+      <AudioResumeHint />
       <NetDebugPanel />
       <Toasts />
       <FullscreenNotice />

@@ -12,7 +12,7 @@ import { net } from './netClient';
 function clearTableFx() {
   voice.stop();
   useFx.getState().reset();
-  sound.setIntensity(0);
+  sound.stopTransient();
 }
 
 export const session = {

@@ -116,6 +116,18 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
    */
   private tailMs = 0;
   private tailSamples = 0;
+  /** 有角色开始 / 停止说话（用来压低背景音乐） */
+  onActiveChange: ((speaking: boolean) => void) | null = null;
+  private lastActive = false;
+  private emitActive() {
+    const on = !!this.current;
+    if (on === this.lastActive) return;
+    this.lastActive = on;
+    this.onActiveChange?.(on);
+  }
+  /** 全部静音：只显示字幕 */
+  private muted = false;
+  private primed = false;
   private onVoices = () => {
     this.voices = this.env?.synth.getVoices() ?? [];
     this.cache.clear();
@@ -185,7 +197,7 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
    * interrupted（被更重要的台词打断）/ skipped（队列已满，被丢弃）
    */
   speak(text: string, profile: AnimalVoiceProfile, opts: SpeakOptions = {}): Promise<VoiceResult> {
-    if (!this.env || this.status() !== 'ok' || !this.env.canAutoplay()) return Promise.resolve('text-only');
+    if (!this.env || this.muted || this.status() !== 'ok' || !this.env.canAutoplay()) return Promise.resolve('text-only');
     const priority = opts.priority ?? 1;
     return new Promise<VoiceResult>((resolve) => {
       const plan = opts.plan ?? planSpeech(text, profile, opts.emotion ?? 'neutral', Math.random, { natural: opts.natural });
@@ -214,6 +226,11 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
 
   /** 分段播放：开口前停顿 → 第 1 段 → 停顿 → 第 2 段 …（每段参数不同） */
   private play(job: Job) {
+    this.playJob(job);
+    this.emitActive();
+  }
+
+  private playJob(job: Job) {
     const env = this.env!;
     this.current = job;
     const r = this.resolve(job.profile, job.opts.emotion);
@@ -311,6 +328,7 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
     this.finish(result);
     const next = this.queue.shift();
     if (next) this.play(next);
+    else this.emitActive();
   }
 
   private finish(result: VoiceResult) {
@@ -329,6 +347,35 @@ export class BrowserVoiceEngine implements CharacterVoiceEngine {
     this.queue = [];
     this.finish('interrupted');
     this.env?.synth.cancel();
+    this.emitActive();
+  }
+
+  /** 全部静音：立刻停下正在说的话，之后的台词只显示字幕 */
+  setMuted(m: boolean) {
+    if (this.muted === m) return;
+    this.muted = m;
+    if (m) this.stop();
+  }
+
+  /**
+   * iOS Safari：语音合成必须先在一次用户手势里“说”过一句，之后（不在手势里）的台词才能发声。
+   * 在第一次点击时说一句音量为 0 的空台词；只做一次，正在说话时不做。
+   */
+  prime() {
+    if (this.primed || !this.env || this.current) return;
+    this.primed = true;
+    try {
+      const u = new this.env.Utterance('');
+      u.volume = 0;
+      this.env.synth.speak(u);
+    } catch {
+      /* 不支持就只显示字幕 */
+    }
+  }
+
+  /** 调试面板：正在说话 + 排队中的台词数 */
+  get activeVoices() {
+    return (this.current ? 1 : 0) + this.queue.length;
   }
 
   pause() {
@@ -369,8 +416,8 @@ function browserEnv(): VoiceEnv | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window) || typeof window.SpeechSynthesisUtterance !== 'function') return null;
   let interacted = false;
   const mark = () => (interacted = true);
-  window.addEventListener('pointerdown', mark, { once: true, capture: true });
-  window.addEventListener('keydown', mark, { once: true, capture: true });
+  // 触摸设备上 pointerdown 不算“用户激活”，真正生效的是 touchend / click
+  for (const t of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(t, mark, { once: true, capture: true, passive: true });
   return {
     synth: window.speechSynthesis,
     Utterance: window.SpeechSynthesisUtterance,

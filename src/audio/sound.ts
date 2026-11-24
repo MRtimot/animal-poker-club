@@ -1,4 +1,11 @@
 // 本地音频引擎：所有音效与背景音乐都由 WebAudio 实时合成，不加载外部资源、不调用任何 API。
+//
+// 生命周期（整个页面只有一个 AudioContext，由这里负责创建 / 恢复 / 暂停）：
+//   uninitialized → locked（等待第一次真正的用户互动）→ initializing → ready
+//   ready → suspended（手机切到后台 / 锁屏，由我们暂停）→ resuming → ready
+//   任何时候恢复失败（浏览器要求再点一下）→ locked；浏览器不支持 / 被关闭 → error
+// 声音永远不会阻塞加载或游戏：没有声音时游戏照常进行，下一次点击再尝试解锁。
+// 用户手势的监听在 audioLifecycle.ts（只注册一次）。
 import { useSettings } from '../store/settingsStore';
 import type { Species } from '../core/player/profile';
 
@@ -6,17 +13,68 @@ type SfxName =
   | 'card' | 'flip' | 'chip' | 'chips' | 'button' | 'hover' | 'win' | 'lose' | 'turn' | 'allin'
   | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick' | 'royal';
 
-class SoundEngine {
+export type AudioStatus = 'uninitialized' | 'locked' | 'initializing' | 'ready' | 'suspended' | 'resuming' | 'error';
+
+/** 恢复（resume）之后多久还没真正开始播放，就认为浏览器需要用户再点一下 */
+const RESUME_GRACE_MS = 700;
+const MASTER_GAIN = 0.9;
+/**
+ * 手机 / 平板的调音：小喇叭放不出 300~400 Hz 以下的声音，而爵士贝斯、电钢琴与环境底噪大多在那里，
+ * 实测默认音量下音乐在小喇叭频段只有约 -60 dBFS（等于听不到）。这里补中频、抬高音量并限制峰值；电脑版完全不经过。
+ */
+export const PHONE_TONE = { musicGain: 5, musicPresenceDb: 6, ambientGain: 2.6, ambientCutoff: 1400 };
+/** 同时存在的声音节点上限：超过时丢弃不重要的音效（悬停 / 滴答 / 单个筹码），避免手机上卡顿或爆音 */
+export const MAX_ACTIVE_SOURCES = 120;
+/** 角色说话时背景音乐 / 环境声的倍率（可调整；1 = 不压低） */
+export const VOICE_DUCK = { music: 0.45, ambient: 0.6 };
+const NO_DUCK = { music: 1, ambient: 1 };
+const LOW_PRIORITY_SFX: ReadonlySet<SfxName> = new Set(['hover', 'tick', 'chip', 'pop']);
+
+function defaultCreateContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+  return AC ? (new AC() as AudioContext) : null;
+}
+
+/** 手机 / 平板（主要输入是触摸） */
+export function isTouchPrimary() {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+}
+
+/** iPhone / iPad（Safari 16.4+）：静音模式下是否仍播放网页声音（系统提供的 Audio Session 接口；其他浏览器没有，直接忽略） */
+function applyAudioSession() {
+  try {
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (!session) return;
+    const type = useSettings.getState().silentModeSound ? 'playback' : 'auto';
+    if (session.type !== type) session.type = type;
+  } catch {
+    /* 不支持 */
+  }
+}
+
+function audioSupported() {
+  return typeof window !== 'undefined' && !!((window as any).AudioContext || (window as any).webkitAudioContext);
+}
+
+export class SoundEngine {
   ctx: AudioContext | null = null;
   master!: GainNode;
   sfx!: GainNode;
   music!: GainNode;
   ambient!: GainNode;
+  /** 音符 / 环境声的入口：电脑就是音量节点本身；手机先经过小喇叭调音 */
+  private musicIn!: AudioNode;
+  private ambientIn!: AudioNode;
+  private phone = false;
+  /** 是否使用手机调音（测试时替换） */
+  detectPhone: () => boolean = isTouchPrimary;
   private noiseBuf: AudioBuffer | null = null;
-  private musicTimer: number | null = null;
+  private musicTimer: ReturnType<typeof setInterval> | null = null;
   private musicStep = 0;
   private nextNoteTime = 0;
   private ambientStarted = false;
+  private ambientTimer: ReturnType<typeof setTimeout> | null = null;
   private wantMusic = false;
   /** 当前音效的输出节点（空间音频时指向声像器） */
   private out: AudioNode | null = null;
@@ -30,18 +88,215 @@ class SoundEngine {
   private intensityTarget = 0;
   private intensityUntil = 0;
 
-  /** 首次用户交互后初始化（浏览器策略要求） */
+  // ───────── 生命周期 ─────────
+  /** 明确的音频状态（不用一堆互相打架的布尔值） */
+  status: AudioStatus = 'uninitialized';
+  /** 页面在后台（我们主动暂停了声音） */
+  private backgrounded = false;
+  /** 已经请求过 suspend()，还没有请求恢复 */
+  private suspendRequested = false;
+  /** 曾经成功播放过：之后再变成 locked 就提示“点击继续声音” */
+  everReady = false;
+  /** 本页面创建过几个 AudioContext（应该永远 ≤ 1；调试面板 / 测试检查） */
+  contextsCreated = 0;
+  /** 当前还在播放的声音节点数（调试面板显示；超过上限时丢弃不重要的音效） */
+  activeSources = 0;
+  /** 因节点过多而丢弃的音效数 */
+  droppedSfx = 0;
+  private graceTimer: ReturnType<typeof setTimeout> | null = null;
+  private listeners = new Set<() => void>();
+  /** 创建 AudioContext 的方式（测试时替换成假的） */
+  createContext: () => AudioContext | null = defaultCreateContext;
+
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  };
+  getStatus = () => this.status;
+
+  private setStatus(s: AudioStatus) {
+    if (this.status === s) return;
+    this.status = s;
+    if (s === 'ready') this.everReady = true;
+    for (const fn of [...this.listeners]) fn();
+  }
+
+  /** 页面加载后：音频系统就绪，等待用户第一次互动（不创建 AudioContext、不播放任何声音） */
+  prepare() {
+    if (this.status !== 'uninitialized') return;
+    this.setStatus(audioSupported() || this.createContext !== defaultCreateContext ? 'locked' : 'error');
+  }
+
+  /** 由 AudioContext 的真实状态推出我们的状态 */
+  private syncStatus() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const st = ctx.state as string;
+    if (st === 'running') {
+      this.clearGrace();
+      this.setStatus('ready');
+    } else if (st === 'closed') {
+      this.clearGrace();
+      this.setStatus('error');
+    } else if (this.backgrounded) {
+      this.setStatus('suspended');
+    } else if (this.status !== 'initializing' && this.status !== 'resuming') {
+      // suspended / interrupted（iOS：来电、Siri、其他 App 占用音频）：需要用户再点一下
+      this.setStatus('locked');
+    }
+  }
+
+  private clearGrace() {
+    if (this.graceTimer !== null) clearTimeout(this.graceTimer);
+    this.graceTimer = null;
+  }
+
+  /** 请求恢复：Promise 的失败一定被处理；一段时间内没有真正开始播放 → locked（等下一次点击） */
+  private requestResume(ctx: AudioContext) {
+    let p: Promise<void> | undefined;
+    try {
+      p = ctx.resume();
+    } catch {
+      p = undefined;
+    }
+    p?.then(
+      () => this.syncStatus(),
+      () => this.syncStatus(),
+    );
+    this.clearGrace();
+    this.graceTimer = setTimeout(() => {
+      this.graceTimer = null;
+      if (this.ctx !== ctx || (ctx.state as string) === 'running' || this.backgrounded) return;
+      if ((ctx.state as string) === 'closed') return this.setStatus('error');
+      this.setStatus('locked');
+    }, RESUME_GRACE_MS);
+  }
+
+  /**
+   * 在用户手势（点击 / 触摸结束 / 按键）里同步调用：
+   * 第一次创建唯一的 AudioContext；之后只在 suspended / interrupted 时 resume()，绝不重复创建。
+   */
   unlock() {
+    if (this.backgrounded) return;
+    if (this.status === 'uninitialized') this.prepare();
+    if (this.status === 'error' && !this.ctx) return;
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      const st = this.ctx.state as string;
+      if (st === 'running') return this.syncStatus();
+      if (st === 'closed') return this.setStatus('error');
+      if (this.status !== 'initializing') this.setStatus('resuming');
+      this.primeOutput();
+      this.requestResume(this.ctx);
       return;
     }
-    const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!AC) return;
-    this.ctx = new AC() as AudioContext;
+    let ctx: AudioContext | null = null;
+    applyAudioSession();
+    try {
+      ctx = this.createContext();
+    } catch {
+      ctx = null;
+    }
+    if (!ctx) return this.setStatus('error');
+    this.ctx = ctx;
+    this.contextsCreated++;
+    this.setStatus('initializing');
+    try {
+      this.buildGraph(ctx);
+    } catch {
+      // 节点图建立失败（极少见）：放弃声音，游戏照常
+      this.ctx = null;
+      try {
+        void ctx.close().catch(() => undefined);
+      } catch {
+        /* ignore */
+      }
+      return this.setStatus('error');
+    }
+    ctx.onstatechange = () => this.syncStatus();
+    this.primeOutput();
+    if ((ctx.state as string) === 'running') this.syncStatus();
+    else this.requestResume(ctx);
+    if (this.wantMusic) this.startMusic();
+  }
+
+  /** iOS WebKit：在手势里播放一个极短的静音缓冲，确保输出真正被“解锁” */
+  private primeOutput() {
     const ctx = this.ctx;
+    if (!ctx) return;
+    try {
+      const b = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+      src.connect(ctx.destination);
+      src.start(0);
+      src.onended = () => {
+        try {
+          src.disconnect();
+        } catch {
+          /* 已断开 */
+        }
+      };
+    } catch {
+      /* 不影响后续 */
+    }
+  }
+
+  /** 手机切到后台 / 锁屏 / 切换 App：暂停整个 AudioContext（音乐、环境声、演出声音一起停，省电） */
+  suspendForBackground() {
+    this.backgrounded = true;
+    this.clearGrace();
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if ((ctx.state as string) === 'running') {
+      this.suspendRequested = true;
+      try {
+        void ctx.suspend().then(
+          () => this.syncStatus(),
+          () => this.syncStatus(),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+    if ((ctx.state as string) !== 'closed') this.setStatus('suspended');
+  }
+
+  /** 回到前台：尝试恢复（不在手势里，浏览器可能拒绝 → locked，显示“点击继续声音”，下一次点击恢复） */
+  resumeForForeground() {
+    this.backgrounded = false;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const st = ctx.state as string;
+    if (st === 'closed') return this.setStatus('error');
+    // 快速切出又切回：suspend() 可能还没完成（状态仍是 running），这时也必须 resume()，否则随后会悄悄停住
+    if (st === 'running' && !this.suspendRequested) return this.syncStatus();
+    this.suspendRequested = false;
+    this.setStatus('resuming');
+    this.requestResume(ctx);
+  }
+
+  /** 开发时热更新：关闭旧的 AudioContext 与计时器，避免新旧两套声音同时播放 */
+  dispose() {
+    this.stopMusic();
+    this.clearGrace();
+    if (this.ambientTimer !== null) clearTimeout(this.ambientTimer);
+    this.ambientTimer = null;
+    const ctx = this.ctx;
+    this.ctx = null;
+    if (ctx) {
+      ctx.onstatechange = null;
+      try {
+        void ctx.close().catch(() => undefined);
+      } catch {
+        /* ignore */
+      }
+    }
+    this.listeners.clear();
+  }
+
+  private buildGraph(ctx: AudioContext) {
     this.master = ctx.createGain();
-    this.master.gain.value = 0.9;
+    this.master.gain.value = useSettings.getState().muted ? 0 : MASTER_GAIN;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
@@ -54,6 +309,15 @@ class SoundEngine {
     this.cine.connect(this.master);
     this.music.connect(this.master);
     this.ambient.connect(this.master);
+    this.musicIn = this.music;
+    this.ambientIn = this.ambient;
+    this.phone = this.detectPhone();
+    if (this.phone) {
+      this.buildPhoneTone(ctx);
+      // 音量节点默认是 1：调音放大后，开头渐变到设置音量之前会“冒”一声，所以从 0 淡入
+      this.music.gain.value = 0;
+      this.ambient.gain.value = 0;
+    }
     // 房间混响：用衰减噪声合成的脉冲响应（小型木质房间）
     const conv = ctx.createConvolver();
     const irLen = Math.floor(ctx.sampleRate * 1.4);
@@ -80,18 +344,102 @@ class SoundEngine {
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    if (this.wantMusic) this.startMusic();
+  }
+
+  /** 手机小喇叭调音：切掉放不出的低频 → 补中频 → 限制峰值 → 抬高音量，然后才到音量滑块（滑块 / 压低 / 静音照常线性有效） */
+  private buildPhoneTone(ctx: AudioContext) {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 160;
+    const mid = ctx.createBiquadFilter();
+    mid.type = 'peaking';
+    mid.frequency.value = 900;
+    mid.Q.value = 0.7;
+    mid.gain.value = PHONE_TONE.musicPresenceDb;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -30;
+    comp.ratio.value = 5;
+    comp.attack.value = 0.005;
+    comp.release.value = 0.2;
+    const g = ctx.createGain();
+    g.gain.value = PHONE_TONE.musicGain;
+    hp.connect(mid).connect(comp).connect(g).connect(this.music);
+    this.musicIn = hp;
+    const a = ctx.createGain();
+    a.gain.value = PHONE_TONE.ambientGain;
+    a.connect(this.ambient);
+    this.ambientIn = a;
+  }
+
+  /** 牌桌音效与演出声音（不含音乐 / 环境声）：离开牌桌时全部停掉，包括已经排程、还没响的 */
+  private transient = new Set<AudioScheduledSourceNode>();
+
+  /** 登记一个声音节点，结束时自动移除 */
+  private track(node: AudioScheduledSourceNode, transient: boolean) {
+    this.activeSources++;
+    if (transient) this.transient.add(node);
+    node.onended = () => {
+      this.activeSources = Math.max(0, this.activeSources - 1);
+      this.transient.delete(node);
+    };
+  }
+
+  /** 离开牌桌：停止所有临时音效与演出声音（背景音乐继续），混音恢复正常 */
+  stopTransient() {
+    if (this.duckTimer !== null) clearTimeout(this.duckTimer);
+    this.duckTimer = null;
+    this.setIntensity(0);
+    this.setBaseIntensity(0);
+    this.resetMix(0.3);
+    const ctx = this.ctx;
+    if (!ctx) return;
+    // 留 0.15 秒让“离开”按钮自己的点击声响完；演出通道同时淡出，不会“啪”地一声截断
+    const t = ctx.currentTime;
+    this.cine.gain.setTargetAtTime(0, t, 0.04);
+    this.cine.gain.setTargetAtTime(useSettings.getState().sfxVolume, t + 0.3, 0.05);
+    for (const n of this.transient) {
+      try {
+        n.stop(t + 0.15);
+      } catch {
+        /* 已经结束 */
+      }
+    }
+  }
+
+  /** 音乐 / 环境声的目标音量：设置 × 演出混音 × 角色说话时的压低 × 临时压低（duck） */
+  private busTargets(m = this.mixMul, level = 1) {
+    const s = useSettings.getState();
+    const v = this.voiceDucked ? VOICE_DUCK : NO_DUCK;
+    return {
+      sfx: s.sfxVolume * m.sfx,
+      music: s.musicVolume * 0.5 * m.music * v.music * level,
+      ambient: s.ambientVolume * 0.6 * m.ambient * v.ambient * level,
+    };
   }
 
   applyVolumes() {
     if (!this.ctx) return;
     const s = useSettings.getState();
     const t = this.ctx.currentTime;
-    const m = this.mixMul;
-    this.sfx.gain.setTargetAtTime(s.sfxVolume * m.sfx, t, 0.05);
+    const g = this.busTargets();
+    // 全部静音：只关总音量（各通道的设置保持不变，取消静音后立刻恢复）
+    this.master.gain.setTargetAtTime(s.muted ? 0 : MASTER_GAIN, t, 0.03);
+    this.sfx.gain.setTargetAtTime(g.sfx, t, 0.05);
     this.cine.gain.setTargetAtTime(s.sfxVolume, t, 0.05);
-    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * m.music, t, 0.2);
-    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * m.ambient, t, 0.2);
+    this.music.gain.setTargetAtTime(g.music, t, 0.2);
+    this.ambient.gain.setTargetAtTime(g.ambient, t, 0.2);
+  }
+
+  /** 角色语音（系统语音合成，无法接入 Web Audio）说话期间：压低背景音乐与环境声，说完恢复 */
+  private voiceDucked = false;
+  setVoiceDuck(on: boolean) {
+    if (this.voiceDucked === on) return;
+    this.voiceDucked = on;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const g = this.busTargets();
+    this.music.gain.setTargetAtTime(g.music, t, on ? 0.12 : 0.5);
+    this.ambient.gain.setTargetAtTime(g.ambient, t, on ? 0.12 : 0.5);
   }
 
   /**
@@ -101,11 +449,11 @@ class SoundEngine {
   setMix(m: { music: number; ambient: number; sfx: number }, tc = 0.35) {
     this.mixMul = { ...m };
     if (!this.ctx) return;
-    const s = useSettings.getState();
     const t = this.ctx.currentTime;
-    this.sfx.gain.setTargetAtTime(s.sfxVolume * m.sfx, t, tc);
-    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * m.music, t, tc);
-    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * m.ambient, t, tc);
+    const g = this.busTargets();
+    this.sfx.gain.setTargetAtTime(g.sfx, t, tc);
+    this.music.gain.setTargetAtTime(g.music, t, tc);
+    this.ambient.gain.setTargetAtTime(g.ambient, t, tc);
   }
 
   /** 恢复正常混音（演出结束 / 被打断时一定会调用） */
@@ -327,16 +675,24 @@ class SoundEngine {
   }
 
   /** 河牌等关键时刻：音乐与环境声短暂降低，然后恢复 */
+  private duckTimer: ReturnType<typeof setTimeout> | null = null;
   duck(level: number, ms: number) {
     if (!this.ctx) return;
-    const s = useSettings.getState();
     const t = this.ctx.currentTime;
-    this.music.gain.setTargetAtTime(s.musicVolume * 0.5 * level * this.mixMul.music, t, 0.15);
-    this.ambient.gain.setTargetAtTime(s.ambientVolume * 0.6 * level * this.mixMul.ambient, t, 0.15);
-    window.setTimeout(() => this.applyVolumes(), ms);
+    const g = this.busTargets(this.mixMul, level);
+    this.music.gain.setTargetAtTime(g.music, t, 0.15);
+    this.ambient.gain.setTargetAtTime(g.ambient, t, 0.15);
+    // 连续的压低：只保留最后一个恢复计时，前一个不会提前把音量“恢复”回去
+    if (this.duckTimer !== null) clearTimeout(this.duckTimer);
+    this.duckTimer = setTimeout(() => {
+      this.duckTimer = null;
+      this.applyVolumes();
+    }, ms);
   }
 
   private env(g: GainNode, t: number, a: number, peak: number, d: number) {
+    // 增益默认是 1：声音起点与自动化起点差一个采样时会漏出一声满音量的“咔哒”，手机调音放大后会听见
+    if (this.phone) g.gain.value = 0.0001;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + a);
     g.gain.exponentialRampToValueAtTime(0.0001, t + a + d);
@@ -354,6 +710,7 @@ class SoundEngine {
     o.connect(g).connect(opts.dest ?? this.out ?? this.sfx);
     o.start(t);
     o.stop(t + dur + (opts.attack ?? 0.005) + 0.05);
+    this.track(o, opts.dest !== this.musicIn && opts.dest !== this.ambientIn);
   }
 
   private noise(t: number, dur: number, opts: { freq?: number; q?: number; type?: BiquadFilterType; vol?: number; dest?: AudioNode; attack?: number } = {}) {
@@ -371,6 +728,7 @@ class SoundEngine {
     src.connect(f).connect(g).connect(opts.dest ?? this.out ?? this.sfx);
     src.start(t, Math.random() * 1.5);
     src.stop(t + dur + 0.1);
+    this.track(src, opts.dest !== this.musicIn && opts.dest !== this.ambientIn);
   }
 
   /**
@@ -379,6 +737,10 @@ class SoundEngine {
    */
   play(name: SfxName, delay = 0, pos?: { x: number; z?: number }) {
     if (!this.ctx || this.ctx.state !== 'running') return;
+    if (this.activeSources >= MAX_ACTIVE_SOURCES && LOW_PRIORITY_SFX.has(name)) {
+      this.droppedSfx++;
+      return;
+    }
     const t = this.ctx.currentTime + delay;
     if (pos && this.ctx.createStereoPanner) {
       const pan = this.ctx.createStereoPanner();
@@ -532,6 +894,7 @@ class SoundEngine {
       o.connect(filt).connect(g).connect(dest);
       o.start(t);
       o.stop(t + dur + 0.1);
+      this.track(o, true);
     };
     switch (species) {
       case 'cat':
@@ -584,7 +947,7 @@ class SoundEngine {
     if (!this.ctx || this.musicTimer !== null) return;
     this.nextNoteTime = this.ctx.currentTime + 0.1;
     this.musicStep = 0;
-    this.musicTimer = window.setInterval(() => this.scheduleMusic(), 100);
+    this.musicTimer = setInterval(() => this.scheduleMusic(), 100);
     this.startAmbient();
   }
 
@@ -614,6 +977,8 @@ class SoundEngine {
     // 计时器被浏览器延后（标签页在后台、系统休眠后恢复）：跳过已经错过的音符，
     // 不能把错过的几秒、几分钟的音符一次性补上（会瞬间同时响起一大串声音，也会创建大量声音节点）
     if (this.nextNoteTime < ctx.currentTime - 0.05) this.nextNoteTime = ctx.currentTime + 0.05;
+    const st = useSettings.getState();
+    const silent = st.muted || st.musicVolume <= 0.001 || this.mixMul.music <= 0.001;
     while (this.nextNoteTime < ctx.currentTime + 0.4) {
       const t = this.nextNoteTime;
       const step = this.musicStep;
@@ -621,33 +986,39 @@ class SoundEngine {
       const beat = step % 8;
       const [root, intervals] = chords[bar];
       const r = root;
-      // 电钢琴和弦（第 1、4.5 拍）
-      if (beat === 0 || beat === 5) {
-        intervals.forEach((iv, i) => {
-          const f = r * 2 * 2 ** (iv / 12);
-          this.tone(f, t + i * 0.012, beat === 0 ? 1.4 : 0.6, { type: 'sine', vol: 0.035, attack: 0.02, dest: this.music });
-          this.tone(f * 2, t + i * 0.012, 0.4, { type: 'triangle', vol: 0.008, attack: 0.01, dest: this.music });
-        });
-      }
-      // 行走贝斯
-      if (beat % 2 === 0) {
-        const walk = [0, 7, 12, 10][beat / 2];
-        this.tone(r * 2 ** (walk / 12) * (r > 120 ? 0.5 : 1), t, eighth * 1.8, { type: 'triangle', vol: 0.09, attack: 0.01, dest: this.music });
-      }
-      // 刷子鼓
-      this.noise(t, beat % 2 ? 0.05 : 0.09, { freq: 7000, q: 0.7, vol: (beat % 2 ? 0.015 : 0.03) * (1 + this.intensity * 0.8), type: 'highpass', dest: this.music });
-      // 紧张度：低频脉冲（心跳感）与持续的低音铺底
-      if (this.intensity > 0.3 && beat % 4 === 0) {
-        this.tone(55, t, 0.22, { type: 'sine', vol: 0.11 * this.intensity, attack: 0.005, glide: 40, dest: this.music });
-      }
-      if (this.intensity > 0.6 && beat === 0) {
-        this.tone(r * 0.5, t, eighth * 8, { type: 'sawtooth', vol: 0.012 * this.intensity, attack: 0.4, dest: this.music });
-      }
-      // 偶尔的旋律
-      if (beat === 3 && Math.random() < 0.5) {
-        const scale = [0, 2, 4, 7, 9, 12];
-        const f = 349.2 * 2 ** (scale[Math.floor(Math.random() * scale.length)] / 12);
-        this.tone(f, t, 0.5, { type: 'sine', vol: 0.03, attack: 0.02, dest: this.music });
+      // 音乐被关掉 / 全部静音 / 演出把音乐压到 0：只推进节拍，不创建任何声音节点（手机上省 CPU）
+      if (!silent) {
+        // 电钢琴和弦（第 1、4.5 拍）
+        if (beat === 0 || beat === 5) {
+          intervals.forEach((iv, i) => {
+            const f = r * 2 * 2 ** (iv / 12);
+            this.tone(f, t + i * 0.012, beat === 0 ? 1.4 : 0.6, { type: 'sine', vol: 0.035, attack: 0.02, dest: this.musicIn });
+            this.tone(f * 2, t + i * 0.012, 0.4, { type: 'triangle', vol: 0.008, attack: 0.01, dest: this.musicIn });
+          });
+        }
+        // 行走贝斯
+        if (beat % 2 === 0) {
+          const walk = [0, 7, 12, 10][beat / 2];
+          const bass = r * 2 ** (walk / 12) * (r > 120 ? 0.5 : 1);
+          this.tone(bass, t, eighth * 1.8, { type: 'triangle', vol: 0.09, attack: 0.01, dest: this.musicIn });
+          // 小喇叭放不出贝斯的基音：补上高两个八度的泛音，听感上仍是同一条贝斯线
+          if (this.phone) this.tone(bass * 4, t, eighth * 1.3, { type: 'triangle', vol: 0.03, attack: 0.01, dest: this.musicIn });
+        }
+        // 刷子鼓
+        this.noise(t, beat % 2 ? 0.05 : 0.09, { freq: 7000, q: 0.7, vol: (beat % 2 ? 0.015 : 0.03) * (1 + this.intensity * 0.8), type: 'highpass', dest: this.musicIn });
+        // 紧张度：低频脉冲（心跳感）与持续的低音铺底
+        if (this.intensity > 0.3 && beat % 4 === 0) {
+          this.tone(55, t, 0.22, { type: 'sine', vol: 0.11 * this.intensity, attack: 0.005, glide: 40, dest: this.musicIn });
+        }
+        if (this.intensity > 0.6 && beat === 0) {
+          this.tone(r * 0.5, t, eighth * 8, { type: 'sawtooth', vol: 0.012 * this.intensity, attack: 0.4, dest: this.musicIn });
+        }
+        // 偶尔的旋律
+        if (beat === 3 && Math.random() < 0.5) {
+          const scale = [0, 2, 4, 7, 9, 12];
+          const f = 349.2 * 2 ** (scale[Math.floor(Math.random() * scale.length)] / 12);
+          this.tone(f, t, 0.5, { type: 'sine', vol: 0.03, attack: 0.02, dest: this.musicIn });
+        }
       }
       const swing = beat % 2 === 0 ? eighth * 1.18 : eighth * 0.82;
       this.nextNoteTime += swing;
@@ -655,7 +1026,7 @@ class SoundEngine {
     }
   }
 
-  /** 环境声：森林夜晚的虫鸣 + 低沉的室内底噪 */
+  /** 环境声：森林夜晚的虫鸣 + 低沉的室内底噪（整个页面只启动一次） */
   private startAmbient() {
     if (!this.ctx || this.ambientStarted || !this.noiseBuf) return;
     this.ambientStarted = true;
@@ -665,39 +1036,55 @@ class SoundEngine {
     src.loop = true;
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.value = 320;
+    f.frequency.value = this.phone ? PHONE_TONE.ambientCutoff : 320;
     const g = ctx.createGain();
     g.gain.value = 0.05;
-    src.connect(f).connect(g).connect(this.ambient);
+    src.connect(f).connect(g).connect(this.ambientIn);
     src.start();
     const chirp = () => {
+      this.ambientTimer = null;
       if (!this.ctx) return;
-      const t = this.ctx.currentTime;
-      const room = useSettings.getState().room;
-      if (room === 'cabin') {
-        // 森林小屋：窗外的虫鸣
-        const base = 3800 + Math.random() * 1200;
-        for (let i = 0; i < 3; i++) this.tone(base, t + i * 0.07, 0.04, { type: 'sine', vol: 0.012, dest: this.ambient });
-      } else if (Math.random() < 0.35) {
-        // 赌场 / 高层：远处偶尔传来的杯子轻碰声
-        const f = 2400 + Math.random() * 900;
-        this.tone(f, t, 0.5, { type: 'sine', vol: 0.006, dest: this.ambient });
-        this.tone(f * 2.7, t, 0.3, { type: 'sine', vol: 0.003, dest: this.ambient });
+      const s = useSettings.getState();
+      // 声音暂停中（后台 / 等待点击）或环境声被关掉：不创建节点——否则暂停期间排队的声音会在恢复时一起响
+      if ((this.ctx.state as string) === 'running' && !s.muted && s.ambientVolume > 0.001 && this.mixMul.ambient > 0.001) {
+        const t = this.ctx.currentTime;
+        if (s.room === 'cabin') {
+          // 森林小屋：窗外的虫鸣
+          const base = 3800 + Math.random() * 1200;
+          for (let i = 0; i < 3; i++) this.tone(base, t + i * 0.07, 0.04, { type: 'sine', vol: 0.012, dest: this.ambientIn });
+        } else if (Math.random() < 0.35) {
+          // 赌场 / 高层：远处偶尔传来的杯子轻碰声
+          const fr = 2400 + Math.random() * 900;
+          this.tone(fr, t, 0.5, { type: 'sine', vol: 0.006, dest: this.ambientIn });
+          this.tone(fr * 2.7, t, 0.3, { type: 'sine', vol: 0.003, dest: this.ambientIn });
+        }
       }
-      setTimeout(chirp, 2500 + Math.random() * 5000);
+      this.ambientTimer = setTimeout(chirp, 2500 + Math.random() * 5000);
     };
-    setTimeout(chirp, 3000);
+    this.ambientTimer = setTimeout(chirp, 3000);
+  }
+
+  /** 调试面板：当前音频状态 */
+  debugInfo() {
+    const s = useSettings.getState();
+    return {
+      status: this.status,
+      context: (this.ctx?.state as string | undefined) ?? 'none',
+      contexts: this.contextsCreated,
+      bgm: this.musicTimer !== null && !!this.ctx && (this.ctx.state as string) === 'running' && !s.muted && s.musicVolume > 0,
+      activeSources: this.activeSources,
+      dropped: this.droppedSfx,
+    };
   }
 }
 
 export const sound = new SoundEngine();
 
-if (typeof window !== 'undefined') {
-  const unlock = () => {
-    sound.unlock();
-    sound.startMusic();
-  };
-  window.addEventListener('pointerdown', unlock);
-  window.addEventListener('keydown', unlock);
-  useSettings.subscribe(() => sound.applyVolumes());
-}
+// 设置改变（音量 / 静音）立即生效，不需要重新进入牌局
+useSettings.subscribe((s, prev) => {
+  sound.applyVolumes();
+  if (s.silentModeSound !== prev.silentModeSound) applyAudioSession();
+});
+
+// 开发时热更新：旧引擎的声音与计时器全部停掉
+if (import.meta.hot) import.meta.hot.dispose(() => sound.dispose());

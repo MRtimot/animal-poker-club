@@ -22,6 +22,10 @@ export interface SettingsState {
   musicVolume: number;
   sfxVolume: number;
   ambientVolume: number;
+  /** 🔇 全部静音（音乐 / 音效 / 环境声 / 演出 / 角色语音）；各项音量保持不变，取消后立刻恢复 */
+  muted: boolean;
+  /** iPhone / iPad：静音模式打开时也播放游戏声音（只保存在这台设备） */
+  silentModeSound: boolean;
   autoCamera: boolean;
   showFps: boolean;
   serverUrl: string;
@@ -96,6 +100,8 @@ export const useSettings = create<SettingsState>()(
       musicVolume: 0.35,
       sfxVolume: 0.8,
       ambientVolume: 0.4,
+      muted: false,
+      silentModeSound: true,
       autoCamera: true,
       showFps: false,
       serverUrl: '',
@@ -130,6 +136,8 @@ export const useSettings = create<SettingsState>()(
           musicVolume: vol(p.musicVolume, current.musicVolume),
           sfxVolume: vol(p.sfxVolume, current.sfxVolume),
           ambientVolume: vol(p.ambientVolume, current.ambientVolume),
+          muted: bool(p.muted, current.muted),
+          silentModeSound: bool(p.silentModeSound, current.silentModeSound),
           autoCamera: bool(p.autoCamera, current.autoCamera),
           showFps: bool(p.showFps, current.showFps),
           serverUrl: typeof p.serverUrl === 'string' ? p.serverUrl.slice(0, 200) : current.serverUrl,

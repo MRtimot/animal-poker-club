@@ -4537,3 +4537,24 @@ html::backdrop {
     display: none;
   }
 }
+
+/* 回到前台后浏览器要求再点一下才能恢复声音：很轻的提示，不挡住操作区 */
+.audio-resume {
+  position: fixed;
+  top: calc(var(--safe-top) + 58px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(30, 18, 52, 0.92);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  animation: toastIn 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+  -webkit-tap-highlight-color: transparent;
+}
