@@ -5,6 +5,8 @@
 import type { TableView, SeatView } from '../../core/game/view';
 import type { Species } from '../../core/player/profile';
 import type { AIPersonality } from '../../core/ai/ai';
+import { PERSONALITIES_BY_SPECIES } from '../../core/character/voice';
+import type { AnimalEmotion } from '../../core/character/voice';
 import type { AnimName, MoodFace } from '../../store/fxStore';
 
 /**
@@ -51,12 +53,13 @@ export function defeatVerdict(view: TableView, winnerIds: Iterable<string>, unco
 
 /** 演出阶段（与镜头分镜一一对应） */
 export type DefeatPhase =
-  | 'result' // 结果揭晓：全景（赢家演出仍在显示），声音开始降低
+  | 'result' // 结果揭晓：全景（赢家演出仍在显示），房间声音开始被“抽走”
+  | 'realize' // 输家特写：意识到输了（缓慢推近），倒吸一口气、心跳开始
   | 'winner' // 赢家特写：赢家按性格反应
-  | 'realize' // 输家特写：意识到输了（缓慢推近），呼吸、心跳开始
-  | 'reaction' // 反应镜头：其他动物一个接一个转头看向输家，灯光变暗
-  | 'tension' // 过肩镜头：红色轮廓光，心跳加快
-  | 'insert' // 环境特写：桌上的筹码与牌，最后一声重心跳
+  | 'reaction' // 反应镜头：其他动物一个接一个转头看向输家（跟焦）
+  | 'tension' // 过肩镜头：灯光变暗、克制的暗红轮廓光，所有人都盯着输家
+  | 'ecu' // 极近特写：输家的脸，心跳与呼吸占满声音
+  | 'insert' // 环境特写：桌上的牌与筹码随心跳轻轻颤动，最后一声重心跳
   | 'silence' // 一切突然停止（0.1~0.2 秒的完全安静）
   | 'impact' // 冲击：闪光 + 震动 + 低频 + 烟雾 + 粒子 + 桌面反应，输家倒下
   | 'aftermath' // 余波：烟雾散去、牌落下、筹码停稳、房间安静
@@ -64,24 +67,25 @@ export type DefeatPhase =
   | 'defeated' // “出局”画面（等待玩家）/ 简短版的字幕
   | 'recover'; // 恢复：镜头、灯光、声音回到牌桌
 
-export const PHASE_ORDER: DefeatPhase[] = ['result', 'winner', 'realize', 'reaction', 'tension', 'insert', 'silence', 'impact', 'aftermath', 'blackout', 'defeated', 'recover'];
+export const PHASE_ORDER: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout', 'defeated', 'recover'];
 
 /** 完整版：每个阶段的开始时间（毫秒，从赢家演出开始算起）；defeated 之后等玩家选择 */
 export const FULL_TIMELINE: Partial<Record<DefeatPhase, number>> = {
   result: 0,
-  winner: 1400,
-  realize: 2400,
-  reaction: 4100,
-  tension: 5400,
-  insert: 6500,
-  silence: 7100,
-  impact: 7280,
-  aftermath: 7900,
-  blackout: 9800,
-  defeated: 10500,
+  realize: 1300,
+  winner: 3000,
+  reaction: 4200,
+  tension: 5600,
+  ecu: 6700,
+  insert: 7900,
+  silence: 8500,
+  impact: 8680,
+  aftermath: 9300,
+  blackout: 11600,
+  defeated: 12400,
 };
 
-/** 简短版（基准时间，会按下一手开始前剩余的时间压缩）：没有赢家特写、过肩与环境特写，没有黑屏 */
+/** 简短版（基准时间，会按下一手开始前剩余的时间压缩）：没有赢家特写、过肩、极近特写与环境特写，没有黑屏 */
 export const SHORT_TIMELINE: Partial<Record<DefeatPhase, number>> = {
   result: 0,
   realize: 900,
@@ -143,24 +147,78 @@ export function lookOrder(players: SeatView[], loserId: string, winnerId: string
 
 // ───────────────────────── 角色反应 ─────────────────────────
 
-/** 输家“意识到输了”：自信的突然失去自信、傲慢的不相信、紧张的立刻慌张、爱玩的笑容慢慢消失、冷静的接受、好斗的愤怒 */
-export const REALIZE_BY_SPECIES: Record<Species, AnimName> = {
-  cat: 'realizeDisbelief',
-  lion: 'realizeAnger',
-  dragon: 'realizeDisbelief',
-  wolf: 'realizeDisbelief',
-  tiger: 'realizeAccept',
-  rabbit: 'realizePanic',
-  dog: 'realizePanic',
-  koala: 'realizePanic',
-  monkey: 'realizePanic',
-  penguin: 'realizePanic',
-  fox: 'realizeFade',
-  frog: 'realizeFade',
-  raccoon: 'realizeFade',
-  panda: 'realizeAccept',
-  bear: 'realizeAccept',
+/**
+ * 输家的性格（决定“意识到输了”的方式），来自项目里每种动物的性格数据（PERSONALITIES_BY_SPECIES 的性格标签），
+ * AI 玩家优先使用 AI 性格。
+ */
+export type DefeatTemperament = 'confident' | 'arrogant' | 'nervous' | 'calm' | 'aggressive' | 'playful' | 'elegant';
+
+/** 性格标签 → 性格（按顺序匹配，越靠前越优先） */
+const TRAIT_TEMPERAMENT: [string, DefeatTemperament][] = [
+  ['紧张', 'nervous'],
+  ['急躁', 'aggressive'],
+  ['威严', 'elegant'],
+  ['绅士', 'elegant'],
+  ['傲娇', 'arrogant'],
+  ['狡猾', 'arrogant'],
+  ['小心', 'nervous'],
+  ['调皮', 'playful'],
+  ['疯狂', 'playful'],
+  ['热情', 'playful'],
+  ['佛系', 'calm'],
+  ['稳重', 'calm'],
+  ['温和', 'calm'],
+  ['自信', 'confident'],
+  ['强大', 'confident'],
+];
+const TEMPERAMENT_BY_AI: Record<AIPersonality, DefeatTemperament> = {
+  aggressiveFox: 'aggressive',
+  cautiousPanda: 'calm',
+  crazyFrog: 'playful',
+  smartCat: 'arrogant',
+  luckyRabbit: 'nervous',
 };
+
+export function defeatTemperament(species: Species, aiPersonality?: AIPersonality | null): DefeatTemperament {
+  if (aiPersonality && TEMPERAMENT_BY_AI[aiPersonality]) return TEMPERAMENT_BY_AI[aiPersonality];
+  const p = PERSONALITIES_BY_SPECIES[species];
+  if (!p) return 'calm';
+  for (const [trait, t] of TRAIT_TEMPERAMENT) if (p.personalityTraits.includes(trait)) return t;
+  if (p.aggression >= 0.8) return 'aggressive';
+  if (p.confidence >= 0.8) return 'confident';
+  if (p.humor >= 0.8) return 'playful';
+  return 'calm';
+}
+
+/**
+ * 输家“意识到输了”：自信的自信慢慢泄掉、傲慢的低头再看一遍牌、紧张的立刻慌张、冷静的慢慢接受、
+ * 好斗的明显恼火、爱玩的笑容消失、优雅的努力保持体面
+ */
+export const REALIZE_BY_TEMPERAMENT: Record<DefeatTemperament, { anim: AnimName; face: MoodFace; emoji: string }> = {
+  confident: { anim: 'realizeDeflate', face: 'wide', emoji: '😶' },
+  arrogant: { anim: 'realizeRecheck', face: 'doubt', emoji: '🤨' },
+  nervous: { anim: 'realizePanic', face: 'wide', emoji: '😨' },
+  calm: { anim: 'realizeAccept', face: 'sad', emoji: '😔' },
+  aggressive: { anim: 'realizeAnger', face: 'angry', emoji: '😠' },
+  playful: { anim: 'realizeFade', face: 'wide', emoji: '😶' },
+  elegant: { anim: 'realizeDignity', face: 'normal', emoji: '😐' },
+};
+
+/** 冲击前（灯光变暗到极近特写）输家脸上的表情：害怕 / 恼火 / 难过 */
+export const DREAD_FACE: Record<DefeatTemperament, MoodFace> = {
+  confident: 'wide',
+  arrogant: 'doubt',
+  nervous: 'wide',
+  calm: 'sad',
+  aggressive: 'angry',
+  playful: 'wide',
+  elegant: 'sad',
+};
+
+/** 每种动物（没有 AI 性格时）的“意识到输了”动作 */
+export const REALIZE_BY_SPECIES = Object.fromEntries(
+  (Object.keys(PERSONALITIES_BY_SPECIES) as Species[]).map((sp) => [sp, REALIZE_BY_TEMPERAMENT[defeatTemperament(sp)].anim]),
+) as Record<Species, AnimName>;
 
 /** 冲击后的倒下方式：每种动物不同（夸张的喜剧式倒下，没有任何伤口或血腥画面） */
 export const COLLAPSE_BY_SPECIES: Record<Species, AnimName> = {
@@ -174,11 +232,11 @@ export const COLLAPSE_BY_SPECIES: Record<Species, AnimName> = {
   bear: 'collapseSlump', // 沉重地倒向椅子 / 趴到桌上
   panda: 'collapseSlump', // 慢慢趴下
   koala: 'collapseSlump',
-  tiger: 'collapseDignified', // 保持尊严：后仰一下，然后慢慢低头闭眼，仍然坐直
+  tiger: 'collapseSeethe', // 愤怒但克制：双拳压在桌上发抖、盯着赢家，慢慢低头
   wolf: 'collapseDignified',
   dragon: 'collapseDignified',
   monkey: 'collapseDrama', // 极其夸张地抱头，摇晃后侧倒
-  lion: 'collapseRage', // 愤怒地站起来，然后重重地坐回去
+  lion: 'collapseDignified', // 输了也要保持尊严：后仰一下，然后慢慢低头闭眼，仍然坐直
 };
 
 /** 赢家的性格：优雅 / 嚣张 / 冷酷 / 爱玩 / 冷静 */
@@ -214,32 +272,41 @@ export function winnerStyle(p: Pick<SeatView, 'aiPersonality' | 'profile'>): Win
   return STYLE_BY_SPECIES[p.profile.animal.species] ?? 'elegant';
 }
 
-/** 赢家反应：优雅地微笑、嚣张地整理筹码、冷静地盯着输家、爱玩地庆祝、平静地继续整理牌 */
+/** 赢家反应：优雅的浅浅一笑、慢慢收好筹码；嚣张的往后一靠看着输家；冷酷的面无表情；爱玩的庆祝；冷静的只是把牌拢过来 */
 export const WINNER_REACTION: Record<WinnerStyle, { anim: AnimName; face: MoodFace; emoji: string }> = {
-  elegant: { anim: 'cool', face: 'smug', emoji: '🙂' },
-  cocky: { anim: 'stackChips', face: 'smug', emoji: '😏' },
+  elegant: { anim: 'stackChips', face: 'smug', emoji: '🙂' },
+  cocky: { anim: 'leanBack', face: 'smug', emoji: '😏' },
   ruthless: { anim: 'stare', face: 'doubt', emoji: '😐' },
   playful: { anim: 'clap', face: 'happy', emoji: '😆' },
-  calm: { anim: 'think', face: 'normal', emoji: '😌' },
+  calm: { anim: 'gatherCards', face: 'normal', emoji: '😌' },
 };
 
-/** 旁观者转头时的反应：笑、倒吸一口气、盯着看、移开视线、耸肩 */
+/** 余波里赢家的一句很短的话（使用现有的角色语音与优先级队列；同一时间只有一个角色说话） */
+export const WINNER_LINE: Record<WinnerStyle, { text: string; emotion: AnimalEmotion }> = {
+  elegant: { text: '承让了。', emotion: 'confident' },
+  cocky: { text: '就这？', emotion: 'sarcastic' },
+  ruthless: { text: '……下一个。', emotion: 'neutral' },
+  playful: { text: '哈哈哈！', emotion: 'excited' },
+  calm: { text: '嗯。', emotion: 'neutral' },
+};
+
+/** 旁观者的反应：笑、倒吸一口气、盯着看、移开视线、小声议论、耸肩、坐立不安 */
 export const BYSTANDER_REACTION: Record<Species, { anim: AnimName; face: MoodFace; emoji: string }> = {
   frog: { anim: 'laugh', face: 'happy', emoji: '🤭' },
   monkey: { anim: 'laugh', face: 'happy', emoji: '🙊' },
-  raccoon: { anim: 'smug', face: 'smug', emoji: '😏' },
+  raccoon: { anim: 'whisper', face: 'smug', emoji: '🤫' },
   rabbit: { anim: 'shock', face: 'wide', emoji: '😱' },
-  dog: { anim: 'nervous', face: 'wide', emoji: '😨' },
-  penguin: { anim: 'surprised', face: 'wide', emoji: '😮' },
+  dog: { anim: 'uneasy', face: 'wide', emoji: '😨' },
+  penguin: { anim: 'lookAway', face: 'normal', emoji: '😶' },
   koala: { anim: 'surprised', face: 'wide', emoji: '😳' },
   wolf: { anim: 'stare', face: 'doubt', emoji: '😐' },
   tiger: { anim: 'stare', face: 'doubt', emoji: '😐' },
   dragon: { anim: 'stare', face: 'smug', emoji: '😏' },
   cat: { anim: 'stare', face: 'smug', emoji: '😼' },
   lion: { anim: 'stare', face: 'normal', emoji: '😶' },
-  fox: { anim: 'smug', face: 'smug', emoji: '🤷' },
+  fox: { anim: 'shrug', face: 'smug', emoji: '🤷' },
   panda: { anim: 'lookAway', face: 'sad', emoji: '😶' },
-  bear: { anim: 'lookAway', face: 'sad', emoji: '😶' },
+  bear: { anim: 'uneasy', face: 'sad', emoji: '😟' },
 };
 
 // ───────────────────────── 设备档位 ─────────────────────────
@@ -254,14 +321,20 @@ export interface DefeatProfile {
   flash: number;
   /** 镜头在一个分镜内的移动幅度（减少动态效果时几乎不动） */
   move: number;
+  /** 烟雾贴图分辨率（手机更低） */
+  smokeRes: number;
+  /** 碎片 / 筹码是否投射阴影（手机与低画质关闭） */
+  shadows: boolean;
+  /** 冲击时的火星数量（很少、很短） */
+  sparks: number;
 }
 
 export function defeatProfile(o: { mobile: boolean; quality: 'low' | 'medium' | 'high' | 'ultra'; reduced: boolean }): DefeatProfile {
   const tier = o.quality === 'ultra' || o.quality === 'high' ? 2 : o.quality === 'medium' ? 1 : 0;
   const base: DefeatProfile = [
-    { smoke: 12, debris: 28, fragments: 10, looseChips: 5, shake: 0.05, flash: 0.75, move: 1 },
-    { smoke: 18, debris: 46, fragments: 16, looseChips: 7, shake: 0.06, flash: 0.82, move: 1 },
-    { smoke: 28, debris: 80, fragments: 26, looseChips: 10, shake: 0.07, flash: 0.88, move: 1 },
+    { smoke: 12, debris: 28, fragments: 10, looseChips: 5, shake: 0.05, flash: 0.75, move: 1, smokeRes: 64, shadows: false, sparks: 6 },
+    { smoke: 18, debris: 46, fragments: 16, looseChips: 7, shake: 0.06, flash: 0.82, move: 1, smokeRes: 128, shadows: true, sparks: 10 },
+    { smoke: 28, debris: 80, fragments: 26, looseChips: 10, shake: 0.07, flash: 0.88, move: 1, smokeRes: 128, shadows: true, sparks: 16 },
   ][tier];
   const p = { ...base };
   if (o.mobile) {
@@ -269,6 +342,9 @@ export function defeatProfile(o: { mobile: boolean; quality: 'low' | 'medium' | 
     p.debris = Math.min(p.debris, 36);
     p.fragments = Math.min(p.fragments, 12);
     p.looseChips = Math.min(p.looseChips, 6);
+    p.sparks = Math.min(p.sparks, 8);
+    p.smokeRes = 64;
+    p.shadows = false;
     p.shake *= 0.6;
   }
   if (o.reduced) {
@@ -276,6 +352,7 @@ export function defeatProfile(o: { mobile: boolean; quality: 'low' | 'medium' | 
     p.debris = Math.ceil(p.debris * 0.35);
     p.fragments = Math.ceil(p.fragments * 0.4);
     p.looseChips = Math.ceil(p.looseChips * 0.5);
+    p.sparks = Math.ceil(p.sparks * 0.4);
     p.shake = 0;
     p.flash = 0.3;
     p.move = 0.15;

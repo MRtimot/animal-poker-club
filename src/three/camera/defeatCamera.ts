@@ -1,11 +1,11 @@
 // 失败演出的分镜：每个阶段一个镜头，镜头之间是“剪辑”（直接切换），镜头内只有缓慢的推拉。
-// 全景 → 赢家特写 → 输家特写 → 反应镜头 → 过肩镜头 → 环境特写 → 冲击 → 余波 → 黑屏
+// 全景 → 输家特写 → 赢家特写 → 反应镜头（跟焦）→ 过肩镜头 → 极近特写 → 环境特写（牌与筹码）→ 冲击 → 余波 → 黑屏
 import * as THREE from 'three';
 import type { SeatLayout } from '../layout';
 import { phaseEnd, type DefeatPhase } from '../../animation/defeat/defeatRules';
 import type { DefeatSequence } from '../../animation/defeat/defeatStore';
 
-export type ShotName = 'wide' | 'winnerCU' | 'loserCU' | 'reaction' | 'ots' | 'insert' | 'impact' | 'aftermath';
+export type ShotName = 'wide' | 'winnerCU' | 'loserCU' | 'reaction' | 'ots' | 'ecu' | 'insert' | 'impact' | 'aftermath';
 
 const FULL_SHOTS: Partial<Record<DefeatPhase, ShotName>> = {
   result: 'wide',
@@ -13,6 +13,7 @@ const FULL_SHOTS: Partial<Record<DefeatPhase, ShotName>> = {
   realize: 'loserCU',
   reaction: 'reaction',
   tension: 'ots',
+  ecu: 'ecu',
   insert: 'insert',
   silence: 'insert',
   impact: 'impact',
@@ -36,12 +37,27 @@ export interface DefeatShot {
   look: THREE.Vector3;
   /** 景深焦点（极高画质有景深时生效） */
   focus: THREE.Vector3;
+  /** 景深的清晰范围（米）：特写时很窄（背景虚化），全景时很宽 */
+  range: number;
   fov: number;
 }
 
 const up = (y: number) => new THREE.Vector3(0, y, 0);
 /** layout.head 是名牌的锚点（座位上方 2.45）；动物的脸大约在它下方 1.0 */
 export const FACE_DROP = 1.0;
+/**
+ * 某个座位上的动物转头看向另一个座位时，脸朝向的水平方向。
+ * 与 AnimalModel 的转头一致：头最多转 ±0.75 弧度；镜头放在它脸朝向的方向上（略少转一点，拍到四分之三侧脸）。
+ */
+function facing(from: SeatLayout, to: SeatLayout | undefined, k = 0.85): THREE.Vector3 {
+  const dir = new THREE.Vector3(from.seat[0], 0, from.seat[2]).normalize();
+  const f = dir.clone().negate();
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  if (!to) return f;
+  const d = new THREE.Vector3(to.seat[0] - from.seat[0], 0, to.seat[2] - from.seat[2]);
+  const yaw = Math.max(-0.75, Math.min(0.75, Math.atan2(d.dot(side), d.dot(f)))) * k;
+  return f.multiplyScalar(Math.cos(yaw)).add(side.multiplyScalar(Math.sin(yaw)));
+}
 const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
 
 /** 当前应该使用的镜头；没有演出 / 恢复阶段返回 null（交还给普通镜头） */
@@ -62,35 +78,42 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
   const dir = new THREE.Vector3(L.seat[0], 0, L.seat[2]).normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x);
   const center = new THREE.Vector3(0, 1.0, 0);
+  // 输家脸朝向的方向（演出中他转头看着赢家）
+  const lf = facing(L, seq.winnerId ? layout.get(seq.winnerId) : undefined);
   const cu = portrait ? 50 : 36;
   let pos: THREE.Vector3;
   let look: THREE.Vector3;
   let focus: THREE.Vector3;
   let fov = portrait ? 60 : 42;
+  let range = 4;
 
   switch (shot) {
     case 'wide': {
       pos = new THREE.Vector3(0, 8.6 - p * 0.9, 10.6 - p * 1.3).multiplyScalar(portrait ? 1.15 : 1);
       look = new THREE.Vector3(0, 0.5, -0.6);
       focus = center.clone();
+      range = 9;
       break;
     }
     case 'winnerCU': {
       const W = seq.winnerId ? layout.get(seq.winnerId) : undefined;
       const wh = W ? new THREE.Vector3(...W.head).add(up(-FACE_DROP)) : head;
-      const wd = W ? new THREE.Vector3(W.seat[0], 0, W.seat[2]).normalize() : dir;
-      const ws = new THREE.Vector3(-wd.z, 0, wd.x);
-      pos = wh.clone().add(wd.clone().multiplyScalar(-(2.6 - p * 0.35) * k)).add(up(0.35)).add(ws.multiplyScalar(0.4));
+      // 赢家看着输家：镜头放在赢家脸朝向的方向
+      const wf = W ? facing(W, L, 0.7) : dir.clone().negate();
+      pos = wh.clone().add(wf.multiplyScalar((2.6 - p * 0.35) * k)).add(up(0.3));
       look = wh.clone().add(up(-0.05));
       focus = wh.clone();
       fov = cu;
+      range = 2.2;
       break;
     }
     case 'loserCU': {
-      pos = head.clone().add(dir.clone().multiplyScalar(-(2.5 - p * 0.65) * k)).add(up(0.28)).add(side.clone().multiplyScalar(0.25));
+      // 输家转头看向赢家：镜头放在他脸朝向的方向，略低于视线（压迫感）
+      pos = head.clone().add(lf.clone().multiplyScalar((2.5 - p * 0.65) * k)).add(up(0.1));
       look = head.clone().add(up(-0.02));
       focus = head.clone();
       fov = cu;
+      range = 2.0;
       break;
     }
     case 'reaction': {
@@ -99,6 +122,7 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       look = head.clone().add(up(-0.1));
       // 跟焦：先对焦前景转头的动物，再落到输家身上
       focus = center.clone().lerp(head, p);
+      range = 3;
       break;
     }
     case 'ots': {
@@ -107,6 +131,17 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       look = dir.clone().multiplyScalar(-1.5).add(up(1.1));
       focus = dir.clone().multiplyScalar(-3.2).add(up(1.4));
       fov = portrait ? 56 : 40;
+      range = 3.5;
+      break;
+    }
+    case 'ecu': {
+      // 极近特写：只有输家的脸，镜头几乎贴上去、极慢地推近；背景完全虚化
+      const eyes = head.clone().add(up(0.05));
+      pos = eyes.clone().add(lf.clone().multiplyScalar((2.0 - p * 0.3) * k)).add(up(0.02));
+      look = eyes.clone();
+      focus = eyes.clone();
+      fov = portrait ? 44 : 30;
+      range = 1.1;
       break;
     }
     case 'insert': {
@@ -117,6 +152,7 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       look = target.clone().add(dir.clone().multiplyScalar(-0.05));
       focus = target.clone();
       fov = cu;
+      range = 1.2;
       break;
     }
     case 'impact': {
@@ -124,6 +160,7 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       pos = head.clone().add(dir.clone().multiplyScalar(-(3.4 + p * 0.6) * k)).add(up(0.75));
       look = head.clone().add(up(-0.55));
       focus = head.clone();
+      range = 4;
       break;
     }
     case 'aftermath':
@@ -134,5 +171,5 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
       break;
     }
   }
-  return { key: `${seq.key}:${shot}`, pos, look, focus, fov };
+  return { key: `${seq.key}:${shot}`, pos, look, focus, range, fov };
 }

@@ -13,6 +13,8 @@ import { defeatShot } from './defeatCamera';
 
 /** 当前镜头焦点（景深使用） */
 export const cameraFocus = new THREE.Vector3(0, 1, 0);
+/** 景深的清晰范围（米）：平时很宽；失败演出的特写镜头里很窄（只有输家清晰） */
+export const cameraFocusRange = { value: 7 };
 
 const BOARD_CENTER = new THREE.Vector3(boardPos(2)[0], 1.0, boardPos(2)[2]);
 const tmpV = new THREE.Vector3();
@@ -205,7 +207,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     const tt = performance.now() / 1000;
     if (!calm) {
       // 失败演出的紧张阶段：克制的手持感稍微明显一些
-      const hand = dShot && (ds.phase === 'tension' || ds.phase === 'insert' || ds.phase === 'reaction') ? 2.4 : 1;
+      const hand = dShot && (ds.phase === 'tension' || ds.phase === 'ecu' || ds.phase === 'insert' || ds.phase === 'reaction') ? 2.4 : 1;
       camera.position.x += Math.sin(tt * 0.37) * 0.012 * hand + (hand > 1 ? Math.sin(tt * 2.3) * 0.006 : 0);
       camera.position.y += Math.sin(tt * 0.53 + 1) * 0.008 * hand + (hand > 1 ? Math.sin(tt * 1.7 + 2) * 0.005 : 0);
     }
@@ -217,6 +219,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
       camera.position.y += Math.sin(st * 33 + 1.3) * a * 0.5;
     }
     cameraFocus.copy(dShot ? dShot.focus : L);
+    cameraFocusRange.value = dShot ? dShot.range : 7;
     camera.lookAt(look.current);
   });
   return null;

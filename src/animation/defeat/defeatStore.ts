@@ -91,7 +91,18 @@ const ZERO: Jolt = { lift: 0, rx: 0, rz: 0, dx: 0, dz: 0 };
 export function tableJolt(x: number, z: number, now: number, seed = 0): Jolt {
   const s = useDefeat.getState().seq;
   const t0 = s?.at.impact;
-  if (!s || t0 === undefined || now < t0) return ZERO;
+  if (!s || t0 === undefined) return ZERO;
+  // 冲击前的环境特写：输家面前的牌和筹码随着心跳轻轻颤动；静止的那 0.18 秒完全不动
+  if (now < t0) {
+    const a = s.at.insert;
+    const b = s.at.silence;
+    if (a === undefined || b === undefined || now < a || now >= b || s.reduced) return ZERO;
+    const near0 = Math.max(0, 1 - Math.hypot(x - s.origin[0], z - s.origin[1]) / 3.2);
+    if (near0 <= 0) return ZERO;
+    const grow = (now - a) / (b - a);
+    const beat = Math.pow(Math.max(0, Math.sin(now * 0.0105 + seed)), 6);
+    return { lift: 0.006 * near0 * grow * beat, rx: 0, rz: 0.01 * near0 * grow * beat * Math.sin(seed * 3.1), dx: 0, dz: 0 };
+  }
   const t = (now - t0) / 1000;
   if (t > 1.8) return ZERO;
   const dx = x - s.origin[0];
@@ -111,4 +122,35 @@ export function tableJolt(x: number, z: number, now: number, seed = 0): Jolt {
   const nx = dist > 0.001 ? dx / dist : 0;
   const nz = dist > 0.001 ? dz / dist : 0;
   return { lift, rx: spin * (r2 - 0.5) * 1.6, rz: spin * (r1 - 0.5) * 1.6, dx: nx * slide, dz: nz * slide };
+}
+
+// ───────────── 冲击时输家的椅子：被撞得往后滑、向后翘起，再“咚”地落回地面（只是画面） ─────────────
+
+export interface ChairJolt {
+  /** 沿座位方向往外滑的距离 */
+  push: number;
+  /** 向后翘起的角度（弧度） */
+  tilt: number;
+}
+const CHAIR_ZERO: ChairJolt = { push: 0, tilt: 0 };
+
+/** 椅子落回地面的时刻（秒，冲击之后）——与“咚”的声音对齐 */
+export const CHAIR_LAND_S = 0.52;
+
+/** 输家的椅子此刻的偏移；heavy：熊 / 熊猫这类重的动物，椅子反应更大。其他玩家始终为 0 */
+export function chairJolt(playerId: string, now: number, heavy: boolean): ChairJolt {
+  const s = useDefeat.getState().seq;
+  const t0 = s?.at.impact;
+  if (!s || s.loserId !== playerId || t0 === undefined || now < t0 || useDefeat.getState().skipped) return CHAIR_ZERO;
+  const t = (now - t0) / 1000;
+  const k = s.reduced ? 0.35 : 1;
+  const full = s.cut === 'full';
+  const P = (full ? (heavy ? 0.42 : 0.3) : 0.12) * k;
+  const T = (full ? (heavy ? 0.2 : 0.14) : 0.04) * k;
+  // 0.22 秒内滑出去，之后停在稍近一点的位置（椅子被撞歪了，演出结束前不会自己归位）
+  const out = t < 0.22 ? 1 - Math.pow(1 - t / 0.22, 3) : 1 - 0.3 * Math.min(1, (t - 0.22) / 0.5);
+  // 翘起 → 落回（咚）→ 小小地弹一下
+  const L = CHAIR_LAND_S;
+  const tilt = t < 0.16 ? Math.sin((t / 0.16) * (Math.PI / 2)) : t < L ? Math.cos(((t - 0.16) / (L - 0.16)) * (Math.PI / 2)) : t < L + 0.18 ? Math.sin(((t - L) / 0.18) * Math.PI) * 0.18 : 0;
+  return { push: P * out, tilt: T * tilt };
 }

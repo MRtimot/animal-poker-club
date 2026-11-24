@@ -6,6 +6,14 @@ import { GEO, mat } from '../animals/materials';
 import { TABLE_R, TABLE_Y } from '../layout';
 import { useSettings, type Quality } from '../../store/settingsStore';
 import { carpetMaps, feltMaps, leatherNormal, plankFloorMaps, salonWallMaps, skylineTexture, woodMaps } from '../realism';
+import { defeatAccent } from '../effects/DefeatFX';
+
+// 失败演出时环境里的暗红点缀（克制：只在壁灯、墙面补光、桌边皮革与黄铜嵌线上）
+const ACCENT_SHADE = new THREE.Color('#7a1018');
+const ACCENT_BULB = new THREE.Color('#ff5a4a');
+const ACCENT_WALL = new THREE.Color('#8a1a1a');
+const ACCENT_RAIL = new THREE.Color('#4a0710');
+const ACCENT_INLAY = new THREE.Color('#c0182a');
 
 const ROOM_R = 15;
 // 天花板要高于竖屏俯视镜头（约 15），房间本身保持昏暗，视线集中在牌桌
@@ -57,14 +65,14 @@ function lacqueredWood(key: string, base: string, repeat: [number, number]) {
 }
 
 /** 壁灯：黄铜底座 + 布艺灯罩（暖光） */
-function Sconce({ angle, y, color }: { angle: number; y: number; color: string }) {
+function Sconce({ angle, y, shadeMat, bulbMat }: { angle: number; y: number; shadeMat: THREE.Material; bulbMat: THREE.Material }) {
   const r = ROOM_R - 0.15;
   return (
     <group position={[Math.sin(angle) * r, y, Math.cos(angle) * r]} rotation={[0, angle + Math.PI, 0]}>
       <mesh geometry={GEO.box} material={brass()} position={[0, 0, 0.04]} scale={[0.18, 0.32, 0.06]} />
       <mesh geometry={GEO.cyl} material={brass()} position={[0, 0.05, 0.22]} rotation={[Math.PI / 2, 0, 0]} scale={[0.025, 0.36, 0.025]} />
-      <mesh geometry={GEO.cylOpen} material={mat(color, { emissive: color, ei: 0.9, rough: 0.9 })} position={[0, 0.22, 0.4]} scale={[0.2, 0.28, 0.2]} />
-      <mesh geometry={GEO.sphereLow} material={mat('#fff1d6', { emissive: '#ffd9a0', ei: 2.4 })} position={[0, 0.18, 0.4]} scale={0.07} />
+      <mesh geometry={GEO.cylOpen} material={shadeMat} position={[0, 0.22, 0.4]} scale={[0.2, 0.28, 0.2]} />
+      <mesh geometry={GEO.sphereLow} material={bulbMat} position={[0, 0.18, 0.4]} scale={0.07} />
     </group>
   );
 }
@@ -290,6 +298,33 @@ export function ClubEnvironment({ quality }: { quality: Quality }) {
   const carpet = useMemo(() => carpetMaps(theme), [theme]);
   const rich = quality === 'high' || quality === 'ultra';
   const sconces = useMemo(() => Array.from({ length: 10 }, (_, i) => Math.PI * 0.1 + (i / 10) * Math.PI * 2), []);
+  // 壁灯材质：同类型材质的副本（不会触发新的着色器编译），失败演出时跟着房间变暗、染上暗红
+  const sconceMat = useMemo(() => {
+    const shadeM = (mat(T.wallLight, { emissive: T.wallLight, ei: 0.9, rough: 0.9 }) as THREE.MeshStandardMaterial).clone();
+    const bulbM = (mat('#fff1d6', { emissive: '#ffd9a0', ei: 2.4 }) as THREE.MeshStandardMaterial).clone();
+    return { shade: shadeM, bulb: bulbM, shadeBase: shadeM.emissive.clone(), bulbBase: bulbM.emissive.clone(), wallBase: new THREE.Color(T.wallLight) };
+  }, [T.wallLight]);
+  useEffect(
+    () => () => {
+      sconceMat.shade.dispose();
+      sconceMat.bulb.dispose();
+    },
+    [sconceMat],
+  );
+  const wallLights = useRef<(THREE.PointLight | null)[]>([]);
+  useFrame(() => {
+    const { red, env } = defeatAccent;
+    const dim = 0.35 + 0.65 * env;
+    sconceMat.shade.emissive.copy(sconceMat.shadeBase).lerp(ACCENT_SHADE, red * 0.75);
+    sconceMat.shade.emissiveIntensity = 0.9 * dim;
+    sconceMat.bulb.emissive.copy(sconceMat.bulbBase).lerp(ACCENT_BULB, red * 0.5);
+    sconceMat.bulb.emissiveIntensity = 2.4 * (0.3 + 0.7 * env);
+    for (const l of wallLights.current) {
+      if (!l) continue;
+      l.intensity = 9 * (0.3 + 0.7 * env);
+      l.color.copy(sconceMat.wallBase).lerp(ACCENT_WALL, red * 0.6);
+    }
+  });
 
   return (
     <group>
@@ -320,10 +355,10 @@ export function ClubEnvironment({ quality }: { quality: Quality }) {
       </mesh>
 
       {/* 壁灯（暖色、克制） */}
-      {sconces.map((a, i) => (theme === 'penthouse' && a > Math.PI * 0.62 && a < Math.PI * 1.38 ? null : <Sconce key={i} angle={a} y={3.4} color={T.wallLight} />))}
+      {sconces.map((a, i) => (theme === 'penthouse' && a > Math.PI * 0.62 && a < Math.PI * 1.38 ? null : <Sconce key={i} angle={a} y={3.4} shadeMat={sconceMat.shade} bulbMat={sconceMat.bulb} />))}
       {rich &&
-        [0.6, 2.2, 3.8, 5.4].map((a) => (
-          <pointLight key={a} position={[Math.sin(a) * (ROOM_R - 1), 3.6, Math.cos(a) * (ROOM_R - 1)]} color={T.wallLight} intensity={9} distance={9} decay={2} />
+        [0.6, 2.2, 3.8, 5.4].map((a, i) => (
+          <pointLight key={a} ref={(l) => (wallLights.current[i] = l)} position={[Math.sin(a) * (ROOM_R - 1), 3.6, Math.cos(a) * (ROOM_R - 1)]} color={T.wallLight} intensity={9} distance={9} decay={2} />
         ))}
 
       {/* 主题陈设 */}
@@ -369,7 +404,23 @@ export function PokerTableMesh() {
     [felt],
   );
   const feltSide = useMemo(() => new THREE.MeshStandardMaterial({ color: '#174a31', roughness: 0.95 }), []);
-  const railMat = leather(T.leather);
+  // 桌边皮革与黄铜嵌线：独立的副本（沙发等不受影响），失败演出时泛出克制的暗红
+  const railMat = useMemo(() => leather(T.leather).clone(), [T.leather]);
+  const inlayMat = useMemo(() => brass().clone(), []);
+  useEffect(
+    () => () => {
+      railMat.dispose();
+      inlayMat.dispose();
+    },
+    [railMat, inlayMat],
+  );
+  useFrame(() => {
+    const r = defeatAccent.red;
+    railMat.emissive.copy(ACCENT_RAIL);
+    railMat.emissiveIntensity = r * 0.55;
+    inlayMat.emissive.copy(ACCENT_INLAY);
+    inlayMat.emissiveIntensity = r * 0.45;
+  });
   const apron = lacqueredWood('apron', '#4a2412', [6, 1]);
   const race = lacqueredWood('race', '#5a2e16', [12, 1]);
   return (
@@ -383,7 +434,7 @@ export function PokerTableMesh() {
         <ringGeometry args={[TABLE_R - 0.24, TABLE_R + 0.02, 128]} />
       </mesh>
       {/* 黄铜嵌线 */}
-      <mesh position={[0, TABLE_Y + 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]} material={brass()}>
+      <mesh position={[0, TABLE_Y + 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]} material={inlayMat}>
         <ringGeometry args={[TABLE_R - 0.26, TABLE_R - 0.24, 128]} />
       </mesh>
       {/* 皮质包边 */}

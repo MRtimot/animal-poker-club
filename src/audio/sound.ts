@@ -126,13 +126,18 @@ class SoundEngine {
     this.tone(56, t + 0.17, 0.16, { type: 'sine', vol: 0.3 * v, attack: 0.008, glide: 36, dest: this.cine });
   }
 
-  /** 呼吸：gasp = 倒吸一口气；shaky = 发抖的呼吸 */
-  cineBreath(kind: 'gasp' | 'shaky', delay = 0) {
+  /** 呼吸：gasp = 倒吸一口气；inhale = 短促地吸气；exhale = 慢慢呼出一口气；shaky = 发抖的呼吸 */
+  cineBreath(kind: 'gasp' | 'inhale' | 'exhale' | 'shaky', delay = 0) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime + delay;
     if (kind === 'gasp') {
       this.noise(t, 0.34, { freq: 1500, q: 1.4, vol: 0.07, attack: 0.09, dest: this.cine });
       this.noise(t + 0.02, 0.28, { freq: 3200, q: 2, vol: 0.025, attack: 0.08, dest: this.cine });
+    } else if (kind === 'inhale') {
+      this.noise(t, 0.22, { freq: 1900, q: 1.6, vol: 0.05, attack: 0.12, dest: this.cine });
+    } else if (kind === 'exhale') {
+      this.noise(t, 1.1, { freq: 700, q: 0.9, vol: 0.045, attack: 0.18, dest: this.cine });
+      this.noise(t + 0.05, 0.9, { freq: 1600, q: 1.2, vol: 0.015, attack: 0.2, dest: this.cine });
     } else {
       for (let i = 0; i < 3; i++) this.noise(t + i * 0.55, 0.42, { freq: 900 + i * 80, q: 1.1, vol: 0.035, attack: 0.18, dest: this.cine });
     }
@@ -209,6 +214,20 @@ class SoundEngine {
       this.reverbSend.gain.setValueAtTime(0.16 + 0.5 * power, t);
       this.reverbSend.gain.setTargetAtTime(0.16, t + 0.35, 0.45);
     }
+  }
+
+  /**
+   * 输家的椅子：被撞得往后滑（摩擦地面），翘起后“咚”地落回地面，再轻轻弹一下。
+   * landAt：落地时刻（秒，与画面里椅子落地对齐）；heavy：重的动物，声音更低更重
+   */
+  cineChair(landAt: number, heavy = false, power = 1) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+    const c = this.cine;
+    this.noise(t + 0.02, 0.24, { freq: heavy ? 420 : 620, q: 3, vol: 0.09 * power, attack: 0.02, dest: c });
+    this.tone(heavy ? 92 : 128, t + landAt, 0.16, { type: 'triangle', vol: 0.3 * power, attack: 0.003, glide: heavy ? 60 : 84, dest: c });
+    this.noise(t + landAt, 0.06, { freq: 1300, q: 3.5, vol: 0.12 * power, dest: c });
+    this.tone(heavy ? 110 : 150, t + landAt + 0.13, 0.08, { type: 'triangle', vol: 0.08 * power, attack: 0.003, glide: 90, dest: c });
   }
 
   /** “出局”画面出现时的低沉和弦（克制，不是街机式的失败音效） */

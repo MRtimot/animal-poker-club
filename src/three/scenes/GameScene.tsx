@@ -21,7 +21,7 @@ import { BetTag, PotPlaque, SeatPlate, TableStatus } from './SeatHud';
 import { TableMarkings, TurnGlow } from '../environment/TableMarkings';
 import { eventShown, presentedBets } from '../../ui/game/hud/model';
 import { sound } from '../../audio/sound';
-import { useDefeat } from '../../animation/defeat/defeatStore';
+import { chairJolt, useDefeat } from '../../animation/defeat/defeatStore';
 import { DefeatFX, DefeatWarmup } from '../effects/DefeatFX';
 import { DEFEAT_ISOLATE } from '../effects/DefeatFX';
 import { FACE_DROP } from '../camera/defeatCamera';
@@ -71,6 +71,12 @@ const ARRIVAL_ANIM: Partial<Record<Species, 'stretch' | 'settle' | 'happy' | 'wa
  * 角色入场：从桌子外侧走（或跳）到座位 → 拉开椅子 → 跳上椅子坐下 → 伸懒腰 / 整理衣服 → 进入待机
  * 熊猫慢慢走、兔子快速蹦过来，重的动物会左右摇摆。
  */
+const jAxis = new THREE.Vector3();
+const jQuat = new THREE.Quaternion();
+const jPivot = new THREE.Vector3();
+const jOff = new THREE.Vector3();
+const jTmp = new THREE.Vector3();
+
 function SeatEntrance({ layout, species, playerId, order, chair, children }: {
   layout: SeatLayout;
   species: Species;
@@ -81,7 +87,7 @@ function SeatEntrance({ layout, species, playerId, order, chair, children }: {
 }) {
   const animal = useRef<THREE.Group>(null!);
   const chairRef = useRef<THREE.Group>(null!);
-  const st = useRef({ start: performance.now() + 500 + order * STAGGER.seatEntrance, done: false, chairOff: 0 });
+  const st = useRef({ start: performance.now() + 500 + order * STAGGER.seatEntrance, done: false, chairOff: 0, jPush: 0, jTilt: 0 });
   const hop = !!HOP[species];
   const heavy = !!HEAVY[species];
   const walkMs = hop ? 850 : heavy ? 1750 : 1200;
@@ -126,10 +132,27 @@ function SeatEntrance({ layout, species, playerId, order, chair, children }: {
         useFx.getState().play(playerId, anim);
       }
     }
-    a.position.set(dirX * dist, y, dirZ * dist);
-    a.rotation.z = roll;
+    // 失败演出：输家的椅子被冲击撞得往后滑、向后翘起再落回地面，动物跟着失去平衡（只是画面）
+    const dj = chairJolt(playerId, now, heavy);
+    const active = dj.push > 0 || dj.tilt > 0;
+    s.jPush = active ? dj.push : damp(s.jPush, 0, 5, dt);
+    s.jTilt = active ? dj.tilt : damp(s.jTilt, 0, 8, dt);
     s.chairOff = damp(s.chairOff, chairWant, 9, dt);
+    a.position.set(dirX * dist, y, dirZ * dist);
+    a.rotation.set(0, 0, roll);
     c.position.set(dirX * s.chairOff, 0, dirZ * s.chairOff);
+    c.quaternion.identity();
+    if (s.jPush > 0.0005 || s.jTilt > 0.0005) {
+      // 以椅子后腿着地的位置为支点向后翘
+      jAxis.set(dirZ, 0, -dirX);
+      jQuat.setFromAxisAngle(jAxis, s.jTilt);
+      jPivot.set(layout.seat[0] + dirX * 0.45, 0, layout.seat[2] + dirZ * 0.45);
+      jOff.copy(jPivot).applyQuaternion(jQuat).negate().add(jPivot);
+      c.quaternion.copy(jQuat);
+      c.position.add(jOff).add(jTmp.set(dirX * s.jPush, 0, dirZ * s.jPush));
+      a.quaternion.premultiply(jQuat);
+      a.position.add(jOff).add(jTmp.set(dirX * s.jPush * 0.85, 0, dirZ * s.jPush * 0.85));
+    }
   });
   return (
     <>

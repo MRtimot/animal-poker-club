@@ -1819,6 +1819,27 @@ body.defeat-cine .toasts {
 .dcine-black.on {
   opacity: 1;
   pointer-events: auto;
+  /* 直接切黑（恢复时才慢慢淡回牌桌） */
+  transition: opacity 60ms linear;
+}
+/* 黑屏之后：边缘极淡的暗红残影，慢慢消失 */
+.dcine-after {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 85% 80% at 50% 50%, transparent 55%, rgba(110, 10, 22, 0.42) 100%);
+  opacity: 0;
+  animation: dcineAfter 3.6s ease-out both;
+}
+@keyframes dcineAfter {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* “出局”画面：居中、极简、电影字体 */
@@ -1831,7 +1852,8 @@ body.defeat-cine .toasts {
   text-align: center;
   color: var(--c-text);
   pointer-events: auto;
-  animation: dcineIn 1.1s var(--e-out) both;
+  /* 在黑屏里慢慢浮现 */
+  animation: dcineIn 1.8s var(--e-out) 0.35s both;
 }
 @keyframes dcineIn {
   from {

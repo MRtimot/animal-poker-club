@@ -464,10 +464,62 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       o.tail = Math.sin(t * 14) * 0.5;
       break;
     }
+    case 'realizeRecheck': {
+      // 傲慢：愣住 → 低头再看一眼自己的牌 → 抬头 → 不相信地又看一遍（来回确认）→ 慢慢抬头，难以置信
+      o.eyeOpen = t < 0.5 ? 1.35 : 1.1;
+      o.face = t < 0.5 ? 'wide' : t < 2.4 ? 'doubt' : 'sad';
+      o.roll = 0;
+      o.tail = 0;
+      const down1 = smooth((t - 0.5) / 0.35) * (1 - smooth((t - 1.05) / 0.25));
+      const down2 = smooth((t - 1.45) / 0.3) * (1 - smooth((t - 2.25) / 0.6));
+      o.headX = -0.04 + 0.34 * Math.max(down1, down2 * 1.08);
+      o.headY = t > 1.5 && t < 2.3 ? Math.sin((t - 1.5) * 9) * 0.12 * (1 - (t - 1.5) / 0.8) : 0;
+      o.lean = 0.04 + 0.16 * Math.max(down1, down2);
+      o.mouth = t > 2.3 ? 0.12 : 0.04;
+      o.ear = t < 0.5 ? 1 : 0;
+      break;
+    }
+    case 'realizeDeflate': {
+      // 自信：本来靠在椅背上、抬着下巴 → 愣住 → 自信一点点泄掉：肩膀垮下、身体缩小、低下头
+      const k = smooth((t - 1.1) / 1.8);
+      o.face = t < 0.7 ? 'smug' : t < 1.3 ? 'wide' : 'sad';
+      o.lean = lerp(-0.12, 0.1, k);
+      o.headX = lerp(-0.16, 0.36, k);
+      o.squash = lerp(1.02, 0.9, k);
+      o.y = lerp(0.02, -0.05, k);
+      o.armLX = o.armRX = lerp(restX, -0.55, k);
+      o.armLZ = lerp(base.armLZ, 0.05, k);
+      o.armRZ = lerp(base.armRZ, -0.05, k);
+      o.eyeOpen = t < 0.7 ? 0.9 : t < 1.3 ? 1.35 : lerp(1, 0.55, k);
+      o.mouth = t > 0.7 && t < 1.3 ? 0.18 : 0.02;
+      o.ear = -0.6 * k;
+      o.tail = (1 - k) * Math.sin(t * 3) * 0.3;
+      o.roll = 0;
+      break;
+    }
+    case 'realizeDignity': {
+      // 优雅：慢慢闭一下眼、咽一下口水，然后挺直身体、抬起下巴，整理一下领口——努力保持体面
+      const blink = t > 0.4 && t < 1.0 ? Math.sin(((t - 0.4) / 0.6) * Math.PI) : 0;
+      const swallow = t > 1.05 && t < 1.35 ? Math.sin(((t - 1.05) / 0.3) * Math.PI) : 0;
+      const tidy = smooth((t - 1.4) / 0.35) * (1 - smooth((t - 2.4) / 0.4));
+      const up = smooth((t - 1.2) / 0.8);
+      o.eyeOpen = 1 - blink * 0.92;
+      o.squash = 1 - swallow * 0.025;
+      o.headX = lerp(0.12, -0.1, up) + swallow * 0.05;
+      o.lean = lerp(0.04, -0.05, up);
+      o.armRX = lerp(restX, -2.05, tidy) + Math.sin(t * 10) * 0.05 * tidy;
+      o.armRZ = lerp(base.armRZ, 0.12, tidy);
+      o.face = t < 2.6 ? 'normal' : 'sad';
+      o.mouth = 0;
+      o.ear = -0.35;
+      o.roll = 0;
+      o.tail = 0;
+      break;
+    }
     case 'collapseSlump':
     case 'collapseFaint':
     case 'collapseDignified':
-    case 'collapseRage':
+    case 'collapseSeethe':
     case 'collapseDrama':
     case 'collapseAnnoyed':
     case 'collapseEmbarrassed': {
@@ -527,20 +579,23 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
         o.mouth = 0;
         o.ear = 0;
         o.face = k > 0.5 ? 'sad' : 'wide';
-      } else if (name === 'collapseRage') {
-        // 狮子：愤怒地站起来砸桌子，然后重重地坐回去、垂下头
-        const up = smooth((t - 0.35) / 0.35) * (1 - smooth((t - 1.6) / 0.6));
-        const slam = t > 0.6 && t < 1.1 ? Math.sin(((t - 0.6) / 0.5) * Math.PI) : 0;
-        const k = smooth((t - 1.7) / 0.9);
-        o.y = 0.45 * up + lerp(0, -0.1, k);
-        o.lean = 0.25 * up + 0.35 * k;
-        o.armLX = o.armRX = t < 1.1 ? -2.2 + slam * 1.6 : lerp(-0.6, seated ? -0.45 : 0, k);
-        o.armLZ = 0.3 * (1 - k);
-        o.armRZ = -0.3 * (1 - k);
-        o.headX = lerp(-0.15, 0.5, k);
-        o.roll = t > 1.1 && t < 1.6 ? Math.sin(t * 30) * 0.03 : 0;
-        o.mouth = k > 0.5 ? 0.05 : 0.6;
-        o.face = k > 0.5 ? 'sad' : 'angry';
+      } else if (name === 'collapseSeethe') {
+        // 老虎：愤怒，但保持克制——双拳压在桌上发抖、粗重地喘气、死死盯着赢家，最后慢慢低头，眼睛仍然睁着
+        const k = smooth((t - 0.35) / 0.6);
+        const low = smooth((t - 2.6) / 1.6);
+        const shake = Math.max(0.25, 1 - (t - 0.35) / 4);
+        o.lean = lerp(0, 0.24, k) + 0.06 * low;
+        o.armLX = o.armRX = lerp(restX, restX - 0.28, k);
+        o.armLZ = 0.18;
+        o.armRZ = -0.18;
+        o.roll = Math.sin(t * 28) * 0.016 * shake;
+        o.squash = 1 + Math.sin(t * 3.4) * 0.03;
+        o.headX = lerp(-0.05, 0.12, k) + 0.3 * low;
+        o.eyeOpen = 0.78;
+        o.mouth = 0.08 + Math.max(0, Math.sin(t * 3.4)) * 0.08;
+        o.face = 'angry';
+        o.ear = -0.8;
+        o.tail = Math.sin(t * 9) * 0.7;
       } else if (name === 'collapseDrama') {
         // 猴子：夸张地抱头摇晃，然后向一侧倒下
         const k = smooth((t - 1.5) / 0.9);
@@ -554,11 +609,14 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
         o.mouth = lerp(0.9, 0.4, k);
         o.face = k > 0.5 ? 'x' : 'wide';
       } else if (name === 'collapseAnnoyed') {
-        // 猫：不相信 → 恼火地瞪着 → 带着不爽慢慢滑下去
+        // 猫：盯着桌上的牌 → 慢慢移开视线 → 带着不爽慢慢滑下去
         const k = smooth((t - 1.5) / 1.3);
+        const stareCards = 1 - smooth((t - 1.1) / 0.5);
         o.face = 'doubt';
         o.eyeOpen = 0.7;
         o.headZ = 0.12;
+        o.headX = 0.42 * stareCards + 0.08 * (1 - stareCards);
+        o.headY = -0.55 * smooth((t - 1.2) / 0.9);
         o.tail = Math.sin(t * 10) * 0.8 * (1 - k * 0.6);
         o.y = lerp(0, -0.2, k);
         o.roll = lerp(0, -0.35, k);
@@ -585,6 +643,21 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       }
       break;
     }
+    case 'dread': {
+      // 冲击前：所有人都盯着自己——呼吸又浅又快、微微发抖、耳朵贴平、偶尔咽一下口水，眼睛一直睁着
+      const gulp = every(t, 1.3, 0.22, 0.4);
+      o.squash = 1 + Math.sin(t * 7.5) * 0.018 - gulp * 0.02;
+      o.roll = Math.sin(t * 33) * 0.008;
+      o.headX = 0.06 + gulp * 0.05;
+      o.headZ = 0;
+      o.lean = base.lean + 0.03;
+      o.eyeOpen = 1.2;
+      o.mouth = 0.04;
+      o.ear = -0.9;
+      o.tail = 0;
+      o.face = 'wide';
+      break;
+    }
     case 'defeatRecoil': {
       // 简短版：被震得后仰，然后垂头丧气地坐着，再慢慢恢复
       const rec = t < 0.3 ? Math.sin((t / 0.3) * Math.PI) : 0;
@@ -602,7 +675,7 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       break;
     }
     case 'stackChips': {
-      // 嚣张的赢家：低头慢条斯理地整理刚赢来的筹码
+      // 优雅的赢家：带着浅浅的微笑，慢条斯理地把赢来的筹码收好
       o.headX = 0.18;
       o.lean = 0.08;
       o.armLX = restX - 0.2 - Math.max(0, Math.sin(t * 9)) * 0.25;
@@ -628,6 +701,66 @@ export function animatePose(base: Pose, name: AnimName, t: number, seated: boole
       o.headY = -0.6 * smooth(t / 0.4);
       o.headX = 0.15;
       o.face = 'sad';
+      break;
+    }
+    case 'leanBack': {
+      // 嚣张的赢家：往椅背上一靠，双手枕在脑后，看着输家
+      o.lean = -0.24;
+      o.armLX = o.armRX = -2.7;
+      o.armLZ = 0.95;
+      o.armRZ = -0.95;
+      o.headX = -0.08;
+      o.headZ = 0.1;
+      o.face = 'smug';
+      o.tail = Math.sin(t * 2.5) * 0.6;
+      break;
+    }
+    case 'gatherCards': {
+      // 冷静的赢家：低头，不紧不慢地把牌和筹码拢到自己面前
+      const sweep = Math.sin(t * 2.2);
+      o.lean = 0.16;
+      o.headX = 0.3;
+      o.armLX = o.armRX = restX - 0.35 + sweep * 0.12;
+      o.armLZ = 0.35 - sweep * 0.25;
+      o.armRZ = -0.35 + sweep * 0.25;
+      o.eyeOpen = 0.85;
+      o.face = 'normal';
+      break;
+    }
+    case 'whisper': {
+      // 旁观者：侧过身，用手挡着嘴小声说话
+      o.lean = 0.1;
+      o.roll = 0.16;
+      o.headZ = 0.22;
+      o.headY = 0.35;
+      o.armRX = -1.95;
+      o.armRZ = 0.25;
+      o.mouth = 0.08 + Math.max(0, Math.sin(t * 17)) * 0.14;
+      o.face = 'smug';
+      break;
+    }
+    case 'shrug': {
+      // 旁观者：耸耸肩（“愿赌服输”）
+      const k = Math.sin(clamp01(t / 1.6) * Math.PI);
+      o.armLZ = base.armLZ + 0.85 * k;
+      o.armRZ = base.armRZ - 0.85 * k;
+      o.armLX = o.armRX = restX + 0.3 * k;
+      o.y = 0.05 * k;
+      o.headZ = 0.16 * k;
+      o.mouth = 0.08;
+      o.face = 'doubt';
+      break;
+    }
+    case 'uneasy': {
+      // 旁观者：坐立不安，视线躲开又忍不住看回来
+      o.roll = Math.sin(t * 4) * 0.05;
+      o.headY = Math.sin(t * 2.4) * 0.35;
+      o.headX = 0.1;
+      o.squash = 1 + Math.sin(t * 9) * 0.012;
+      o.armLX = o.armRX = restX - 0.15;
+      o.eyeOpen = 1.1;
+      o.ear = -0.3;
+      o.face = 'wide';
       break;
     }
     case 'flinch': {

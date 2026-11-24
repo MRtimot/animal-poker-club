@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Environment, Lightformer } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,7 +8,7 @@ import { damp, ease } from '../../animation/motion';
 import { LAMP_Y } from '../environment/ClubEnvironment';
 import { useDefeat } from '../../animation/defeat/defeatStore';
 import type { DefeatPhase } from '../../animation/defeat/defeatRules';
-import { DEFEAT_RED, defeatFlash } from '../effects/DefeatFX';
+import { DEFEAT_RED, defeatAccent, defeatFlash } from '../effects/DefeatFX';
 
 /** 不同牌局状态下的灯光：[环境亮度, 桌面主光] —— 变化自然、克制，不做 RGB 灯光秀 */
 const STATE_LIGHT: Record<string, [number, number]> = {
@@ -29,11 +29,12 @@ const STATE_LIGHT: Record<string, [number, number]> = {
  */
 const DEFEAT_LIGHT: Partial<Record<DefeatPhase, [number, number]>> = {
   result: [0.9, 1],
-  winner: [0.82, 0.95],
-  realize: [0.66, 0.85],
+  realize: [0.78, 0.92],
+  winner: [0.68, 0.86],
   reaction: [0.52, 0.76],
   tension: [0.42, 0.68],
-  insert: [0.4, 0.64],
+  ecu: [0.36, 0.62],
+  insert: [0.38, 0.62],
   silence: [0.36, 0.6],
   impact: [0.46, 0.62],
   aftermath: [0.42, 0.6],
@@ -82,6 +83,15 @@ export function SceneLights({ quality }: { quality: Quality }) {
   const born = useRef(performance.now());
   const lv = useRef({ env: 1, key: 1, red: 0 });
   const rimBase = useMemo(() => new THREE.Color(C.rim), [C.rim]);
+  // 离开牌桌（包括演出中途离开）：环境点缀立刻恢复正常，不会把暗红带到首页
+  useEffect(
+    () => () => {
+      defeatAccent.red = 0;
+      defeatAccent.env = 1;
+      defeatAccent.flash = 0;
+    },
+    [],
+  );
 
   useFrame((_, dt) => {
     const now = performance.now();
@@ -106,6 +116,10 @@ export function SceneLights({ quality }: { quality: Quality }) {
     const redWant = dd.seq && dd.phase ? (DEFEAT_RED[dd.phase] ?? 0) * (dd.seq.cut === 'short' ? 0.6 : 1) : 0;
     lv.current.red = damp(lv.current.red, redWant, 2.2, dt);
     const flash = defeatFlash(now);
+    // 给壁灯、桌边与烟雾用（它们按同样的节奏变暗、染红）
+    defeatAccent.red = lv.current.red;
+    defeatAccent.env = dd.seq ? Math.min(1, lv.current.env) * flicker : 1;
+    defeatAccent.flash = flash;
     if (spot.current) spot.current.intensity = 165 * intro * lv.current.key * flicker * (1 + flash * 1.4);
     if (hemi.current) hemi.current.intensity = 0.32 * env + flash * 2.6;
     if (amb.current) amb.current.intensity = 0.08 * env + flash * 1.2;

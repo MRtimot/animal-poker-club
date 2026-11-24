@@ -6,6 +6,9 @@ import {
   FULL_TIMELINE,
   PHASE_ORDER,
   REALIZE_BY_SPECIES,
+  REALIZE_BY_TEMPERAMENT,
+  WINNER_LINE,
+  defeatTemperament,
   BYSTANDER_REACTION,
   SHORT_MIN_MS,
   buildTimeline,
@@ -17,7 +20,7 @@ import {
   winnerStyle,
   WINNER_REACTION,
 } from '../src/animation/defeat/defeatRules';
-import { beginDefeat, endDefeat, resetDefeatForTest, tableJolt, useDefeat, type DefeatSequence } from '../src/animation/defeat/defeatStore';
+import { CHAIR_LAND_S, beginDefeat, chairJolt, endDefeat, resetDefeatForTest, tableJolt, useDefeat, type DefeatSequence } from '../src/animation/defeat/defeatStore';
 import { animatePose, basePose } from '../src/animation/animalAnimations';
 import { ANIM_DURATION, type AnimName } from '../src/store/fxStore';
 import type { TableView } from '../src/core/game/view';
@@ -80,6 +83,13 @@ describe('时间表', () => {
     expect(phaseAt(tl.times, 0)).toBe('result');
     expect(phaseAt(tl.times, FULL_TIMELINE.impact! + 1)).toBe('impact');
     expect(phaseAt(tl.times, 99999)).toBe('defeated');
+    // 顺序：输家先意识到 → 赢家反应 → 所有人转头 → 灯光变暗 → 极近特写 → 环境特写 → 静止 → 冲击
+    const order = ['realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout', 'defeated'] as const;
+    for (let i = 1; i < order.length; i++) expect(FULL_TIMELINE[order[i]]!).toBeGreaterThan(FULL_TIMELINE[order[i - 1]]!);
+    // 不赶：冲击前至少 8 秒的铺垫，余波至少 2 秒，黑屏不超过 1 秒
+    expect(FULL_TIMELINE.impact!).toBeGreaterThanOrEqual(8000);
+    expect(FULL_TIMELINE.blackout! - FULL_TIMELINE.aftermath!).toBeGreaterThanOrEqual(2000);
+    expect(FULL_TIMELINE.defeated! - FULL_TIMELINE.blackout!).toBeLessThanOrEqual(1000);
     expect(phaseEnd(tl.times, 'defeated')).toBe(Infinity);
   });
 
@@ -145,6 +155,14 @@ describe('演出状态', () => {
     expect(far.lift).toBeLessThan(near.lift);
     expect(tableJolt(0, -4, 2300).lift).toBe(0); // 桌子另一边
     expect(tableJolt(0, 3.6, 2000 + 1900)).toEqual({ lift: 0, rx: 0, rz: 0, dx: 0, dz: 0 }); // 已恢复
+    // 环境特写里随心跳轻轻颤动；静止的 0.18 秒完全不动
+    endDefeat('j');
+    beginDefeat({ ...seq('j2'), at: { result: 0, insert: 1000, silence: 1600, impact: 1780 } });
+    let maxLift = 0;
+    for (let t = 1000; t < 1600; t += 5) maxLift = Math.max(maxLift, tableJolt(0, 3.6, t, 1).lift);
+    expect(maxLift).toBeGreaterThan(0);
+    expect(maxLift).toBeLessThan(0.01);
+    for (let t = 1600; t < 1780; t += 5) expect(tableJolt(0, 3.6, t, 1).lift).toBe(0);
   });
 });
 
@@ -157,14 +175,73 @@ describe('角色与设备', () => {
     }
     const listed: Species[] = ['cat', 'fox', 'rabbit', 'bear', 'tiger', 'monkey', 'lion'];
     expect(new Set(listed.map((s) => COLLAPSE_BY_SPECIES[s])).size).toBe(listed.length);
+    // 规格里的例子：狮子输了也保持尊严、老虎愤怒但克制、熊猫沉重地趴下
+    expect(COLLAPSE_BY_SPECIES.lion).toBe('collapseDignified');
+    expect(COLLAPSE_BY_SPECIES.tiger).toBe('collapseSeethe');
+    expect(COLLAPSE_BY_SPECIES.panda).toBe('collapseSlump');
     // 赢家按 AI 性格优先，其次按动物
     expect(winnerStyle({ aiPersonality: 'aggressiveFox', profile: { animal: { species: 'panda' } } } as never)).toBe('cocky');
     expect(winnerStyle({ profile: { animal: { species: 'wolf' } } } as never)).toBe('ruthless');
     expect(Object.keys(WINNER_REACTION).sort()).toEqual(['calm', 'cocky', 'elegant', 'playful', 'ruthless']);
+    expect(Object.keys(WINNER_LINE).sort()).toEqual(['calm', 'cocky', 'elegant', 'playful', 'ruthless']);
+    // 规格：优雅的慢慢收筹码、嚣张的往后靠、冷静的把牌拢过来
+    expect(WINNER_REACTION.elegant.anim).toBe('stackChips');
+    expect(WINNER_REACTION.cocky.anim).toBe('leanBack');
+    expect(WINNER_REACTION.calm.anim).toBe('gatherCards');
+  });
+
+  it('DEF-12 “意识到输了”取决于性格：来自项目里的动物性格数据，AI 性格优先；七种性格动作各不相同', () => {
+    expect(defeatTemperament('rabbit')).toBe('nervous'); // 紧张
+    expect(defeatTemperament('tiger')).toBe('aggressive'); // 急躁
+    expect(defeatTemperament('lion')).toBe('elegant'); // 威严
+    expect(defeatTemperament('penguin')).toBe('elegant'); // 绅士
+    expect(defeatTemperament('cat')).toBe('arrogant'); // 傲娇
+    expect(defeatTemperament('monkey')).toBe('playful'); // 调皮
+    expect(defeatTemperament('panda')).toBe('calm'); // 佛系
+    expect(defeatTemperament('wolf')).toBe('confident'); // 自信
+    expect(defeatTemperament('panda', 'aggressiveFox')).toBe('aggressive');
+    for (const sp of ALL_SPECIES) expect(REALIZE_BY_SPECIES[sp]).toBe(REALIZE_BY_TEMPERAMENT[defeatTemperament(sp)].anim);
+    const anims = Object.values(REALIZE_BY_TEMPERAMENT).map((r) => r.anim);
+    expect(new Set(anims).size).toBe(7);
+    // 至少用到了五种以上不同的性格（不是所有动物都一样）
+    expect(new Set(ALL_SPECIES.map((sp) => defeatTemperament(sp))).size).toBeGreaterThanOrEqual(6);
+  });
+
+  it('DEF-13 输家的椅子：冲击后滑出、翘起再落回；只影响输家；跳过 / 演出结束后归零', () => {
+    const s: DefeatSequence = {
+      key: 'c',
+      hand: 1,
+      cut: 'full',
+      loserId: 'me',
+      winnerId: 'a',
+      at: { result: 0, impact: 1000 },
+      lookers: {},
+      origin: [0, 4],
+      lost: 1,
+      ratio: 1,
+      profile: defeatProfile({ mobile: false, quality: 'high', reduced: false }),
+      reduced: false,
+    };
+    beginDefeat(s);
+    expect(chairJolt('me', 999, false)).toEqual({ push: 0, tilt: 0 });
+    expect(chairJolt('a', 1150, false)).toEqual({ push: 0, tilt: 0 });
+    const up = chairJolt('me', 1150, false);
+    expect(up.tilt).toBeGreaterThan(0.1);
+    expect(up.push).toBeGreaterThan(0.1);
+    expect(chairJolt('me', 1150, true).tilt).toBeGreaterThan(up.tilt); // 重的动物椅子反应更大
+    expect(chairJolt('me', 1000 + CHAIR_LAND_S * 1000 + 400, false).tilt).toBe(0); // 已经落回地面
+    useDefeat.setState({ skipped: true });
+    expect(chairJolt('me', 1150, false)).toEqual({ push: 0, tilt: 0 });
+    endDefeat('c');
+    expect(chairJolt('me', 1150, false)).toEqual({ push: 0, tilt: 0 });
   });
 
   it('DEF-09 新动画：每一帧的姿态都是有限数值；倒下后保持倒下（不会自己弹回坐姿），直到演出结束', () => {
-    const names: AnimName[] = ['realizeDisbelief', 'realizePanic', 'realizeFade', 'realizeAccept', 'realizeAnger', 'collapseSlump', 'collapseFaint', 'collapseDignified', 'collapseRage', 'collapseDrama', 'collapseAnnoyed', 'collapseEmbarrassed', 'defeatRecoil', 'stackChips', 'stare', 'lookAway', 'flinch'];
+    const names: AnimName[] = [
+      'realizeDisbelief', 'realizePanic', 'realizeFade', 'realizeAccept', 'realizeAnger', 'realizeRecheck', 'realizeDeflate', 'realizeDignity',
+      'collapseSlump', 'collapseFaint', 'collapseDignified', 'collapseSeethe', 'collapseDrama', 'collapseAnnoyed', 'collapseEmbarrassed',
+      'dread', 'defeatRecoil', 'stackChips', 'leanBack', 'gatherCards', 'stare', 'lookAway', 'whisper', 'shrug', 'uneasy', 'flinch',
+    ];
     for (const n of names) {
       expect(ANIM_DURATION[n]).toBeGreaterThan(0);
       for (let t = 0; t < Math.min(ANIM_DURATION[n], 6); t += 0.05) {
@@ -189,6 +266,10 @@ describe('角色与设备', () => {
     expect(calm.shake).toBe(0);
     expect(calm.flash).toBeLessThanOrEqual(0.3);
     expect(calm.move).toBeLessThan(0.3);
+    // 手机：烟雾贴图分辨率更低、碎片不投射阴影，火星更少
+    expect(phone.smokeRes).toBeLessThan(desk.smokeRes);
+    expect(phone.shadows).toBe(false);
+    expect(phone.sparks).toBeLessThanOrEqual(desk.sparks);
     // 节奏不变：时间表与设备无关
     expect(buildTimeline('full', null)!.times).toEqual(FULL_TIMELINE);
   });

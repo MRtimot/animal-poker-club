@@ -17,8 +17,14 @@ const GRAVITY = -7.5;
  * 注意：演出不新增任何灯光（新增 / 显示灯光会让 three.js 重新编译所有材质，造成明显卡顿）：
  * 红色轮廓光复用场景的轮廓光（SceneLights），孤立顶光复用赢家聚光灯（WinnerLight），闪光是现有灯光的瞬间增亮。
  */
-export const DEFEAT_RED: Partial<Record<DefeatPhase, number>> = { reaction: 0.35, tension: 1, insert: 1, silence: 0.9, impact: 0.8, aftermath: 0.7, blackout: 0.5, defeated: 0.4 };
-export const DEFEAT_ISOLATE: Partial<Record<DefeatPhase, number>> = { realize: 0.55, reaction: 0.8, tension: 1, insert: 0.9, silence: 0.9, impact: 0.7, aftermath: 0.75, blackout: 0.5, defeated: 0.4 };
+export const DEFEAT_RED: Partial<Record<DefeatPhase, number>> = { reaction: 0.3, tension: 0.85, ecu: 1, insert: 1, silence: 0.95, impact: 0.9, aftermath: 0.4, blackout: 0, defeated: 0 };
+export const DEFEAT_ISOLATE: Partial<Record<DefeatPhase, number>> = { realize: 0.55, winner: 0.5, reaction: 0.8, tension: 1, ecu: 1, insert: 0.9, silence: 0.9, impact: 0.7, aftermath: 0.75, blackout: 0.5, defeated: 0.4 };
+
+/**
+ * 当前这一帧的房间灯光状态（SceneLights 每帧写入）：环境里的壁灯、桌边与烟雾按它变暗、染上克制的暗红。
+ * red：0~1 暗红强度；env：0~1 房间亮度倍率；flash：冲击闪光 0~1。
+ */
+export const defeatAccent = { red: 0, env: 1, flash: 0 };
 
 /** 冲击闪光的亮度（0~1，冲击后约 0.3 秒内衰减） */
 export function defeatFlash(now: number): number {
@@ -44,20 +50,21 @@ function syncPhase(now: number) {
 }
 
 /** 柔和的烟雾贴图（本地生成，不加载任何文件） */
-function smokeTexture(): THREE.CanvasTexture {
+function smokeTexture(res = 128): THREE.CanvasTexture {
   const c = document.createElement('canvas');
-  c.width = c.height = 128;
+  c.width = c.height = res;
   const g = c.getContext('2d')!;
+  const u = res / 128;
   for (let i = 0; i < 7; i++) {
-    const x = 64 + (Math.random() - 0.5) * 34;
-    const y = 64 + (Math.random() - 0.5) * 34;
-    const r = 26 + Math.random() * 30;
+    const x = res / 2 + (Math.random() - 0.5) * 34 * u;
+    const y = res / 2 + (Math.random() - 0.5) * 34 * u;
+    const r = (26 + Math.random() * 30) * u;
     const grd = g.createRadialGradient(x, y, 0, x, y, r);
     grd.addColorStop(0, 'rgba(255,255,255,0.32)');
     grd.addColorStop(0.55, 'rgba(255,255,255,0.12)');
     grd.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = grd;
-    g.fillRect(0, 0, 128, 128);
+    g.fillRect(0, 0, res, res);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -89,6 +96,8 @@ function burstParticles(n: number, origin: THREE.Vector3, speed: [number, number
 }
 
 const tmpObj = new THREE.Object3D();
+const tmpV = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 
 /** 抛物线运动，落到桌面 / 地面后停住（只是画面） */
 function ballistic(pt: Particle, t: number, floor: number, out: THREE.Vector3) {
@@ -116,12 +125,13 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
   const scale = seq.cut === 'short' ? 0.6 : 1;
 
   // 烟雾：每片独立的材质（独立透明度），卸载时全部释放
-  const smokeTex = useMemo(() => smokeTexture(), []);
+  const smokeTex = useMemo(() => smokeTexture(prof.smokeRes), [prof.smokeRes]);
   const smoke = useMemo(() => {
     const n = Math.max(3, Math.round(prof.smoke * scale));
     return Array.from({ length: n }, (_, i) => {
       // 深浅不一的暖灰：靠近地面的更暗，上面被吊灯照亮的稍亮
-      const mat = new THREE.SpriteMaterial({ map: smokeTex, color: new THREE.Color().setHSL(0.07, 0.1, 0.1 + Math.random() * 0.16), transparent: true, opacity: 0, depthWrite: false });
+      const tone = new THREE.Color().setHSL(0.07, 0.1, 0.1 + Math.random() * 0.16);
+      const mat = new THREE.SpriteMaterial({ map: smokeTex, color: tone.clone(), transparent: true, opacity: 0, depthWrite: false });
       const a = (i / n) * Math.PI * 2 + Math.random() * 0.6;
       const sp = 0.5 + Math.random() * 1.1;
       // 一部分从桌面（输家的牌）爆开，一部分在输家身边
@@ -129,6 +139,7 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
       const from = low ? tableHit : head;
       return {
         mat,
+        tone,
         start: from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.2) * 0.35, (Math.random() - 0.5) * 0.5)),
         v: new THREE.Vector3(Math.cos(a) * sp, (low ? 0.15 : 0.2) + Math.random() * 0.45, Math.sin(a) * sp),
         size: 0.3 + Math.random() * 0.35,
@@ -145,6 +156,9 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
   const debris = useMemo(() => burstParticles(Math.round(prof.debris * scale), head, [0.6, 2.6], [1.2, 3.6], [0.012, 0.035]), [prof.debris, scale, head]);
   const frags = useMemo(() => burstParticles(Math.round(prof.fragments * scale), tableHit, [0.8, 2.2], [2.2, 4.2], [0.05, 0.11]), [prof.fragments, scale, tableHit]);
   const chips = useMemo(() => burstParticles(Math.round(prof.looseChips * scale), tableHit, [0.5, 1.4], [0.8, 1.8], [1, 1]), [prof.looseChips, scale, tableHit]);
+  // 火星：很少、很短，从桌面迸出（与灰尘同一种材质类型，不会触发新的着色器编译）
+  const sparks = useMemo(() => burstParticles(Math.round(prof.sparks * scale), tableHit, [2.2, 4.6], [0.8, 2.6], [0.35, 0.7]), [prof.sparks, scale, tableHit]);
+  const sparkMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffb05a', transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false }), []);
   const dustGeo = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
   const dustMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#c9b394', transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }), []);
   const fragGeo = useMemo(() => new THREE.PlaneGeometry(0.7, 1), []);
@@ -161,13 +175,16 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
       fragMat.dispose();
       chipGeo.dispose();
       chipMat.dispose();
+      sparkMat.dispose();
     },
-    [smokeTex, smoke, dustGeo, dustMat, fragGeo, fragMat, chipGeo, chipMat],
+    [smokeTex, smoke, dustGeo, dustMat, fragGeo, fragMat, chipGeo, chipMat, sparkMat],
   );
+  const sparkRef = useRef<THREE.InstancedMesh>(null!);
   const dustRef = useRef<THREE.InstancedMesh>(null!);
   const fragRef = useRef<THREE.InstancedMesh>(null!);
   const chipRef = useRef<THREE.InstancedMesh>(null!);
   const tmp = useMemo(() => new THREE.Vector3(), []);
+  const smokeTint = useMemo(() => new THREE.Color(), []);
 
   useFrame(() => {
     const t0 = seq.at.impact;
@@ -198,7 +215,27 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
       const fadeIn = Math.min(1, t / 0.12);
       const fadeOut = Math.max(0, 1 - t / s.life);
       s.mat.opacity = s.peak * fadeIn * fadeOut * fadeOut;
+      // 烟雾跟着房间的灯光变化：闪光时被照亮，房间变暗时跟着变暗，红光里带一点暗红
+      const lit = 0.55 + 0.6 * defeatAccent.env + defeatAccent.flash * 1.6;
+      s.mat.color.copy(s.tone).multiplyScalar(lit).lerp(smokeTint.set('#3a0c10'), defeatAccent.red * 0.3);
     });
+    // 火星：0.6 秒内迸出、拉成细线、熄灭
+    if (sparkRef.current) {
+      sparkRef.current.visible = visible && t < 0.8;
+      sparks.forEach((pt, i) => {
+        const tt = Math.max(0, t - pt.delay);
+        const life = pt.size;
+        ballistic(pt, Math.max(0, t), TABLE_Y + 0.004, tmp);
+        tmpObj.position.copy(tmp);
+        tmpV.set(pt.v.x, pt.v.y + GRAVITY * tt, pt.v.z).normalize();
+        tmpObj.quaternion.setFromUnitVectors(UP, tmpV);
+        const k = before || tt > life ? 0.0001 : 1 - tt / life;
+        tmpObj.scale.set(0.012 * k, 0.11 * k, 1);
+        tmpObj.updateMatrix();
+        sparkRef.current.setMatrixAt(i, tmpObj.matrix);
+      });
+      sparkRef.current.instanceMatrix.needsUpdate = true;
+    }
     // 灰尘：抛出去落到桌面，然后慢慢消失
     if (dustRef.current) {
       dustRef.current.visible = visible && t < 3.2;
@@ -250,8 +287,9 @@ function ImpactBurst({ seq, layout }: { seq: DefeatSequence; layout: Map<string,
         <sprite key={i} ref={(r) => (sprites.current[i] = r)} material={s.mat} visible={false} renderOrder={5} />
       ))}
       {debris.length > 0 && <instancedMesh ref={dustRef} args={[dustGeo, dustMat, debris.length]} visible={false} frustumCulled={false} />}
-      {frags.length > 0 && <instancedMesh ref={fragRef} args={[fragGeo, fragMat, frags.length]} visible={false} frustumCulled={false} castShadow />}
-      {chips.length > 0 && <instancedMesh ref={chipRef} args={[chipGeo, chipMat, chips.length]} visible={false} frustumCulled={false} castShadow />}
+      {sparks.length > 0 && <instancedMesh ref={sparkRef} args={[dustGeo, sparkMat, sparks.length]} visible={false} frustumCulled={false} />}
+      {frags.length > 0 && <instancedMesh ref={fragRef} args={[fragGeo, fragMat, frags.length]} visible={false} frustumCulled={false} castShadow={prof.shadows} />}
+      {chips.length > 0 && <instancedMesh ref={chipRef} args={[chipGeo, chipMat, chips.length]} visible={false} frustumCulled={false} castShadow={prof.shadows} />}
     </group>
   );
 }

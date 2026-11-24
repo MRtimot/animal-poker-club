@@ -10,9 +10,9 @@ import { useGame } from '../../../store/gameStore';
 import { session } from '../../../net/session';
 import { formatChips } from '../../../utils/format';
 
-const BARS: DefeatPhase[] = ['winner', 'realize', 'reaction', 'tension', 'insert', 'silence', 'impact', 'aftermath'];
-const TENSE: DefeatPhase[] = ['tension', 'insert', 'silence'];
-const SKIPPABLE: DefeatPhase[] = ['result', 'winner', 'realize', 'reaction', 'tension', 'insert', 'silence', 'impact', 'aftermath', 'blackout'];
+const BARS: DefeatPhase[] = ['realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath'];
+const TENSE: DefeatPhase[] = ['tension', 'ecu', 'insert', 'silence'];
+const SKIPPABLE: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'ecu', 'insert', 'silence', 'impact', 'aftermath', 'blackout'];
 
 export function DefeatOverlay({ view }: { view: TableView }) {
   const seq = useDefeat((s) => s.seq);
@@ -35,7 +35,7 @@ export function DefeatOverlay({ view }: { view: TableView }) {
 
   if (!seq || !phase) return null;
   const full = seq.cut === 'full';
-  const bars = (full ? BARS : BARS.filter((p) => p !== 'winner')).includes(phase) || (!full && phase === 'defeated');
+  const bars = BARS.includes(phase) || (!full && phase === 'defeated');
   const tense = TENSE.includes(phase);
   const dark = full && (phase === 'blackout' || phase === 'defeated');
   const canSkip = seen && SKIPPABLE.includes(phase) && !(skipped && full);
@@ -48,6 +48,8 @@ export function DefeatOverlay({ view }: { view: TableView }) {
       <div className={`dcine-bar bottom${bars ? ' on' : ''}`} aria-hidden />
       {phase === 'impact' && !skipped && <div key={seq.key} className="dcine-flash" style={{ ['--flash' as string]: seq.profile.flash }} aria-hidden />}
       {full && <div className={`dcine-black${dark ? ' on' : ''}`} aria-hidden />}
+      {/* 黑屏之后边缘极淡的暗红残影，几秒内消失（不会一直留着） */}
+      {full && phase === 'defeated' && !skipped && <div key={`${seq.key}-after`} className="dcine-after" aria-hidden />}
 
       {full && phase === 'defeated' && (
         <div className="dcine-card" role="dialog" aria-modal="true" aria-labelledby="dcine-title">
@@ -56,12 +58,17 @@ export function DefeatOverlay({ view }: { view: TableView }) {
             你出局了
           </h2>
           <div className="dcine-rule" aria-hidden />
-          <p className="dcine-sub">筹码全部输光。牌桌会记住这一手。</p>
+          <p className="dcine-sub">{gameOver ? '牌桌会记住这一手。' : '这一手，你输掉了全部筹码。'}</p>
           <div className="dcine-actions">
             {gameOver ? (
-              <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
-                查看结果
-              </button>
+              <>
+                <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
+                  查看结果
+                </button>
+                <button type="button" className="dcine-btn" onClick={() => session.leave(mode === 'online' ? 'online' : 'home')}>
+                  返回俱乐部
+                </button>
+              </>
             ) : (
               <>
                 <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
