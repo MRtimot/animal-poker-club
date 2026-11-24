@@ -10,7 +10,7 @@ import { Chair, ClubEnvironment, PokerTableMesh } from '../environment/ClubEnvir
 import { CameraRig } from '../camera/CameraRig';
 import { Bursts } from '../effects/Bursts';
 import { BOARD_SCALE, DECK_POS, POT_POS, SeatLayout, TABLE_Y, V3, boardPos, computeLayout } from '../layout';
-import { DUR, STAGGER, arc, damp, ease, settle } from '../../animation/motion';
+import { BOARD_DEAL, DUR, STAGGER, arc, damp, ease, settle } from '../../animation/motion';
 import type { Species } from '../../core/player/profile';
 import { useFx } from '../../store/fxStore';
 import { useGame } from '../../store/gameStore';
@@ -488,11 +488,11 @@ export function GameScene({ view }: { view: TableView }) {
           card={c}
           target={boardPos(i)}
           faceUp
-          // 翻牌三张依次出现，中间短暂停顿；河牌飞得更慢、停顿更久再翻开
-          delay={i < 3 ? STAGGER.flop[i] : 120}
-          flightMs={i === 4 ? 720 : 560}
-          arcHeight={i === 4 ? 0.32 : 0.18}
-          revealPause={i === 4 ? 520 : i === 3 ? 220 : 90}
+          // 翻牌三张依次出现，中间短暂停顿；河牌飞得更慢、停顿更久再翻开（节奏与手机公共牌条共用）
+          delay={BOARD_DEAL.delay(i)}
+          flightMs={BOARD_DEAL.flight(i)}
+          arcHeight={BOARD_DEAL.arc(i)}
+          revealPause={BOARD_DEAL.revealPause(i)}
           highlight={highlight.has(c.id)}
           scale={BOARD_SCALE}
         />

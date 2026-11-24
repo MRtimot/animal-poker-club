@@ -28,12 +28,20 @@ export function SeatAvatar({ p, size = 'md' }: { p: Pick<SeatView, 'profile'>; s
   );
 }
 
-/** 界面上的扑克牌（大号、清晰）：点数 + 花色，红黑分明 */
-export function HudCard({ card, highlight, dim, size = 'md' }: { card: Card | null; highlight?: boolean; dim?: boolean; size?: 'sm' | 'md' | 'lg' }) {
+/**
+ * 界面上的扑克牌（大号、清晰）：点数 + 花色，红黑分明。
+ * size：sm 赢家演出 / md / lg 自己的底牌 / board 手机公共牌条（尺寸由 gameHud.css 的牌面尺寸系统计算）。
+ * revealDelayMs：延迟出现（手机公共牌条等牌桌上的 3D 牌翻开后再显示）。
+ */
+export function HudCard({ card, highlight, dim, size = 'md', revealDelayMs }: { card: Card | null; highlight?: boolean; dim?: boolean; size?: 'sm' | 'md' | 'lg' | 'board'; revealDelayMs?: number }) {
   if (!card) return <span className={`hcard hcard-${size} back`} aria-label="未知的牌" />;
   const suit = SUIT_SYMBOL[card.suit];
   return (
-    <span className={`hcard hcard-${size} ${isRed(card) ? 'red' : ''} ${highlight ? 'hl' : ''} ${dim ? 'dim' : ''}`} aria-label={`${rankLabel(card.rank)}${suit}`}>
+    <span
+      className={`hcard hcard-${size} ${isRed(card) ? 'red' : ''} ${card.rank === 10 ? 'ten' : ''} ${highlight ? 'hl' : ''} ${dim ? 'dim' : ''}`}
+      aria-label={`${rankLabel(card.rank)}${suit}`}
+      style={revealDelayMs ? { animationDelay: `${revealDelayMs}ms` } : undefined}
+    >
       <b>{rankLabel(card.rank)}</b>
       <i>{suit}</i>
     </span>

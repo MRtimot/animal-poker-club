@@ -454,9 +454,9 @@ function AppContent() {
           dpr={DPR[quality]}
           gl={glOptions}
           camera={{ fov: 45, position: [0, 3, 9], near: 0.1, far: 80 }}
-          onCreated={({ gl, scene }) => {
+          onCreated={({ gl, scene, camera }) => {
             markBoot('gl');
-            if (import.meta.env.DEV) Object.assign(window as any, { __gl: gl, __scene: scene });
+            if (import.meta.env.DEV) Object.assign(window as any, { __gl: gl, __scene: scene, __camera: camera });
             // 上下文丢失：先等浏览器自动恢复（three.js 会重新上传资源），超时才重建画布
             gl.domElement.addEventListener('webglcontextlost', (e) => {
               e.preventDefault();

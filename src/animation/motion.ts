@@ -30,6 +30,20 @@ export const STAGGER = {
   retireCard: 45,
 } as const;
 
+/**
+ * 公共牌的发牌节奏（3D 牌桌与手机上的公共牌条共用同一份数字）：
+ * 翻牌三张依次出现，中间短暂停顿；河牌飞得更慢、停顿更久再翻开。
+ */
+export const BOARD_DEAL = {
+  delay: (i: number) => (i < 3 ? STAGGER.flop[i] : 120),
+  flight: (i: number) => (i === 4 ? 720 : 560),
+  arc: (i: number) => (i === 4 ? 0.32 : 0.18),
+  revealPause: (i: number) => (i === 4 ? 520 : i === 3 ? 220 : 90),
+} as const;
+
+/** 第 i 张公共牌在牌桌上翻完、正面朝上的时刻（从收到这张牌开始算，毫秒）：手机公共牌条在这时才显示点数，不会比牌桌提前“剧透” */
+export const boardRevealMs = (i: number) => BOARD_DEAL.delay(i) + BOARD_DEAL.flight(i) + BOARD_DEAL.revealPause(i) + DUR.cardFlip;
+
 export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 

@@ -1194,7 +1194,8 @@
 .game-hud .next-hand {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--hud-bottom) + var(--safe-bottom) + var(--sp-5));
+  /* --rail-h：手机 / 平板底部公共牌条的高度（电脑版没有，为 0） */
+  bottom: calc(var(--hud-bottom) + var(--rail-h, 0px) + var(--safe-bottom) + var(--sp-5));
   top: auto;
   transform: translateX(-50%);
   padding: 4px 12px;
@@ -1225,7 +1226,7 @@
 /* 牌局中的提示消息：底部操作区上方 */
 body.in-game .toasts {
   top: auto;
-  bottom: calc(var(--hud-bottom) + var(--safe-bottom) + var(--sp-6));
+  bottom: calc(var(--hud-bottom) + var(--rail-h, 0px) + var(--safe-bottom) + var(--sp-6));
   flex-direction: column-reverse;
 }
 
@@ -2010,5 +2011,174 @@ body.defeat-cine .toasts {
   .dcine-card,
   .dcine-caption {
     animation-name: none !important;
+  }
+}
+
+/* ═════════ 手机 / 平板的牌面系统 ═════════
+   电脑版（宽屏 + 鼠标）完全不受影响：下面所有规则都在“不是电脑版”的条件里。
+   尺寸只由视口计算，不按机型写一堆断点：
+     --card-hole   自己的两张底牌：整个画面里最大、最亮的牌（13vw 与 10.5dvh 取较小值，限制在 42~64px）
+     --card-board  公共牌条：比底牌小一点（0.86 倍），同时保证 5 张牌 + 间距一定放得下屏幕宽度
+   点数 = 0.5 × 牌宽、花色 = 0.44 × 牌宽：屏幕再小，点数与花色在牌面上的比例也不变。
+   高级感只来自很克制的细节：象牙白纸面、极细的纸纹、内侧高光与底边斜面、细金线内框、受控的阴影，没有发光。 */
+@media not all and (min-width: 1101px) and (hover: hover) and (pointer: fine) {
+  :root {
+    --card-hole: clamp(42px, min(13vw, 10.5vh), 64px);
+    --card-hole: clamp(42px, min(13vw, 10.5dvh), 64px);
+    --rail-gap: clamp(4px, 1.4vw, 8px);
+    --card-board: min(calc(var(--card-hole) * 0.86), calc((100vw - var(--safe-left) - var(--safe-right) - 48px - 4 * var(--rail-gap)) / 5));
+    /* 公共牌条占用的高度（牌高 + 上下留白 + 边框 + 与下方的间距）：提示消息、下一局倒计时放在它上方，不盖住公共牌 */
+    --rail-h: calc(var(--card-board) * 1.4 + 22px);
+  }
+  .hcard-lg {
+    --w: var(--card-hole);
+  }
+  .hcard-board {
+    --w: var(--card-board);
+  }
+
+  /* 牌面 */
+  .hcard {
+    border-radius: calc(var(--w) * 0.11);
+    color: #17161c;
+    background:
+      radial-gradient(circle, rgba(140, 105, 50, 0.05) 0.6px, transparent 0.8px) 0 0 / 3px 3px,
+      radial-gradient(130% 90% at 25% 0%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 55%),
+      linear-gradient(172deg, #fffdf7 0%, #f9f2e3 58%, #f0e5cd 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -1.5px 2px rgba(120, 88, 36, 0.14),
+      0 0 0 1px rgba(46, 32, 12, 0.3),
+      0 3px 8px rgba(0, 0, 0, 0.32);
+  }
+  .hcard::before {
+    content: '';
+    position: absolute;
+    inset: calc(var(--w) * 0.055);
+    border: 1px solid rgba(178, 138, 52, 0.3);
+    border-radius: calc(var(--w) * 0.07);
+    pointer-events: none;
+  }
+  .hcard b {
+    font-size: calc(var(--w) * 0.5);
+    font-weight: 800;
+    line-height: 0.92;
+    letter-spacing: -0.02em;
+  }
+  /* “10”：字高与其他点数相同，只收窄字宽，不会比 A、K 显得更大更挤 */
+  .hcard.ten b {
+    letter-spacing: -0.07em;
+    transform: scaleX(0.84);
+  }
+  .hcard i {
+    font-size: calc(var(--w) * 0.44);
+    margin-top: calc(var(--w) * 0.03);
+    font-variant-emoji: text;
+  }
+  .hcard.red {
+    color: #b8142c;
+  }
+  .hcard.hl {
+    box-shadow:
+      0 0 0 2px var(--c-gold),
+      0 0 10px rgba(233, 207, 134, 0.35),
+      0 3px 8px rgba(0, 0, 0, 0.32);
+  }
+
+  /* 牌背：与牌桌上的 3D 牌背同一种深酒红，细菱格、细金线内框、居中的小黑桃徽记 */
+  .hcard.back {
+    background:
+      repeating-linear-gradient(45deg, rgba(222, 190, 120, 0.1) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(-45deg, rgba(222, 190, 120, 0.1) 0 1px, transparent 1px 6px),
+      radial-gradient(90% 70% at 50% 40%, #4a1426, #2a0b17 70%, #1b0710);
+    box-shadow:
+      inset 0 0 0 1px rgba(233, 207, 134, 0.22),
+      0 0 0 1px rgba(0, 0, 0, 0.5),
+      0 3px 8px rgba(0, 0, 0, 0.32);
+  }
+  .hcard.back::before {
+    border-color: rgba(233, 207, 134, 0.38);
+  }
+  .hcard.back::after {
+    content: '♠';
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: calc(var(--w) * 0.36);
+    color: rgba(233, 207, 134, 0.8);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+    font-variant-emoji: text;
+  }
+
+  /* 公共牌条：固定 5 个牌位（发牌时界面不跳动），还没发出的牌位只显示一条很淡的轮廓 */
+  .board-rail {
+    position: absolute;
+    left: calc(var(--sp-3) + var(--safe-left));
+    bottom: calc(100% - var(--sp-1));
+    display: flex;
+    gap: var(--rail-gap);
+    padding: 6px 8px;
+    border-radius: var(--r-lg);
+    border: 1px solid var(--c-hairline);
+    background: rgba(10, 9, 13, 0.55);
+    pointer-events: none;
+  }
+  .rail-slot {
+    position: relative;
+    flex: none;
+    width: var(--card-board);
+    height: calc(var(--card-board) * 1.4);
+    border-radius: calc(var(--card-board) * 0.11);
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow: inset 0 0 0 1px rgba(233, 207, 134, 0.16);
+  }
+  .rail-slot .hcard {
+    position: absolute;
+    inset: 0;
+  }
+  /* 底部操作区高度固定：“轮到你”的按钮区与“等待别人”的提示区一样高，
+     轮到自己 / 轮到别人 / 出现或消失倒计时条时，自己的牌和公共牌条不会上下跳动。
+     （手机竖屏：按钮 52 + 上下留白 8 + 边框；横屏：按钮 56 + 上下留白 12 + 边框） */
+  .act-row {
+    min-height: 52px;
+  }
+  .gdock-wait {
+    min-height: 70px;
+    justify-content: center;
+  }
+  @media (max-height: 520px) and (min-width: 600px) {
+    .act-row {
+      min-height: 56px;
+    }
+    .gdock-wait {
+      min-height: 82px;
+    }
+  }
+  /* 底池牌：下边缘对齐锚点（锚点在公共牌上边缘之上），无论底池牌多大都不会盖住公共牌 */
+  .pot-plaque.above-board {
+    transform: translateY(-50%);
+  }
+  /* 顶栏的阶段（翻牌前 / 河牌 / 本局结束…）始终一行，不会被挤成竖排 */
+  .gbar-phase-now {
+    white-space: nowrap;
+  }
+  /* 手机竖屏：底部操作区是上下排列的，公共牌条放在最上面、居中 */
+  @media (max-width: 760px) {
+    .board-rail {
+      position: static;
+      align-self: center;
+    }
+    /* 在线房间：竖屏顶栏放不下房间代码（牌局中也无法再加入；房间代码在大厅里显示） */
+    .gbar-room {
+      display: none;
+    }
+  }
+  /* 平板竖屏：自己的座位栏是整行宽，公共牌条在它上方居中 */
+  @media (orientation: portrait) and (min-width: 761px) {
+    .board-rail {
+      left: 50%;
+      transform: translateX(-50%);
+    }
   }
 }

@@ -67,7 +67,8 @@ export function feedEntries(view: TableView, shown: Shown, limit = 5): FeedEntry
     return { icon: speciesEmoji(p), name: id === view.viewerId ? '你' : p.name };
   };
   const out: FeedEntry[] = [];
-  const push = (e: GameEvent, entry: Omit<FeedEntry, 'key'>) => out.push({ key: `${view.handNumber}-${e.seq}`, ...entry });
+  // sub：同一个事件产生多行时（平分底池：每位赢家一行）区分每一行，否则列表的 key 会重复
+  const push = (e: GameEvent, entry: Omit<FeedEntry, 'key'>, sub = '') => out.push({ key: `${view.handNumber}-${e.seq}${sub ? '-' + sub : ''}`, ...entry });
   // 这一街是否已经有人下注（翻牌前的盲注算作下注）：第一个“加注”其实是“下注”
   let streetBet = false;
   for (const e of view.events) {
@@ -112,7 +113,7 @@ export function feedEntries(view: TableView, shown: Shown, limit = 5): FeedEntry
         for (const [id, amount] of merged) {
           const w = who(id);
           const hand = e.uncontested ? '' : view.summary?.winners.find((x) => x.playerId === id && x.handName)?.handName;
-          push(e, { icon: '🏆', text: `${w.name} 赢得 ${formatChips(amount)}${hand ? `（${hand}）` : ''}`, tone: 'win' });
+          push(e, { icon: '🏆', text: `${w.name} 赢得 ${formatChips(amount)}${hand ? `（${hand}）` : ''}`, tone: 'win' }, id);
         }
         break;
       }

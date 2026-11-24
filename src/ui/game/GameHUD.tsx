@@ -20,6 +20,8 @@ import { HandFeed } from './hud/HandFeed';
 import './hud/gameHud.css';
 import { haptic } from '../../display/haptics';
 import { DefeatOverlay } from './hud/DefeatOverlay';
+import { BoardRail } from './hud/BoardRail';
+import { useIsPC } from '../../utils/pc';
 import { defeatActive, useDefeat } from '../../animation/defeat/defeatStore';
 
 /** 屏幕中央的大字提示：全押！/ 翻牌 / 转牌 / 河牌 / 平局！ */
@@ -200,6 +202,8 @@ export function GameHUD({ view }: { view: TableView }) {
   }, [conn]);
   const [rules, setRules] = useState(false);
   const [settings, setSettings] = useState(false);
+  // 手机 / 平板：底部显示清晰的公共牌条（电脑版牌桌上的牌已经足够大）
+  const pc = useIsPC();
   // 自己的筹码用完（出局）：手机触感反馈（只在状态变化的那一刻触发一次）
   const busted = !!view.players.find((p) => p.id === view.viewerId)?.busted;
   const wasBusted = useRef(busted);
@@ -224,6 +228,7 @@ export function GameHUD({ view }: { view: TableView }) {
       <HandFeed view={view} />
       <ChatPanel />
       <div className="gdock">
+        {!pc && <BoardRail view={view} />}
         <PlayerDock view={view} />
         <ActionDock view={view} />
       </div>

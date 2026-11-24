@@ -5,7 +5,7 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { hudInsets } from '../camera/CameraRig';
 import type { SeatView, TableView } from '../../core/game/view';
-import { POT_POS, type SeatLayout, type V3 } from '../layout';
+import { BOARD_SCALE, CARD_H, POT_POS, boardPos, type SeatLayout, type V3 } from '../layout';
 import { AnimatedChips } from '../../ui/common/AnimatedNumber';
 import { useFx } from '../../store/fxStore';
 import { useGame } from '../../store/gameStore';
@@ -156,14 +156,21 @@ export function BetTag({ amount, position }: { amount: number; position: V3 }) {
 }
 
 /** 底池：公共牌上方，随筹码飞入后平滑增加；有全押时列出主池 / 边池 */
+/**
+ * 手机 / 平板：底池牌的下边缘固定在公共牌上边缘之上一点（牌桌远、牌小，而底池牌是固定大小的界面元素，
+ * 以前放在中间会正好盖住公共牌的点数）。电脑版保持原来的位置。
+ */
+const POT_MOBILE_Z = boardPos(0)[2] - (CARD_H * BOARD_SCALE) / 2 - 0.06;
+
 export function PotPlaque({ view }: { view: TableView }) {
   const shown = useFx((s) => s.shown);
+  const pc = useIsPC();
   const pot = presentedPot(view, shown);
   if (pot <= 0) return null;
   const side = view.pots.length > 1 && pot === view.potTotal;
   return (
-    <Html position={[POT_POS[0], POT_POS[1] + 0.06, POT_POS[2] + 0.42]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
-      <div className="pot-plaque" role="status" aria-label={`底池 ${formatChips(pot)}`}>
+    <Html position={pc ? [POT_POS[0], POT_POS[1] + 0.06, POT_POS[2] + 0.42] : [POT_POS[0], POT_POS[1] + 0.06, POT_MOBILE_Z]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+      <div className={`pot-plaque${pc ? '' : ' above-board'}`} role="status" aria-label={`底池 ${formatChips(pot)}`}>
         <span className="pot-cap">底池</span>
         <span className="pot-num">
           <span className="chip-ico" aria-hidden />
