@@ -104,6 +104,11 @@ export function ActionDock({ view }: { view: TableView }) {
       const inAmount = (e.target as HTMLElement)?.dataset?.raiseInput === '1';
       if ((tag === 'INPUT' || tag === 'TEXTAREA') && !inAmount) return;
       const key = e.key.toLowerCase();
+      // 一直按住字母键：轮到自己的瞬间不能被当成“按了一次”而自动弃牌 / 跟注 / 全押（方向键连续调整金额仍然有效）
+      if (e.repeat && !key.startsWith('arrow')) return;
+      // 焦点在“关闭加注面板”“弃牌”等按钮上按 Enter：执行那个按钮，而不是确认加注
+      const btn = (e.target as HTMLElement)?.closest?.('button');
+      if (key === 'enter' && btn && !btn.closest('.raise-presets, .raise-slider')) return;
       if (inAmount && key !== 'enter' && key !== 'escape') return;
       if (key === 'f') act('fold');
       else if (key === 'c') act(legal.canCheck ? 'check' : 'call');

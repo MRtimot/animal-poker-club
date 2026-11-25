@@ -40,7 +40,6 @@ export function categoryOf(t: string): WsCategory {
   switch (t) {
     case 'createRoom':
     case 'joinRoom':
-    case 'leaveRoom':
     case 'startSolo':
     case 'restartSolo':
     case 'addAI':
@@ -49,6 +48,7 @@ export function categoryOf(t: string): WsCategory {
     case 'backToLobby':
     case 'ready':
       return 'room';
+    // leaveRoom 不算在建房限额里：离开被限流拒绝时，玩家会回到首页却仍占着座位
     case 'chat':
     case 'emote':
       return 'chat';

@@ -433,9 +433,9 @@ export class GameController {
         if (event) this.say(p.id, event);
       }
     }
-    for (const p of e.players) {
-      if (p.chips === 0 && !this.bustOrder.includes(p.id)) this.bustOrder.push(p.id);
-    }
+    // 同一手有多人出局：这一手开始时筹码更多的人名次更高（出局的人本手投入 = 他开始时的全部筹码）
+    const bust = e.players.filter((p) => p.chips === 0 && !this.bustOrder.includes(p.id)).sort((a, b) => a.totalBet - b.totalBet);
+    for (const p of bust) this.bustOrder.push(p.id);
     this.onHandComplete?.();
     const alive = e.playersWithChips();
     const humansAlive = alive.some((p) => !this.meta.get(p.id)?.isAI);
@@ -475,9 +475,12 @@ export class GameController {
     m.connected = connected;
     // 轮到断线玩家：缩短计时
     if (!connected && this.engine.currentPlayer?.id === playerId && !this.engine.pendingAdvance) {
-      this.turnDeadline = Date.now() + this.opts.offlineTurnMs;
+      // 只会缩短、不会延长：否则快到时间时断线再重连、反复几次，就能无限拖延这一回合
+      const now = Date.now();
+      const left = Math.max(0, Math.min(this.opts.offlineTurnMs, (this.turnDeadline ?? Infinity) - now));
+      this.turnDeadline = now + left;
       this.turnTotalMs = this.opts.offlineTurnMs;
-      this.schedule(this.opts.offlineTurnMs, { kind: 'autoAct', playerId });
+      this.schedule(left, { kind: 'autoAct', playerId });
     }
     this.notify();
   }
@@ -491,9 +494,13 @@ export class GameController {
     const m = this.meta.get(playerId);
     if (m) m.connected = false;
     if (this.engine.isHandActive() && p.inHand && !p.folded) {
+      const mark = () => `${this.engine.phase}|${this.engine.currentPlayer?.id ?? ''}|${this.engine.pendingAdvance}`;
+      const before = mark();
       if (wasCurrent && !this.engine.pendingAdvance) this.engine.act(playerId, { type: 'fold' });
       else this.engine.foldOutOfTurn(p);
-      this.afterChange();
+      // 不影响轮次（还是同一个人行动 / 还在等发牌）：不重新计时，别人离开不能让正在行动的人多出一整段时间
+      if (mark() === before) this.notify();
+      else this.afterChange();
     } else {
       this.notify();
     }

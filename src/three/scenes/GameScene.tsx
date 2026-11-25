@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { SeatView, TableView } from '../../core/game/view';
@@ -418,9 +418,9 @@ export function GameScene({ view }: { view: TableView }) {
   // 上一手的牌：新一手开始时依次滑回牌堆（桌面清理动画），新牌稍后再发
   const prevView = useRef<TableView | null>(null);
   const [retiring, setRetiring] = useState<{ hand: number; cards: RetireCard[] }>({ hand: -1, cards: [] });
-  useEffect(() => {
+  // 布局阶段执行：与旧牌移除在同一帧完成，中间不会闪一帧空桌
+  useLayoutEffect(() => {
     const prev = prevView.current;
-    prevView.current = view;
     if (!prev || prev.handNumber === view.handNumber) return;
     const pl = computeLayout(prev);
     const cards: RetireCard[] = [];
@@ -437,6 +437,11 @@ export function GameScene({ view }: { view: TableView }) {
     const tm = setTimeout(() => setRetiring((r) => (r.hand === view.handNumber ? { hand: r.hand, cards: [] } : r)), 1400);
     return () => clearTimeout(tm);
   }, [view.handNumber]); // eslint-disable-line
+  // 每次更新都记住最新的牌桌（必须放在上面的效果之后）。以前只在换手时记录，拿到的是上一手刚开始时的样子：
+  // 没有公共牌、没有弃牌，公共牌不会滑回牌堆而是突然消失，弃掉的牌会从座位前重新出现
+  useEffect(() => {
+    prevView.current = view;
+  }, [view]);
   const dealDelay = retiring.hand === view.handNumber && retiring.cards.length ? 260 + retiring.cards.length * STAGGER.retireCard : 0;
 
   return (

@@ -67,6 +67,8 @@ export function HubScreen() {
       const ok = await net.startSolo(settings);
       setStarting(false);
       if (ok) return;
+      // 等待期间玩家已经离开了大厅：不要再把玩家拉进离线对局
+      if (useGame.getState().screen !== 'quick') return;
       toast('服务器暂时无法同步你的资料。本局为离线对局，不计入云端存档。', 'error');
     }
     startLocalGame(settings);

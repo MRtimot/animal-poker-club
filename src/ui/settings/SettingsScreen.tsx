@@ -170,8 +170,8 @@ export function SettingsScreen() {
               size="sm"
               onClick={() => {
                 setS({ serverUrl: url.trim() });
+                // 只断开旧地址；真正进入在线页面时才连接新地址（设置页与首页不保持多人连接）
                 net.disconnect();
-                setTimeout(() => net.connect(), 100);
                 toast('服务器地址已保存', 'success');
               }}
             >

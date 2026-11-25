@@ -164,7 +164,13 @@ export function useBusy(resetKey?: unknown, timeoutMs = 6000) {
   useEffect(() => {
     lock.current = false;
     setBusy(false);
-  }, [lastError, resetKey]);
+  }, [resetKey]);
+  useEffect(() => {
+    // 错误提示消失（变回 undefined）不算新的回应：否则上一次的提示淡出时，会把这一次的“处理中”提前解除
+    if (lastError === undefined) return;
+    lock.current = false;
+    setBusy(false);
+  }, [lastError]);
   useEffect(() => {
     if (!busy) return;
     const t = setTimeout(() => {

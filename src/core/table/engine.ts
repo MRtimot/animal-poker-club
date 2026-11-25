@@ -324,7 +324,11 @@ export class PokerEngine {
 
   private needsToAct(p: EnginePlayer): boolean {
     if (!this.canActPlayer(p)) return false;
-    if (p.bet < this.currentBet) return true;
+    if (p.bet < this.currentBet) {
+      // 其他还在局中的人都已全押、而且谁都没有超过我的下注（例如单挑时大盲筹码不足、全押的金额比小盲还少）：
+      // 没有什么需要跟的，直接摊牌。否则会要求跟注一笔注定退回的筹码，超时还会被自动弃牌、白白输掉
+      return this.players.some((x) => x !== p && x.inHand && !x.folded && (!x.allIn || x.bet > p.bet));
+    }
     if (p.acted) return false;
     // 还没行动过：只有在还有其他可行动玩家时才需要行动
     const others = this.players.filter((x) => x !== p && this.canActPlayer(x)).length;

@@ -189,13 +189,21 @@ export function Card3D({
     const g = ref.current;
     if (!g) return;
     const now = performance.now();
-    if (now < s.start || s.gone) {
+    if (s.gone || (now < s.start && !vanishOnLand)) {
       g.visible = false;
       shadow.current.visible = false;
       return;
     }
     g.visible = true;
     shadow.current.visible = true;
+    if (now < s.start) {
+      // 回收的旧牌：轮到它滑走之前留在原位（以前等待期间会先隐藏，看起来是突然消失）
+      const y0 = fromYaw ?? yaw;
+      g.position.copy(s.pos);
+      g.rotation.set(0, y0, s.flip, 'YXZ');
+      placeShadow(s.pos.x, s.pos.y, s.pos.z, y0);
+      return;
+    }
 
     if (!s.landed) {
       if (!s.soundPlayed) {

@@ -211,7 +211,12 @@ export class RoomServer {
     this.store = opts.store ?? new MemoryHub().store('local-' + randomId(6));
     this.store.subscribe((e) => this.onEvent(e));
     // 订阅断线期间可能错过了房间事件：丢弃缓存，之后从共享存储读取最新数据
-    this.store.onReconnect?.(() => this.cache.clear());
+    this.store.onReconnect?.(() => {
+      this.cache.clear();
+      // 期间本机玩家可能没收到牌局更新，备份计时也可能失效：逐个房间重新同步
+      const codes = new Set([...this.sessions.values()].filter((s) => s.conn && s.roomCode).map((s) => s.roomCode!));
+      for (const code of codes) this.background(this.resyncLocal(code), '重新同步房间');
+    });
     this.sweepTimer = setInterval(() => this.sweep(), Math.min(5000, Math.max(200, this.opts.lobbyGraceMs / 2)));
   }
 
@@ -279,7 +284,11 @@ export class RoomServer {
         const m = msg;
         run(async () => {
           if (m.t === 'hello') {
-            session = await this.hello(conn, m.sessionId, m.profile, userId, !!(m as any).rotate);
+            const prev: Session | null = session;
+            const next = await this.hello(conn, m.sessionId, m.profile, userId, !!(m as any).rotate);
+            session = next;
+            // 同一条连接换了会话：旧会话按断线处理，否则它会一直显示“在线”，占着座位和房间
+            if (prev && (prev as Session) !== next && (prev as Session).conn === conn) this.disconnect(prev);
             return;
           }
           if (!session) return conn.send({ t: 'error', message: '请先连接服务器' });
@@ -481,9 +490,31 @@ export class RoomServer {
             // 没有推进（例如数据已被别处更新）：按最新状态重新设置定时器
             if (!tx.changed) this.arm(code, primary);
           })
-          .catch((err) => console.error('[房间] 推进牌局出错', err));
+          .catch((err) => {
+            console.error('[房间] 推进牌局出错', err);
+            // 存储暂时不可用：稍后再试，不能让这一桌永远停住
+            if (this.disposed || this.wake.has(code)) return;
+            this.wake.set(code, setTimeout(() => (this.wake.delete(code), this.arm(code, primary)), 1000));
+          });
       }, delay),
     );
+  }
+
+  /** 可能错过了事件：从共享存储读取最新房间，完整地发给本机上的玩家，并重新设置计时 */
+  private async resyncLocal(code: string) {
+    const room = (await this.getRoomRec(code))?.room ?? null;
+    for (const s of [...this.sessions.values()]) {
+      if (s.roomCode !== code || !s.conn) continue;
+      if (!room || !room.members.some((m) => m.id === s.playerId)) {
+        s.roomCode = null;
+        s.lastRoomJson = undefined;
+        s.conn.send({ t: 'room', room: null });
+        continue;
+      }
+      await this.resendRoom(s);
+      if (room.game) this.sendState(s, room, GameController.fromState(JSON.parse(JSON.stringify(room.game)), { autoRun: false }), s.playerId, true);
+    }
+    this.arm(code, false);
   }
 
   private async saveSession(s: Session) {
@@ -654,6 +685,21 @@ export class RoomServer {
         }), '清理房间');
         continue;
       }
+      // 比赛结束后房主一直不在线：只有房主能带大家回房间大厅，所以把房主交给还在线的玩家
+      const hostAway = (r: RoomRec) => {
+        const h = r.members.find((m) => m.id === r.hostId);
+        if (r.status !== 'finished' || !h || h.connected || !h.offlineSince || Date.now() - h.offlineSince <= this.opts.lobbyGraceMs) return null;
+        return r.members.find((m) => !m.isAI && m.connected) ?? null;
+      };
+      if (hostAway(room)) {
+        this.background(this.mutate(code, null, (tx) => {
+          const next = tx.room && hostAway(tx.room);
+          if (!next) return;
+          tx.room!.hostId = next.id;
+          tx.system(`${next.profile.name} 成为了新房主`);
+        }), '转交房主');
+        continue;
+      }
       if (room.status === 'lobby' && room.members.some((m) => !m.isAI && !m.connected && m.offlineSince && now - m.offlineSince > this.opts.lobbyGraceMs)) {
         this.background(this.mutate(code, null, (tx) => {
           if (!tx.room || tx.room.status !== 'lobby') return;
@@ -729,6 +775,11 @@ export class RoomServer {
         if (!/^[A-Z0-9]{4,8}$/.test(code)) return err('房间不存在，请检查房间代码');
         const target = await this.getRoomRec(code);
         if (!target || (target.room.solo && !target.room.members.some((m) => m.id === s.playerId))) return err('房间不存在，请检查房间代码');
+        // 先确认进得去再离开现在的房间：目标房间已满 / 已开始时，不能让玩家连原来的座位也丢了
+        if (!target.room.members.some((m) => m.id === s.playerId)) {
+          if (target.room.status !== 'lobby') return err('游戏已经开始，暂时无法加入');
+          if (target.room.members.length >= target.room.settings.maxPlayers) return err('房间已满');
+        }
         if (s.roomCode && s.roomCode !== code) await this.leave(s);
         // 必须在修改之前清空：房间事件可能比 mutate 返回得更早处理，之后再清空就会漏发房间信息
         s.lastRoomJson = undefined;
@@ -1067,6 +1118,8 @@ export class RoomServer {
       tx.deleted = true;
       return;
     }
+    // 剩下的真人都不在线：开始计算空房间的保留时间（否则这个房间没有人会清理）
+    if (!humans.some((x) => x.connected)) room.emptySince ??= Date.now();
     tx.system(`${m.profile.name} ${reason}`);
     if (room.hostId === id) {
       const next = humans.find((x) => x.connected) ?? humans[0];

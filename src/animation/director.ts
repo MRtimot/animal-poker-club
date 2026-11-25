@@ -118,6 +118,9 @@ export function useTableDirector(view: TableView | null) {
 
     // 首次进入 / 重连：不回放历史事件
     if (lastSeq.current === null || view.handNumber < lastHand.current || maxSeq < lastSeq.current) {
+      // 换了一局（再来一局）：上一局还没播完的动作 / 音效 / 派奖演出不能带进来
+      cancelAll();
+      cursor.current = 0;
       lastSeq.current = maxSeq;
       lastHand.current = view.handNumber;
       useFx.getState().markShown(view.handNumber, maxSeq);

@@ -15,7 +15,12 @@ export const GUEST_KEY = 'apc-profile';
 const guestStorage = createJSONStorage(() => ({
   getItem: (k: string) => safeStorage()?.getItem(k) ?? null,
   setItem: (k: string, v: string) => {
-    if (!accountMode) safeStorage()?.setItem(k, v);
+    // 存储空间已满等写入失败：进度留在内存里继续玩，不能让按钮点击 / 结算中途报错
+    try {
+      if (!accountMode) safeStorage()?.setItem(k, v);
+    } catch {
+      /* 写入失败 */
+    }
   },
   removeItem: (k: string) => safeStorage()?.removeItem(k),
 }));

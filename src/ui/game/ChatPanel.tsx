@@ -23,16 +23,17 @@ export function ChatPanel({ side = 'right' }: { side?: 'left' | 'right' }) {
   // 默认展开：电脑版在 1600 宽以上才展开（更窄时会挡住右侧座位）；其他设备保持原来的规则
   const [open, setOpen] = useState(typeof window !== 'undefined' && window.innerWidth > (side === 'left' ? 1400 : isPC() ? 1599 : 1280));
   const [text, setText] = useState('');
-  const [seen, setSeen] = useState(0);
+  // 记住看过的最后一条消息（不能用条数：聊天最多保留 80 条，满了以后条数不再变化，未读数会一直是 0）
+  const [seenId, setSeenId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (open) setSeen(chat.length);
+    if (open) setSeenId(chat.at(-1)?.id ?? null);
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chat, open]);
 
-  const unread = Math.max(0, chat.length - seen);
+  const unread = chat.length - 1 - (seenId ? chat.findIndex((m) => m.id === seenId) : -1);
   const send = () => {
     if (!text.trim()) return;
     session.chat(text);

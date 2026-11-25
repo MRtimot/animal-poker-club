@@ -54,6 +54,8 @@ class NetClient {
   private leavingRoom = false;
   /** 离开确认后断开连接（游客不需要一直保持空闲连接） */
   private disconnectAfterLeave = false;
+  /** 离开之后玩家已经开始新的房间操作（创建 / 加入 / 开始对局） */
+  private intentSinceLeave = false;
   private versionWarned = false;
   /**
    * 复制出来的标签页会带着同一个会话编号：第一次连接前确认没有别的标签页在用它（见 tabSession.ts），
@@ -111,6 +113,9 @@ class NetClient {
       this.raw({ t: 'hello', sessionId: this.sessionId, profile: currentProfile(), v: PROTOCOL_VERSION });
       const q = this.queue;
       this.queue = [];
+      // 离开消息可能随旧连接一起丢了：重新连上后再说一次，而且必须排在之后的“创建 / 加入房间”前面。
+      // （以前是收到 welcome 后才补发，排在新请求后面，会把玩家从刚进入的新房间里踢出去）
+      if (this.leavingRoom && !q.some((m) => m.t === 'leaveRoom')) q.unshift({ t: 'leaveRoom' });
       q.forEach((m) => this.raw(m));
       this.startPing();
     };
@@ -191,6 +196,8 @@ class NetClient {
         old.onmessage = null;
         old.close();
         this.startPing();
+        // 离开确认可能正好发到刚关闭的旧连接上：没有开始新的房间操作时再说一次
+        if (this.leavingRoom && !this.intentSinceLeave) this.raw({ t: 'leaveRoom' });
       }
       this.handle(msg);
     };
@@ -316,8 +323,6 @@ class NetClient {
         return;
       }
       if (msg.t === 'state' || msg.t === 'chat' || msg.t === 'chatHistory') return;
-      // 离开消息还没送达就断线重连了：服务器仍认为我们在房间里，再说一次
-      if (msg.t === 'welcome') queueMicrotask(() => this.raw({ t: 'leaveRoom' }));
     }
     switch (msg.t) {
       case 'welcome': {
@@ -458,7 +463,13 @@ class NetClient {
         this.soloStarting = null;
         resolve(ok);
       };
-      const timer = window.setTimeout(() => waiter(false), timeoutMs);
+      const timer = window.setTimeout(() => {
+        // 超时后玩家会改打离线对局：撤回请求，否则之后连上服务器时会被突然拉进另一张牌桌
+        const before = this.queue.length;
+        this.queue = this.queue.filter((m) => m.t !== 'startSolo');
+        if (this.queue.length === before) this.leaveRoom(); // 已经发出去了：让服务器关掉那一局，忽略迟到的消息
+        waiter(false);
+      }, timeoutMs);
       this.soloWaiter = waiter;
       const g = useGame.getState();
       g.set({ chat: [], view: null });
@@ -526,6 +537,7 @@ class NetClient {
   leaveRoom(opts: { disconnect?: boolean } = {}) {
     this.send({ t: 'leaveRoom' });
     this.leavingRoom = true;
+    this.intentSinceLeave = false;
     this.disconnectAfterLeave = !!opts.disconnect;
     rememberRoom(null);
     const g = useGame.getState();
@@ -544,6 +556,7 @@ class NetClient {
 
   /** 玩家开始新的房间操作：不要在离开确认后断开连接 */
   private newIntent() {
+    this.intentSinceLeave = true;
     this.disconnectAfterLeave = false;
   }
   ready(ready: boolean) {

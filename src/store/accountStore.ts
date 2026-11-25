@@ -113,7 +113,13 @@ interface Outbox {
 
 let outbox: Outbox = (() => {
   try {
-    return JSON.parse(store()?.getItem(OUTBOX_KEY) ?? '{}') ?? {};
+    // 损坏 / 被修改的记录：丢弃（不是对象时，之后往里写会直接报错）
+    const raw = JSON.parse(store()?.getItem(OUTBOX_KEY) ?? '{}');
+    const obj = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : undefined);
+    const o = obj(raw) ?? {};
+    const profile = obj(o.profile);
+    const settings = obj(o.settings);
+    return { ...(profile ? { profile } : {}), ...(settings ? { settings } : {}) };
   } catch {
     return {};
   }
@@ -161,6 +167,7 @@ export async function flush(): Promise<void> {
   setSync('syncing');
   try {
     for (let guard = 0; guard < 4 && (outbox.profile || outbox.settings); guard++) {
+      let sending: keyof Outbox = 'profile';
       try {
         if (outbox.profile) {
           const patch = outbox.profile;
@@ -170,6 +177,7 @@ export async function flush(): Promise<void> {
           applyState(state);
         }
         if (outbox.settings) {
+          sending = 'settings';
           const patch = outbox.settings;
           const { state } = await accountApi.patchSettings(patch);
           if (outbox.settings === patch) delete outbox.settings;
@@ -191,7 +199,8 @@ export async function flush(): Promise<void> {
         }
         if (e.status === 400 || e.status === 403 || e.status === 413) {
           // 服务器拒绝（例如昵称不合规）：放弃这次修改，恢复为服务器上的数据
-          delete outbox.profile;
+          // 只丢弃被拒绝的那一类
+          delete outbox[sending];
           saveOutbox();
           toast(e.message, 'error');
           const a = useAccount.getState().account;

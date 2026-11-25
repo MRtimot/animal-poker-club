@@ -24,7 +24,12 @@ export function attachGameSockets(server: http.Server, o: AttachOptions) {
   const ipConnects = new RateLimiter(o.connLimits?.perMinute ?? 60, 60_000);
 
   server.on('upgrade', (req, socket, head) => {
-    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    let path = '';
+    try {
+      path = new URL(req.url ?? '/', 'http://localhost').pathname;
+    } catch {
+      // 格式错误的网址（例如 “//”）：只拒绝这一条连接。以前这里的异常没有人接，会让整个服务器（所有房间）崩溃
+    }
     if (!WS_PATHS.includes(path)) {
       socket.destroy();
       return;
@@ -33,6 +38,8 @@ export function attachGameSockets(server: http.Server, o: AttachOptions) {
   });
 
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
+    // 必须最先监听：连接被拒绝（人数 / 来源）后、真正关闭前收到坏数据也会触发 error，没有监听会让整个服务器崩溃
+    ws.on('error', () => undefined);
     const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
     const open = ipConns.get(ip) ?? 0;
     if (open >= maxConnsPerIp || !ipConnects.allow(ip)) {

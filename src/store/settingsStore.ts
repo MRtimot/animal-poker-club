@@ -85,7 +85,11 @@ export const persistStorage = createJSONStorage(() => {
     getItem: (k: string) => base.getItem(k),
     // 玩家在“Cookie 与本机存储”里关闭了偏好设置：不写入本机（设置只在本次打开期间有效）
     setItem: (k: string, v: string) => {
-      if (preferencesAllowed()) base.setItem(k, v);
+      try {
+        if (preferencesAllowed()) base.setItem(k, v);
+      } catch {
+        /* 存储空间已满等：设置只在本次打开期间有效 */
+      }
     },
     removeItem: (k: string) => base.removeItem(k),
   };
