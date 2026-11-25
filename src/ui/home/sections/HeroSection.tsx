@@ -56,7 +56,7 @@ export function HeroSection() {
             <div className="tester-badge">
               <span className="tester-icon">🧪</span>
               <span className="tester-label">游戏测试员</span>
-              <span className="tester-name">John</span>
+              <span className="tester-name">Zac</span>
             </div>
           </div>
         </Reveal>

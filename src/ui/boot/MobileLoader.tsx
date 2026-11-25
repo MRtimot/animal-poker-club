@@ -81,7 +81,7 @@ export function MobileLoader({ onReady }: { onReady: () => void }) {
           <b>创始人</b>Timothy Ong · Founder of APEX
         </span>
         <span>
-          <b>游戏测试员</b>John
+          <b>游戏测试员</b>Zac
         </span>
       </div>
     </div>

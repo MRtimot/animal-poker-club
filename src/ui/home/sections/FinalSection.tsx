@@ -57,7 +57,7 @@ export function HomeFooter() {
         ))}
       </nav>
       <div className="hf-credits">
-        创始人 Timothy Ong · Founder of APEX <span aria-hidden>·</span> 游戏测试员 John
+        创始人 Timothy Ong · Founder of APEX <span aria-hidden>·</span> 游戏测试员 Zac
       </div>
       <div className="hf-legal">
         仅使用虚拟筹码 · 无真钱交易 · 登录仅用于保存游戏进度
