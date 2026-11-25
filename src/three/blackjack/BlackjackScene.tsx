@@ -44,7 +44,7 @@ function Seat({ p, view, layout, all, index, paid }: { p: BjSeatView; view: Blac
         </group>
       </SeatEntrance>
       {p.id === view.viewerId ? <BubbleAnchor id={p.id} layout={layout} /> : <BjSeatPlate p={p} view={view} layout={layout} paid={paid} />}
-      {/* 放在同一个数组里（key = 实体牌编号）：拆牌时牌从一手滑到另一手，不会重新发一次 */}
+      {/* 放在同一个数组里（key = 实体牌编号）：分牌时牌从一手滑到另一手，不会重新发一次 */}
       {p.hands.flatMap((h, hi) =>
         h.cards.map((c, i) => {
           const t = handCardTarget(layout, hi, p.hands.length, i, h.cards.length, h.doubled);

@@ -23,7 +23,7 @@ export function usePresentedCards(view: BlackjackView, owner: string, cards: rea
   useEffect(() => {
     const { view, owner, cards } = latest.current;
     const uids = cards.map((c) => c?.uid ?? null);
-    // 换了一局 / 拆牌移走的牌：不再显示
+    // 换了一局 / 分牌移走的牌：不再显示
     const gone = [...known.current].filter((u) => !uids.includes(u));
     if (gone.length) {
       for (const u of gone) known.current.delete(u);

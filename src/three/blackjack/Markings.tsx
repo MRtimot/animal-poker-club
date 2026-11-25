@@ -32,7 +32,6 @@ function arcText(g: CanvasRenderingContext2D, text: string, cx: number, cy: numb
 
 export function BlackjackMarkings({ rules, layout, seats }: { rules: BlackjackRules; layout: Map<string, SeatLayout>; seats: string[] }) {
   const pays = `${rules.blackjackPayout[0]} TO ${rules.blackjackPayout[1]}`;
-  const soft = rules.dealerHitsSoft17;
   const { map, normalMap, mat } = useMemo(() => {
     const w = Math.round(W * PX);
     const h = Math.round(D * PX);
@@ -46,7 +45,7 @@ export function BlackjackMarkings({ rules, layout, seats }: { rules: BlackjackRu
         g.fillStyle = gold;
         arcText(g, `BLACKJACK PAYS ${pays}`, cx, cy, 3.48 * PX, `700 ${Math.round(0.21 * PX)}px Georgia, "Times New Roman", serif`, 0.035 * PX);
         g.fillStyle = 'rgba(226, 210, 170, 0.42)';
-        arcText(g, soft ? 'DEALER HITS SOFT 17' : 'DEALER MUST STAND ON ALL 17s', cx, cy, 3.84 * PX, `600 ${Math.round(0.115 * PX)}px Georgia, "Times New Roman", serif`, 0.03 * PX);
+        arcText(g, 'DEALER MUST STAND ON ALL 17s', cx, cy, 3.84 * PX, `600 ${Math.round(0.115 * PX)}px Georgia, "Times New Roman", serif`, 0.03 * PX);
         g.strokeStyle = 'rgba(226, 204, 140, 0.3)';
         g.lineWidth = 3;
         for (const r of [3.28, 3.7]) {
@@ -59,7 +58,7 @@ export function BlackjackMarkings({ rules, layout, seats }: { rules: BlackjackRu
     );
     const mat = new THREE.MeshStandardMaterial({ map: d.map, normalMap: d.normalMap, normalScale: new THREE.Vector2(0.5, 0.5), transparent: true, depthWrite: false, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2 });
     return { ...d, mat };
-  }, [pays, soft]);
+  }, [pays]);
   const { ringGeo, ringMat } = useMemo(
     () => ({
       ringGeo: new THREE.RingGeometry(0.25, 0.268, 48),

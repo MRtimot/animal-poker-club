@@ -1,7 +1,7 @@
 // 21 点引擎：权威规则与状态机（纯逻辑，不含计时器 / 网络 / 界面）。
 // 庄家按固定规则行动，没有任何随机决定；动物性格只影响表现层，永远碰不到牌靴。
 import { randomId, secureRandom, type RNG } from '../utils/random';
-import { evaluateBlackjack, isAce, isTenValue, cardPoints } from './hand';
+import { evaluateBlackjack, isAce, isTenValue } from './hand';
 import { betError, cleanRules, payoutFor, type BlackjackRules, type HandResult } from './rules';
 import { Shoe, type BjCard, type ShoeState } from './shoe';
 import { BJ_TRANSITIONS, DEALER_ID, type BjAction, type BjEvent, type BjEventBody, type BjHand, type BjLegal, type BjPlayer, type BjRoundFacts, type BlackjackPhase } from './types';
@@ -241,7 +241,7 @@ export class BlackjackEngine {
     }
   }
 
-  /** 庄家明牌是 A 或 10 点时先看暗牌：已经是黑杰克就直接翻开，玩家不会在注定输的牌上加倍 / 拆牌 */
+  /** 庄家明牌是 A 或 10 点时先看暗牌：已经是黑杰克就直接翻开，玩家不会在注定输的牌上加倍 / 分牌 */
   private dealerHasNatural(): boolean {
     return evaluateBlackjack(this.dealer).blackjack;
   }
@@ -303,14 +303,13 @@ export class BlackjackEngine {
     if (!c || c.p.id !== id || c.h.done) return null;
     const { p, h } = c;
     const two = h.cards.length === 2;
-    const same = two && (this.rules.splitBy === 'rank' ? h.cards[0].rank === h.cards[1].rank : cardPoints(h.cards[0]) === cardPoints(h.cards[1]));
+    const same = two && h.cards[0].rank === h.cards[1].rank;
     const afford = p.balance >= h.bet;
     return {
       hit: true,
       stand: true,
-      double: two && afford && (!h.fromSplit || this.rules.doubleAfterSplit),
-      // 拆过的 A 不能再拆（拆 A 后每手只补一张并自动停牌，不会再轮到）
-      split: same && afford && p.hands.length < this.rules.maxHands,
+      double: two && afford && !h.fromSplit,
+      split: same && afford && !h.fromSplit && p.hands.length < this.rules.maxHands,
       cost: h.bet,
     };
   }
@@ -348,7 +347,7 @@ export class BlackjackEngine {
         this.advanceTurn();
         return;
       case 'split': {
-        if (!legal.split) throw new BlackjackError(p.balance < h.bet ? '金币不足' : '现在不能拆牌');
+        if (!legal.split) throw new BlackjackError(p.balance < h.bet ? '金币不足' : '现在不能分牌');
         const aces = isAce(h.cards[0]);
         p.balance -= h.bet;
         const moved = h.cards.pop()!;
@@ -360,7 +359,7 @@ export class BlackjackEngine {
         this.giveHand(p, b, 'split');
         this.token++;
         for (const x of [h, b]) {
-          // 拆 A：每手只补一张；补成 21 点：自动停牌
+          // 分 A：每手只补一张；补成 21 点：自动停牌
           if (aces || evaluateBlackjack(x.cards, true).value === 21) {
             x.done = true;
             this.emit({ type: 'stand', playerId: id, handId: x.id, auto: true });
@@ -398,11 +397,9 @@ export class BlackjackEngine {
 
   // ───────────── 庄家（固定规则，没有随机） ─────────────
 
-  /** 庄家是否必须要牌：不足 17 要牌；17 及以上停牌；软 17 按规则 */
+  /** 庄家是否必须要牌：不足 17 要牌；17 及以上（含软 17）停牌 */
   dealerMustHit(): boolean {
-    const v = evaluateBlackjack(this.dealer);
-    if (v.value < 17) return true;
-    return v.value === 17 && v.soft && this.rules.dealerHitsSoft17;
+    return evaluateBlackjack(this.dealer).value < 17;
   }
 
   /** 还有没有需要与庄家比大小的手牌（全部爆牌 / 黑杰克 / 离桌时庄家只翻牌，不补牌） */

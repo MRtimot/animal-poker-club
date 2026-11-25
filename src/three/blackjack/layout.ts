@@ -46,7 +46,7 @@ const CARD_Y = TABLE_Y + 0.024;
 const SCALE_ME = [1.2, 1.02, 0.86, 0.74];
 const SCALE_OTHER = [1, 0.8, 0.66, 0.56];
 
-/** 玩家一手牌里第 i 张的位置。多手（拆牌）并排，牌张沿切线错开叠放 */
+/** 玩家一手牌里第 i 张的位置。多手（分牌）并排，牌张沿切线错开叠放 */
 export function handCardTarget(l: SeatLayout, hand: number, hands: number, i: number, n: number, doubled: boolean): { pos: V3; yaw: number; scale: number } {
   const scale = (l.isViewer ? SCALE_ME : SCALE_OTHER)[Math.min(3, hands - 1)];
   const off = handOffset(hand, hands, scale);

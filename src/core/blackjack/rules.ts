@@ -3,32 +3,28 @@
 export interface BlackjackRules {
   /** 牌靴里有几副牌 */
   decks: number;
-  /** 庄家软 17 是否继续要牌（默认停牌：庄家 17 点及以上一律停牌） */
-  dealerHitsSoft17: boolean;
   /** 黑杰克赔率（默认 3:2） */
   blackjackPayout: readonly [number, number];
   minBet: number;
   maxBet: number;
-  /** 拆牌后可以加倍 */
-  doubleAfterSplit: boolean;
-  /** 一名玩家最多几手牌（拆牌上限） */
+  /** 一名玩家最多几手牌（分牌上限） */
   maxHands: number;
-  /** 拆牌条件：点数相同（10 与 K 可拆）或牌面相同 */
-  splitBy: 'value' | 'rank';
   /** 用掉这个比例的牌后，下一局开始前重新洗牌 */
   penetration: number;
 }
 
+/**
+ * V1 锁定的规则（本地、服务器、AI 同一份；任何配置或旧的牌局状态都不能改变）：
+ * 庄家不足 17 要牌、17 及以上（含软 17）停牌；黑杰克 3:2；只有最初两张牌可以加倍；
+ * 最初两张牌面相同才能分牌，只分一次（两手）；分 A 每手只补一张；没有保险、投降、边注。
+ */
 /** 保险（Insurance）没有实现，因此规则与界面里都没有它 */
 export const DEFAULT_RULES: BlackjackRules = {
   decks: 6,
-  dealerHitsSoft17: false,
   blackjackPayout: [3, 2],
   minBet: 10,
   maxBet: 500,
-  doubleAfterSplit: true,
-  maxHands: 4,
-  splitBy: 'value',
+  maxHands: 2,
   penetration: 0.75,
 };
 
@@ -95,11 +91,11 @@ export function cleanRules(x: Partial<BlackjackRules> | null | undefined): Black
   const int = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.floor(v))) : d);
   const minBet = int(r.minBet, 1, 1_000_000, DEFAULT_RULES.minBet);
   return {
-    ...r,
+    blackjackPayout: DEFAULT_RULES.blackjackPayout,
+    maxHands: DEFAULT_RULES.maxHands,
     decks: int(r.decks, 1, 8, DEFAULT_RULES.decks),
     minBet,
     maxBet: Math.max(minBet, int(r.maxBet, 1, 10_000_000, DEFAULT_RULES.maxBet)),
-    maxHands: int(r.maxHands, 1, 4, DEFAULT_RULES.maxHands),
     penetration: typeof r.penetration === 'number' && r.penetration > 0.3 && r.penetration < 0.95 ? r.penetration : DEFAULT_RULES.penetration,
   };
 }

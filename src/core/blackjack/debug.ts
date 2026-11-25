@@ -21,7 +21,7 @@ export function rigShoe(s: ShoeState, want: ReadonlyMap<number, string>): ShoeSt
 /** 按顺序指定接下来的牌 */
 export const rigNext = (s: ShoeState, ids: readonly string[]) => rigShoe(s, new Map(ids.map((id, i) => [i, id])));
 
-export type ForcedOutcome = 'blackjack' | 'bust' | 'push' | 'dealer-blackjack' | 'win' | 'loss' | 'split' | 'resplit';
+export type ForcedOutcome = 'blackjack' | 'bust' | 'push' | 'dealer-blackjack' | 'win' | 'loss' | 'split';
 
 const PLAN: Record<ForcedOutcome, { up: string; hole: string; me: [string, string]; next?: string[] }> = {
   blackjack: { up: '9d', hole: '8c', me: ['As', 'Kh'] },
@@ -31,8 +31,6 @@ const PLAN: Record<ForcedOutcome, { up: string; hole: string; me: [string, strin
   win: { up: '9d', hole: '9c', me: ['Ks', 'Qh'] },
   loss: { up: 'Kd', hole: '9c', me: ['Ts', '8h'] },
   split: { up: '6d', hole: 'Tc', me: ['8s', '8h'] },
-  // 拆开后两手又各拿到一张 8：可以拆到四手
-  resplit: { up: '6d', hole: 'Tc', me: ['8s', '8h'], next: ['8d', '8c'] },
 };
 
 /** 发牌顺序：庄家明牌 → 每位玩家 → 庄家暗牌 → 每位玩家。me：自己是第几位下注的玩家 */

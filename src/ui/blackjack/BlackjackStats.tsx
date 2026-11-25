@@ -12,7 +12,7 @@ export function BlackjackStatsGrid({ s }: { s: Stats }) {
     ['黑杰克', s.blackjacks],
     ['爆牌', s.busts],
     ['加倍', s.doubleDowns],
-    ['拆牌', s.splits],
+    ['分牌', s.splits],
     ['最高连胜', s.bestWinStreak],
     ['单局最高赢取', formatChips(s.largestWin)],
     ['单局最高下注', formatChips(s.largestBet)],

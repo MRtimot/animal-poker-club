@@ -1,4 +1,4 @@
-// 21 点核心：点数、黑杰克、牌靴、状态机、下注与赔付、加倍 / 拆牌、庄家规则、控制器节奏、暗牌保密、防重复
+// 21 点核心：点数、黑杰克、牌靴、状态机、下注与赔付、加倍 / 分牌、庄家规则、控制器节奏、暗牌保密、防重复
 import { describe, expect, it, vi } from 'vitest';
 import { parseCards } from '../src/core/cards/card';
 import { evaluateBlackjack, valueText } from '../src/core/blackjack/hand';
@@ -49,7 +49,7 @@ describe('点数计算', () => {
   it('BJ-08 A + A + 9 = 21（不是黑杰克）', () => expect(ev('As Ad 9c')).toMatchObject({ value: 21, blackjack: false }));
   it('BJ-09 A + A + 9 + 5 = 16', () => expect(ev('As Ad 9c 5h')).toMatchObject({ value: 16, soft: false }));
   it('BJ-10 A + 5 + 10 = 16；A + 9 + 5 = 15；A + 5 = 16', () => expect([ev('As 5d Th').value, ev('As 9d 5h').value, ev('As 5d').value]).toEqual([16, 15, 16]));
-  it('BJ-11 A + 10/J/Q/K 都是黑杰克；A + 5 + 5 只是普通 21；拆牌后的 A + 10 不算黑杰克', () => {
+  it('BJ-11 A + 10/J/Q/K 都是黑杰克；A + 5 + 5 只是普通 21；分牌后的 A + 10 不算黑杰克', () => {
     for (const t of ['T', 'J', 'Q', 'K']) expect(ev(`As ${t}d`).blackjack).toBe(true);
     expect(ev('As 5d 5h')).toMatchObject({ value: 21, blackjack: false });
     expect(ev('As Kd', true)).toMatchObject({ value: 21, blackjack: false });
@@ -134,7 +134,7 @@ describe('下注与赔付', () => {
     expect(() => e.placeBet('a', 10)).toThrow('已经下注');
   });
   it('BJ-22 规则参数缺失 / 非法时回到安全值', () => {
-    expect(cleanRules({ decks: 99, minBet: -1, maxBet: 0, maxHands: 50, penetration: 5 })).toMatchObject({ decks: 8, minBet: 1, maxBet: 1, maxHands: 4, penetration: 0.75 });
+    expect(cleanRules({ decks: 99, minBet: -1, maxBet: 0, maxHands: 50, penetration: 5 })).toMatchObject({ decks: 8, minBet: 1, maxBet: 1, maxHands: 2, penetration: 0.75 });
     expect(cleanRules(null)).toEqual(DEFAULT_RULES);
   });
 });
@@ -195,19 +195,17 @@ describe('一局的流程', () => {
     const dealer = finish(table('Ad Ts Kc 9h', {}));
     expect([results(dealer), bal(dealer)]).toEqual([['dealer-blackjack'], 900]);
   });
-  it('BJ-30 庄家明牌 A / 10 且暗牌凑成黑杰克：直接翻开，玩家没有机会加倍 / 拆牌多输', () => {
+  it('BJ-30 庄家明牌 A / 10 且暗牌凑成黑杰克：直接翻开，玩家没有机会加倍 / 分牌多输', () => {
     for (const up of ['Ad Ts Kc 9h', 'Kd Ts Ac 9h']) expect(table(up, {}).phase).toBe('dealer-turn');
     expect(table('9d Ts Kc 9h', {}).phase).toBe('player-turn');
   });
-  it('BJ-31 软 17：默认停牌；开启“软 17 要牌”时继续要', () => {
-    const s = table('Ad Ts 6c 9h', {});
-    s.act('p0', 'stand');
-    finish(s);
-    expect(s.dealer.length).toBe(2);
-    const h = table('Ad Ts 6c 9h 2c', { rules: { dealerHitsSoft17: true } });
-    h.act('p0', 'stand');
-    finish(h);
-    expect(h.dealer.length).toBe(3);
+  it('BJ-31 软 17 一律停牌；任何配置都不能改变', () => {
+    for (const rules of [{}, { dealerHitsSoft17: true }]) {
+      const s = table('Ad Ts 6c 9h 2c', { rules });
+      s.act('p0', 'stand');
+      finish(s);
+      expect(s.dealer.length).toBe(2);
+    }
   });
   it('BJ-32 三张以上的 21 不是黑杰克：只赔 1:1', () => {
     const e = table('9d 7s 8c 7h 7c', {});
@@ -216,7 +214,7 @@ describe('一局的流程', () => {
   });
 });
 
-describe('加倍与拆牌', () => {
+describe('加倍与分牌', () => {
   it('BJ-33 加倍：只多拿一张、自动停牌、下注翻倍', () => {
     const e = table('6d 6s Tc 5h Th 5c', {});
     expect(e.getLegal('p0')!.double).toBe(true);
@@ -236,7 +234,7 @@ describe('加倍与拆牌', () => {
     expect(() => later.act('p0', 'double')).toThrow('不能加倍');
     expect(bal(later)).toBe(900);
   });
-  it('BJ-35 拆牌：两手各补一张、各自下注、依次行动、分别结算', () => {
+  it('BJ-35 分牌：两手各补一张、各自下注、依次行动、分别结算', () => {
     const e = table('6d 8s Tc 8h 3c Th 9s 2c Kd', {});
     e.act('p0', 'split');
     const p = e.getPlayer('p0')!;
@@ -250,27 +248,31 @@ describe('加倍与拆牌', () => {
     finish(e); // 庄家 6+10+2 = 18
     expect([results(e), bal(e)]).toEqual([['win', 'push'], 1100]);
   });
-  it('BJ-36 拆 A：每手只补一张并自动停牌；A + 10 不算黑杰克（只赔 1:1）', () => {
+  it('BJ-36 分 A：每手只补一张并自动停牌；A + 10 不算黑杰克（只赔 1:1）', () => {
     const e = table('6d As Tc Ah Kh 5c 9s', {});
     e.act('p0', 'split');
     expect(e.phase).toBe('dealer-turn');
     finish(e); // 庄家 6+10+9 爆
     expect([results(e), bal(e)]).toEqual([['win', 'win'], 1200]);
   });
-  it('BJ-37 拆牌条件：点数相同（10 与 K）可拆；不同点数 / 余额不足 / 达到上限不可拆；也可配置为牌面相同才可拆', () => {
-    expect(table('6d Ts 9c Kh', {}).getLegal('p0')!.split).toBe(true);
-    expect(table('6d Ts 9c Kh', { rules: { splitBy: 'rank' } }).getLegal('p0')!.split).toBe(false);
-    expect(table('6d Ts 9c 9h', {}).getLegal('p0')!.split).toBe(false);
-    expect(table('6d 8s 9c 8h', { balance: 150 }).getLegal('p0')!.split).toBe(false);
-    const e = table('6d 8s 9c 8h 8d 2c 8c 3c 5s 6s', { rules: { maxHands: 3 } });
+  it('BJ-37 分牌条件：最初两张牌面相同；余额不足不可分（状态不变）；分过的不能再分', () => {
+    expect(table('6d Ks 9c Kh', {}).getLegal('p0')!.split).toBe(true);
+    expect(table('6d Ts 9c Kh', {}).getLegal('p0')!.split).toBe(false);
+    const poor = table('6d 8s 9c 8h', { balance: 150 });
+    expect(poor.getLegal('p0')!.split).toBe(false);
+    expect(() => poor.act('p0', 'split')).toThrow('金币不足');
+    expect([bal(poor), poor.getPlayer('p0')!.hands.length, poor.getPlayer('p0')!.hands[0].bet]).toEqual([50, 1, 100]);
+    const e = table('6d 8s 9c 8h 8d 8c', { rules: { maxHands: 4 } });
     e.act('p0', 'split');
-    e.act('p0', 'split');
-    expect(e.getPlayer('p0')!.hands.length).toBe(3);
-    expect(e.getLegal('p0')!.split).toBe(false);
+    expect(() => e.act('p0', 'split')).toThrow('不能分牌');
+    expect([e.getPlayer('p0')!.hands.length, bal(e)]).toEqual([2, 800]);
   });
-  it('BJ-38 拆牌后可以加倍（可配置关闭）', () => {
-    expect((() => { const e = table('6d 8s Tc 8h 3c 2h', {}); e.act('p0', 'split'); return e.getLegal('p0')!.double; })()).toBe(true);
-    expect((() => { const e = table('6d 8s Tc 8h 3c 2h', { rules: { doubleAfterSplit: false } }); e.act('p0', 'split'); return e.getLegal('p0')!.double; })()).toBe(false);
+  it('BJ-38 分牌后的手牌不能加倍（加倍只限最初两张牌）', () => {
+    const e = table('6d 8s Tc 8h 3c 2h', { rules: { doubleAfterSplit: true } });
+    e.act('p0', 'split');
+    expect(e.getLegal('p0')!.double).toBe(false);
+    expect(() => e.act('p0', 'double')).toThrow('不能加倍');
+    expect(bal(e)).toBe(800);
   });
 });
 
@@ -362,7 +364,7 @@ describe('状态机与非法操作', () => {
     let rounds = 0;
     for (let t = 0; t < 300; t++) {
       const n = 1 + Math.floor(r() * 6);
-      const e = new BlackjackEngine({ decks: 1 + Math.floor(r() * 6), minBet: 10, maxBet: 500, splitBy: r() < 0.5 ? 'rank' : 'value', dealerHitsSoft17: r() < 0.5 }, r);
+      const e = new BlackjackEngine({ decks: 1 + Math.floor(r() * 6), minBet: 10, maxBet: 500 }, r);
       for (let i = 0; i < n; i++) e.addPlayer('p' + i, 'P' + i, 10 + Math.floor(r() * 2000));
       for (let k = 0; k < 10 && e.players.some((p) => e.canBet(p)); k++) {
         e.openBetting();

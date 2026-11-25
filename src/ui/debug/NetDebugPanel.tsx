@@ -19,7 +19,6 @@ const FORCE: readonly (readonly [ForcedOutcome, string])[] = import.meta.env.DEV
       ['win', 'Force Win'],
       ['loss', 'Force Loss'],
       ['split', 'Force Split'],
-      ['resplit', 'Force Re-split'],
     ]
   : [];
 

@@ -27,7 +27,7 @@ export const BJ_DIALOGUE_NAME: Record<BjDialogueEvent, string> = {
   bj_hit: '21 点：要牌',
   bj_stand: '21 点：停牌',
   bj_double: '21 点：加倍',
-  bj_split: '21 点：拆牌',
+  bj_split: '21 点：分牌',
   bj_blackjack: '21 点：自己黑杰克',
   bj_bust: '21 点：爆牌',
   bj_win: '21 点：赢了',

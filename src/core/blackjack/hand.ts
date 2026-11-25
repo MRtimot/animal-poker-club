@@ -5,7 +5,7 @@ export interface HandValue {
   value: number;
   /** 有一张 A 正按 11 计算 */
   soft: boolean;
-  /** 最初两张牌：A + 10 点牌（拆牌后的两张 21 点不算） */
+  /** 最初两张牌：A + 10 点牌（分牌后的两张 21 点不算） */
   blackjack: boolean;
   bust: boolean;
 }
@@ -16,7 +16,7 @@ type RankOnly = Pick<Card, 'rank'>;
 export const isTenValue = (c: RankOnly) => c.rank >= 10 && c.rank <= 13;
 export const isAce = (c: RankOnly) => c.rank === 14;
 
-/** 单张牌的点数（A 记 11，用于显示庄家明牌与拆牌比较） */
+/** 单张牌的点数（A 记 11，用于显示庄家明牌与分牌比较） */
 export function cardPoints(c: RankOnly): number {
   return isAce(c) ? 11 : isTenValue(c) ? 10 : c.rank;
 }

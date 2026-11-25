@@ -31,13 +31,13 @@ export const BJ_TRANSITIONS: Record<BlackjackPhase, readonly BlackjackPhase[]> =
 
 export type BjAction = 'hit' | 'stand' | 'double' | 'split';
 export const BJ_ACTIONS: readonly BjAction[] = ['hit', 'stand', 'double', 'split'];
-export const BJ_ACTION_NAME: Record<BjAction, string> = { hit: '要牌', stand: '停牌', double: '加倍', split: '拆牌' };
+export const BJ_ACTION_NAME: Record<BjAction, string> = { hit: '要牌', stand: '停牌', double: '加倍', split: '分牌' };
 
 export interface BjHand {
   id: string;
   cards: BjCard[];
   bet: number;
-  /** 不能再行动（停牌、爆牌、21 点、黑杰克、加倍后、拆 A 后） */
+  /** 不能再行动（停牌、爆牌、21 点、黑杰克、加倍后、分 A 后） */
   done: boolean;
   doubled: boolean;
   fromSplit: boolean;
@@ -98,7 +98,7 @@ export interface BjLegal {
   stand: boolean;
   double: boolean;
   split: boolean;
-  /** 加倍 / 拆牌需要再放上的筹码 */
+  /** 加倍 / 分牌需要再放上的筹码 */
   cost: number;
 }
 
@@ -113,7 +113,7 @@ export type BjCommand =
 /** 一名玩家一局的结算事实（奖励 / 统计用；只由引擎产生） */
 export interface BjRoundFacts {
   roundId: string;
-  /** 全部下注（含加倍与拆牌） */
+  /** 全部下注（含加倍与分牌） */
   bet: number;
   payout: number;
   profit: number;

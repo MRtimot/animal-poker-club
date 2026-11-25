@@ -28,7 +28,7 @@ export const session = {
       net.action(a, g.view?.handNumber);
     }
   },
-  /** 21 点命令（下注、要牌、停牌、加倍、拆牌、下一局、补给） */
+  /** 21 点命令（下注、要牌、停牌、加倍、分牌、下一局、补给） */
   blackjack(cmd: BjCommand) {
     const g = useGame.getState();
     if (!g.bj) return;

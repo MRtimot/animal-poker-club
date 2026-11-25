@@ -101,7 +101,7 @@ describe('21 点：结果演出', () => {
     ];
     for (const [r, b, p, o] of t) expect(outcomeOf({ hands: [hand(b, p, r)] })).toEqual({ outcome: o, profit: p - b, bet: b });
   });
-  it('BJU-11 拆牌后看净输赢：一赢一输 = 平局；都爆 = 爆牌；赢多 = 赢', () => {
+  it('BJU-11 分牌后看净输赢：一赢一输 = 平局；都爆 = 爆牌；赢多 = 赢', () => {
     expect(outcomeOf({ hands: [hand(50, 100, 'win'), hand(50, 0, 'lose')] })).toMatchObject({ outcome: 'push', profit: 0 });
     expect(outcomeOf({ hands: [hand(50, 0, 'bust'), hand(50, 0, 'bust')] })).toMatchObject({ outcome: 'bust', profit: -100 });
     expect(outcomeOf({ hands: [hand(50, 100, 'win'), hand(50, 50, 'push')] })).toMatchObject({ outcome: 'win', profit: 50 });

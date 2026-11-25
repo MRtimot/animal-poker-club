@@ -543,7 +543,7 @@ describe('统计、成就、存档', () => {
   const hand = (result: string, x: object = {}) => ({ result, value: 20, cards: 2, doubled: false, fromSplit: false, ...x });
   const base = () => normalizeStats(EMPTY_STATS);
 
-  it('BJO-19 胜负按整局净值；加倍、拆牌、爆牌、黑杰克、最大赢取分别统计；原来的统计不受影响', () => {
+  it('BJO-19 胜负按整局净值；加倍、分牌、爆牌、黑杰克、最大赢取分别统计；原来的统计不受影响', () => {
     const s = play(
       { ...base(), handsPlayed: 9 },
       { bet: 100, payout: 250, profit: 150, hands: [hand('blackjack', { value: 21 })] },

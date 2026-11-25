@@ -1,4 +1,4 @@
-// 行动按钮：只显示引擎给出的合法动作（要牌 / 停牌 / 加倍 / 拆牌）。每次点击带行动令牌，连点 / 重发不会多发牌
+// 行动按钮：只显示引擎给出的合法动作（要牌 / 停牌 / 加倍 / 分牌）。每次点击带行动令牌，连点 / 重发不会多发牌
 import { useEffect, useRef, useState } from 'react';
 import { BJ_ACTION_NAME, type BjAction, type BlackjackView } from '../../core/blackjack/types';
 import { session } from '../../net/session';

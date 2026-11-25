@@ -20,10 +20,10 @@ export function BlackjackRulesModal({ rules = DEFAULT_RULES, onClose }: { rules?
           目标：比<b className="gold">庄家</b>更接近 <b className="gold">21 点</b>，但不能超过。你只和庄家比，不和其他玩家比。
         </p>
         <p>
-          2~10 按牌面，J / Q / K 算 10，A 自动算 1 或 11。<b>要牌</b>再拿一张；<b>停牌</b>结束这一手；<b>加倍</b>下注翻倍、只再拿一张；<b>拆牌</b>把两张点数相同的牌分成两手，各自下注（拆 A 每手只补一张，补成 21 不算黑杰克）。
+          2~10 按牌面，J / Q / K 算 10，A 自动算 1 或 11。<b>要牌</b>再拿一张；<b>停牌</b>结束这一手；<b>加倍</b>只限最初两张牌，下注翻倍、只再拿一张；<b>分牌</b>把最初两张牌面相同的牌（例如 8 + 8、K + K；10 + K 不行）分成两手，各自下注，只能分一次，分牌后不能加倍（分 A 每手只补一张，补成 21 不算黑杰克）。
         </p>
         <p>
-          庄家没有选择：不足 17 必须要牌，{rules.dealerHitsSoft17 ? '软 17 继续要牌，硬 17 以上停牌' : '17 点及以上一律停牌'}。庄家明牌是 A 或 10 点时会先看暗牌，已经是黑杰克就直接翻开。
+          庄家没有选择：不足 17 必须要牌，17 点及以上（含软 17）一律停牌。庄家明牌是 A 或 10 点时会先看暗牌，已经是黑杰克就直接翻开。
         </p>
         <p>
           赔付：赢 1:1，黑杰克 {rules.blackjackPayout[0]}:{rules.blackjackPayout[1]}，平局退回下注。每张桌用 {rules.decks} 副牌，用掉约 {Math.round(rules.penetration * 100)}% 后重新洗牌。本桌限额 {rules.minBet}–{rules.maxBet}。
