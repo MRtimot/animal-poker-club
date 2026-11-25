@@ -6,6 +6,7 @@ import { ACHIEVEMENTS, isSpeciesUnlocked, levelFromXp, unlockText } from '../../
 import { HAND_NAME } from '../../core/poker/handEvaluator';
 import { Avatar, BackButton, Btn, LevelBar, Seg } from '../common/ui';
 import { formatChips, timeAgo } from '../../utils/format';
+import { BlackjackStatsGrid } from '../blackjack/BlackjackStats';
 
 type Tab = 'dex' | 'chars' | 'ach' | 'stats';
 
@@ -141,6 +142,7 @@ export function CollectionScreen() {
                   </div>
                 ))}
               </div>
+              <BlackjackStatsGrid s={p.stats.blackjack} />
               <h3 style={{ marginBottom: 10 }}>最近游戏</h3>
               {p.recent.length === 0 && <p className="muted">暂无记录</p>}
               {p.recent.map((r, i) => (

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { TableView } from '../core/game/view';
 import type { ChatMessage, RoomInfo } from '../core/protocol';
+import type { BlackjackView } from '../core/blackjack/types';
+import { DEFAULT_GAME_MODE, type GameMode } from '../core/gameMode';
 
 export type Screen = 'home' | 'login' | 'onboarding' | 'profile' | 'creator' | 'quick' | 'online' | 'room' | 'game' | 'collection' | 'settings';
 export type CameraMode = 'overview' | 'player' | 'free';
@@ -15,7 +17,12 @@ export interface Toast {
 export interface GameState {
   screen: Screen;
   mode: 'local' | 'online' | null;
+  /** 德州扑克牌桌（与 bj 同一时间只会有一个） */
   view: TableView | null;
+  /** 21 点牌桌 */
+  bj: BlackjackView | null;
+  /** 扑克大厅里选中的游戏模式 */
+  hubMode: GameMode;
   room: RoomInfo | null;
   chat: ChatMessage[];
   conn: ConnStatus;
@@ -36,6 +43,7 @@ export interface GameState {
 
   setScreen: (s: Screen) => void;
   setView: (v: TableView | null) => void;
+  setBj: (v: BlackjackView | null) => void;
   setRoom: (r: RoomInfo | null) => void;
   addChat: (m: ChatMessage) => void;
   setChat: (m: ChatMessage[]) => void;
@@ -50,6 +58,8 @@ export const useGame = create<GameState>()((set, get) => ({
   screen: 'home',
   mode: null,
   view: null,
+  bj: null,
+  hubMode: DEFAULT_GAME_MODE,
   room: null,
   chat: [],
   conn: 'idle',
@@ -66,8 +76,12 @@ export const useGame = create<GameState>()((set, get) => ({
 
   setScreen: (screen) => set({ screen }),
   setView: (view) => {
-    if (view) set({ view, clockOffset: view.serverTime - Date.now() });
+    if (view) set({ view, bj: null, clockOffset: view.serverTime - Date.now() });
     else set({ view: null });
+  },
+  setBj: (bj) => {
+    if (bj) set({ bj, view: null, clockOffset: bj.serverTime - Date.now() });
+    else set({ bj: null });
   },
   setRoom: (room) => set({ room }),
   addChat: (m) => set({ chat: [...get().chat, m].slice(-80) }),

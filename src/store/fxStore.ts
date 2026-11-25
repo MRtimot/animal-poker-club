@@ -87,8 +87,10 @@ export interface SpeechState {
 }
 
 export interface CameraCue {
-  type: 'action' | 'allin' | 'showdown' | 'win' | 'flop' | 'turn' | 'river' | 'intro';
+  type: 'action' | 'allin' | 'showdown' | 'win' | 'flop' | 'turn' | 'river' | 'intro' | 'focus';
   playerId?: string;
+  /** focus：镜头靠向 eye、看向 look，amt 为靠近的程度 0~1（21 点：庄家、手牌、结果、派彩的特写） */
+  focus?: { eye: [number, number, number]; look: [number, number, number]; amt: number; speed?: number };
   start: number; // ms
   duration: number;
 }

@@ -14,6 +14,8 @@ import { dialogueAllowed, playDialogue } from './dialoguePlayback';
 import { useGame } from '../store/gameStore';
 import { EMOTE_ANIM } from './animalAnimations';
 import type { ChatMessage } from '../core/protocol';
+import { DEALER_ID, type BlackjackView } from '../core/blackjack/types';
+import { computeBlackjackLayout } from '../three/blackjack/layout';
 import { defeatVerdict } from './defeat/defeatRules';
 import { defeatActive } from './defeat/defeatStore';
 
@@ -378,7 +380,7 @@ export function useTableDirector(view: TableView | null) {
 }
 
 /** 聊天 / 表情 → 气泡与动物动作 */
-export function useChatReactions(view: TableView | null) {
+export function useChatReactions(view: TableView | null, bj: BlackjackView | null = null) {
   const seen = useRef<string | null>(null);
   const chat = useGame((s) => s.chat);
   useEffect(() => {
@@ -402,9 +404,10 @@ export function useChatReactions(view: TableView | null) {
         // 重连 / 收到历史记录时不重播旧台词
         const age = Date.now() + (g.mode === 'online' ? g.clockOffset : 0) - m.time;
         if (age > 6000 || !dialogueAllowed(m.dialogue)) continue;
-        const seat = view?.players.find((p) => p.id === m.from);
-        if (!seat) continue;
-        void playDialogue(m.from, m.text, m.dialogue, seat.profile.animal, { name: m.name });
+        // 21 点的庄家不在座位列表里
+        const animal = m.from === DEALER_ID ? bj?.dealer.profile.animal : (view ?? bj)?.players.find((p) => p.id === m.from)?.profile.animal;
+        if (!animal) continue;
+        void playDialogue(m.from, m.text, m.dialogue, animal, { name: m.name });
         continue;
       }
       fx.bubble(m.from, m.text, m.kind === 'emote' ? 'emote' : 'chat');
@@ -413,8 +416,8 @@ export function useChatReactions(view: TableView | null) {
         const a = EMOTE_ANIM[m.text];
         if (a) fx.play(m.from, a);
         if (m.text === '😎') fx.setCool(m.from, 3600);
-        if (view) {
-          const l = computeLayout(view).get(m.from);
+        if (view || bj) {
+          const l = (bj ? computeBlackjackLayout(bj) : computeLayout(view!)).get(m.from);
           if (l && m.text === '❤️') fx.burst(l.head, 'hearts');
           if (l && m.text === '🔥') fx.burst(l.head, 'fire');
           if (l && (m.text === '👏' || m.text === '😂' || m.text === '🤣')) fx.burst(l.head, 'sparkle');
@@ -423,5 +426,5 @@ export function useChatReactions(view: TableView | null) {
         fx.play(m.from, 'talk');
       }
     }
-  }, [chat, view]);
+  }, [chat, view, bj]);
 }

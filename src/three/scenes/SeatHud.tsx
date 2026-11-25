@@ -3,7 +3,7 @@
 import { memo } from 'react';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { hudInsets } from '../camera/CameraRig';
+import { hudInsets, type TablePreset } from '../camera/CameraRig';
 import type { SeatView, TableView } from '../../core/game/view';
 import { BOARD_SCALE, CARD_H, POT_POS, boardPos, type SeatLayout, type V3 } from '../layout';
 import { AnimatedChips } from '../../ui/common/AnimatedNumber';
@@ -20,17 +20,19 @@ const tmpP = new THREE.Vector3();
  * 名牌的屏幕位置：跟随 3D 座位，但始终留在屏幕内（窄屏上两侧的座位不会被切掉），
  * 也不钻到顶栏和底部操作区下面。
  */
-function clampedPosition(el: THREE.Object3D, camera: THREE.Camera, size: { width: number; height: number }) {
+const clampFor = (preset: TablePreset) => (el: THREE.Object3D, camera: THREE.Camera, size: { width: number; height: number }) => {
   const p = tmpP.setFromMatrixPosition(el.matrixWorld).project(camera);
   const x = (p.x * size.width) / 2 + size.width / 2;
   const y = (-p.y * size.height) / 2 + size.height / 2;
   const mx = size.width <= 760 ? 46 : 96;
-  const { top, bottom } = hudInsets(size.width, size.height);
+  const { top, bottom } = hudInsets(size.width, size.height, preset);
   return [Math.min(size.width - mx, Math.max(mx, x)), Math.min(size.height - bottom - 24, Math.max(top + 36, y))];
-}
+};
+const clampedPosition = clampFor('holdem');
+export const clampedPositionBlackjack = clampFor('blackjack');
 
 /** 头顶的情绪表情：弹出 → 漂浮 → 淡出 */
-function MoodBadge({ playerId }: { playerId: string }) {
+export function MoodBadge({ playerId }: { playerId: string }) {
   const m = useFx((s) => s.moods[playerId]);
   // 没有表情符号：只改变脸上的表情（例如处决后所有人一言不发地僵住），不弹出空的气泡
   if (!m || !m.emoji) return null;
@@ -42,7 +44,7 @@ function MoodBadge({ playerId }: { playerId: string }) {
 }
 
 /** 聊天 / 表情 / 角色台词气泡 */
-function Bubble({ playerId }: { playerId: string }) {
+export function Bubble({ playerId }: { playerId: string }) {
   const b = useFx((s) => s.bubbles.find((x) => x.playerId === playerId));
   // 正在播放真实语音时显示 🔊
   const voiced = useFx((s) => !!s.speech[playerId]?.voiced && s.speech[playerId]?.phase === 'speaking');
@@ -69,7 +71,7 @@ function Bubble({ playerId }: { playerId: string }) {
   );
 }
 
-function SeatTimer({ view }: { view: TableView }) {
+export function SeatTimer({ view }: { view: Pick<TableView, 'turnDeadline' | 'turnTotalMs'> }) {
   const now = useServerNow(true);
   const clock = turnClock(view, now);
   if (!clock || !view.turnDeadline) return null;

@@ -1,0 +1,1160 @@
+/* ═════════ 21 点 HUD ═════════
+   只使用 styles.css 的设计令牌与 gameHud.css 的顶栏 / 牌面；3D 镜头取景会避开庄家条与底部面板
+   （CameraRig 的 blackjackInsets 与这里的高度一致）。手机上是重新排的布局，不是电脑版缩小。 */
+
+.bj-phase {
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #1b1206;
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+}
+
+/* ───────── 庄家 ───────── */
+.bj-dealer {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--hud-top) + var(--safe-top) + var(--sp-1));
+  transform: translateX(-50%);
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 56px;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-1), var(--sh-inset);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: border-color var(--t-ui), box-shadow var(--t-ui);
+}
+.bj-dealer.acting {
+  border-color: var(--c-gold-line);
+  box-shadow: 0 0 24px rgba(233, 207, 134, 0.14), var(--sh-1);
+}
+.bj-dealer-who {
+  min-width: 0;
+}
+.bj-dealer-name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.bj-dealer-name small {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--c-gold);
+}
+.bj-dealer-trait {
+  max-width: 190px;
+  font-size: 11px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bj-dealer-cards {
+  display: flex;
+  gap: 4px;
+  min-width: 72px;
+  min-height: 44px;
+  align-items: center;
+}
+.bj-dealer-hint {
+  font-size: 13px;
+  color: var(--c-text-2);
+  white-space: nowrap;
+}
+.bj-dealer-value {
+  min-width: 46px;
+  text-align: center;
+  line-height: 1.1;
+}
+.bj-dealer-value b {
+  display: block;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  color: var(--c-gold-strong);
+  white-space: nowrap;
+}
+.bj-dealer-value small {
+  font-size: 10px;
+  color: var(--c-text-3);
+}
+.bj-dealer-value.bust b {
+  color: #ff9d8c;
+}
+
+/* ───────── 自己 ───────── */
+.bj-me {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-2), var(--sh-inset);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  transition: border-color var(--t-ui), box-shadow var(--t-ui);
+}
+.bj-me.myturn {
+  border-color: var(--c-gold-line);
+  box-shadow: 0 0 0 1px rgba(233, 207, 134, 0.22), 0 0 28px rgba(233, 207, 134, 0.16), var(--sh-2);
+}
+.bj-id {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.bj-who {
+  min-width: 0;
+}
+.bj-wallet {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--c-text-3);
+}
+.bj-hands {
+  display: flex;
+  gap: var(--sp-3);
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--c-hairline);
+}
+.bj-hand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 4px 8px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  transition: border-color var(--t-ui), background var(--t-ui);
+}
+.bj-hand.many {
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0.72;
+}
+.bj-hand.many.active {
+  opacity: 1;
+  border-color: var(--c-gold-line);
+  background: rgba(233, 207, 134, 0.07);
+}
+.bj-hand.empty {
+  opacity: 0.28;
+}
+.bj-cards {
+  --w: 46px;
+  display: flex;
+}
+.bj-cards .hcard {
+  flex: none;
+}
+.bj-cards .hcard + .hcard {
+  margin-left: 4px;
+}
+/* 牌多了就叠放，点数和花色在左上角始终看得见 */
+.bj-cards.c4 .hcard + .hcard {
+  margin-left: -14px;
+}
+.bj-cards.c5 .hcard + .hcard,
+.bj-cards.c6 .hcard + .hcard,
+.bj-cards.c7 .hcard + .hcard {
+  margin-left: -20px;
+}
+.bj-hand.many .hcard {
+  --w: 34px;
+}
+.bj-hand.many .hcard + .hcard {
+  margin-left: -10px;
+}
+.bj-hand-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 78px;
+}
+.bj-hand.many .bj-hand-info {
+  min-width: 0;
+  align-items: center;
+}
+.bj-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.bj-value b {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  line-height: 1;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+.bj-value small {
+  font-size: 11px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+.bj-hand.many .bj-value b {
+  font-size: 18px;
+}
+.bj-value.full b,
+.bj-value.blackjack b {
+  color: var(--c-gold-strong);
+}
+.bj-value.blackjack small {
+  color: var(--c-gold);
+}
+.bj-value.bust b,
+.bj-value.bust small {
+  color: #ff9d8c;
+}
+.bj-hand-bet {
+  font-size: 12px;
+  color: var(--c-text-2);
+  font-family: var(--font-num);
+  white-space: nowrap;
+}
+.bj-result {
+  font-style: normal;
+  font-weight: 750;
+  color: var(--c-text-2);
+}
+.bj-result.win,
+.bj-result.blackjack {
+  color: var(--c-gold-strong);
+}
+.bj-result.lose,
+.bj-result.bust,
+.bj-result.dealer-blackjack,
+.bj-result.forfeit {
+  color: #f0a193;
+}
+.bj-result.push {
+  color: var(--c-info);
+}
+.bj-turn {
+  position: absolute;
+  left: var(--sp-4);
+  top: -12px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 1px;
+  color: #1b1206;
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+  box-shadow: var(--sh-1);
+}
+
+/* ───────── 右侧面板 ───────── */
+.bj-panel {
+  width: min(480px, 100%);
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-2), var(--sh-inset);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+.bj-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: 16px;
+  font-weight: 700;
+}
+.bj-panel-title b {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+}
+.bj-panel-title b.up {
+  color: var(--c-gold-strong);
+}
+.bj-panel-title b.down {
+  color: #f0a193;
+}
+.bj-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-text-2);
+}
+.bj-err {
+  font-size: 13px;
+  font-weight: 650;
+  color: #ff9d8c;
+}
+.bj-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bj-btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline-strong);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+  color: var(--c-text);
+  background: var(--c-surface-raised);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--e-out), filter var(--t-fast), opacity var(--t-ui);
+}
+.bj-btn.primary {
+  flex: 1.7;
+  color: #1b1206;
+  border-color: rgba(255, 236, 180, 0.5);
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+}
+.bj-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.bj-btn:active:not(:disabled),
+.bj-action:active:not(:disabled),
+.bj-chip:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+}
+.bj-btn kbd {
+  margin-left: 6px;
+  font-family: var(--font-num);
+  font-size: 10px;
+  opacity: 0.55;
+}
+.bj-btn:focus-visible,
+.bj-action:focus-visible,
+.bj-chip:focus-visible,
+.bj-mini:focus-visible,
+.bj-amount button:focus-visible,
+.bjr-skip:focus-visible {
+  outline: 2px solid var(--c-gold);
+  outline-offset: 2px;
+}
+
+/* 下注 */
+.bj-bet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.bj-limits {
+  font-size: 12px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+.bj-amount {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bj-amount button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--c-hairline-strong);
+  background: var(--c-surface-raised);
+  color: var(--c-text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bj-amount button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.bj-amount output {
+  min-width: 92px;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 750;
+  color: var(--c-gold-strong);
+}
+.bj-amount output.bad {
+  color: #ff9d8c;
+}
+.bj-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bj-chip {
+  position: relative;
+  flex: none;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 4px dashed rgba(255, 255, 255, 0.62);
+  background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.2), transparent 62%), var(--chip);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.4);
+  transition: transform var(--t-fast) var(--e-out), opacity var(--t-ui);
+}
+.bj-chip b {
+  font-family: var(--font-num);
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.bj-chip kbd {
+  position: absolute;
+  right: -6px;
+  top: -8px;
+  font-family: var(--font-num);
+  font-size: 9px;
+  opacity: 0.5;
+}
+.bj-chip:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.bj-mini {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bj-mini:first-of-type {
+  margin-left: auto;
+}
+.bj-mini:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 行动 */
+.bj-acts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--sp-2);
+}
+.bj-action {
+  position: relative;
+  min-height: 62px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline-strong);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--c-text);
+  font: inherit;
+  cursor: pointer;
+  background: var(--c-surface-raised);
+  box-shadow: var(--sh-inset), var(--sh-1);
+  transition: transform var(--t-fast) var(--e-out), filter var(--t-fast), opacity var(--t-ui);
+}
+.bj-action:hover:not(:disabled),
+.bj-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.bj-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bj-action-zh {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: 1px;
+}
+.bj-action-en {
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.75;
+}
+.bj-action-en em {
+  font-style: normal;
+  font-family: var(--font-num);
+  letter-spacing: 0;
+}
+.bj-action kbd {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-family: var(--font-num);
+  font-size: 9px;
+  opacity: 0.45;
+}
+.bj-action.hit {
+  color: #1b1206;
+  border-color: rgba(255, 236, 180, 0.5);
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+}
+.bj-action.stand {
+  color: #dcf3ff;
+  border-color: rgba(134, 195, 224, 0.35);
+  background: linear-gradient(180deg, rgba(36, 86, 108, 0.85), rgba(20, 54, 72, 0.85));
+}
+.bj-action.double {
+  color: #fff1f4;
+  border-color: rgba(224, 96, 126, 0.4);
+  background: linear-gradient(180deg, rgba(132, 34, 60, 0.9), rgba(88, 18, 40, 0.9));
+}
+.bj-action.split {
+  color: #e7f6e4;
+  border-color: rgba(140, 190, 130, 0.35);
+  background: linear-gradient(180deg, rgba(44, 92, 58, 0.9), rgba(26, 62, 38, 0.9));
+}
+@media (hover: none) and (pointer: coarse) {
+  .bj-action kbd,
+  .bj-chip kbd,
+  .bj-btn kbd {
+    display: none;
+  }
+}
+
+/* 名牌上的点数 */
+.bjp-hands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--c-hairline);
+}
+.bjp-val {
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-text);
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+.bjp-val.blackjack,
+.bjp-val.win {
+  color: #1b1206;
+  background: var(--c-gold);
+}
+.bjp-val.bust,
+.bjp-val.lose,
+.bjp-val.dealer-blackjack,
+.bjp-val.forfeit {
+  color: #ffd6cf;
+  background: rgba(150, 48, 38, 0.6);
+}
+.bjp-val.push {
+  color: #dcf3ff;
+  background: rgba(36, 86, 108, 0.7);
+}
+
+/* ───────── 结果演出 ───────── */
+.bjr {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-present);
+  display: grid;
+  place-items: center;
+  pointer-events: none !important;
+}
+.bjr-vig {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(120% 90% at 50% 55%, transparent 42%, rgba(4, 3, 6, 0.72));
+  animation: bjrVig 0.6s var(--e-out) forwards;
+}
+.bjr.blackjack .bjr-vig,
+.bjr.win .bjr-vig {
+  background: radial-gradient(120% 90% at 50% 55%, transparent 46%, rgba(26, 18, 4, 0.66));
+}
+.bjr.push .bjr-vig {
+  background: radial-gradient(120% 90% at 50% 55%, transparent 55%, rgba(6, 8, 12, 0.5));
+}
+@keyframes bjrVig {
+  to {
+    opacity: 1;
+  }
+}
+.bjr-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 44px;
+  transform: translateY(-6vh);
+  text-align: center;
+  animation: bjrIn 0.55s var(--e-out);
+}
+/* 文字后面一层柔和的暗部：桌面文字与牌不会干扰阅读 */
+.bjr-card::before {
+  content: '';
+  position: absolute;
+  inset: -46px -90px;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(6, 5, 9, 0.82), rgba(6, 5, 9, 0.55) 58%, transparent);
+}
+.bjr.ph-payout .bjr-card {
+  animation: bjrOut 0.7s 0.35s var(--e-inout) forwards;
+}
+@keyframes bjrIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-6vh + 14px)) scale(0.97);
+  }
+}
+@keyframes bjrOut {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-6vh - 10px));
+  }
+}
+.bjr-rule {
+  width: min(320px, 60vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--c-gold-line), transparent);
+}
+.bjr-en {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 6.2vw, 72px);
+  line-height: 1.05;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  color: var(--c-text);
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.7);
+}
+.bjr.dealer-blackjack .bjr-en {
+  font-size: clamp(24px, 4.4vw, 52px);
+}
+.bjr.blackjack .bjr-en {
+  color: var(--c-gold-strong);
+  text-shadow: 0 0 34px rgba(233, 207, 134, 0.4), 0 4px 30px rgba(0, 0, 0, 0.7);
+}
+.bjr.win .bjr-en {
+  color: var(--c-gold);
+}
+.bjr.lose .bjr-en,
+.bjr.bust .bjr-en,
+.bjr.dealer-blackjack .bjr-en {
+  color: #d9c4bd;
+}
+.bjr-zh {
+  font-size: 16px;
+  letter-spacing: 4px;
+  color: var(--c-text-2);
+}
+.bjr-vals {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: var(--c-text-2);
+}
+.bjr-vals i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c-gold-line);
+}
+.bjr-profit {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
+  font-weight: 750;
+  color: var(--c-text);
+}
+.bjr-profit.up {
+  color: var(--c-gold-strong);
+}
+.bjr-profit.down {
+  color: #f0a193;
+}
+.bjr-skip {
+  position: absolute;
+  right: calc(var(--sp-4) + var(--safe-right));
+  /* 聊天按钮在右上角：跳过放在它下面 */
+  top: calc(var(--hud-top) + var(--safe-top) + 76px);
+  min-width: 72px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: rgba(10, 9, 13, 0.72);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ───────── 平板 ───────── */
+@media (min-width: 761px) and (max-width: 1180px) {
+  .bj-dock {
+    gap: var(--sp-3);
+  }
+  .bj-panel {
+    width: min(420px, 48vw);
+  }
+  .bj-dealer-trait {
+    display: none;
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) and (orientation: portrait) {
+  .bj-dock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bj-panel {
+    width: 100%;
+  }
+}
+
+/* ───────── 手机竖屏 ───────── */
+@media (max-width: 760px) {
+  .bj-dealer {
+    left: calc(var(--sp-2) + var(--safe-left));
+    right: calc(var(--sp-2) + var(--safe-right));
+    transform: none;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    min-height: 76px;
+    padding: 6px var(--sp-3);
+  }
+  .bj-dealer .savatar-md {
+    --size: 34px;
+  }
+  .bj-dealer-who {
+    max-width: 88px;
+  }
+  .bj-dealer-name {
+    flex-direction: column;
+    gap: 0;
+    font-size: 13px;
+  }
+  .bj-dealer-trait {
+    display: none;
+  }
+  .bj-dealer-cards {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    min-height: 62px;
+  }
+  .bj-dealer-cards .hcard {
+    --w: clamp(32px, 10.4vw, 44px);
+  }
+  .bj-dealer-cards .hcard:nth-child(n + 4) {
+    margin-left: -14px;
+  }
+  .bj-dock {
+    gap: var(--sp-2);
+    padding-top: var(--sp-3);
+  }
+  .bj-me {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-height: 136px;
+    padding: 8px 12px;
+  }
+  .bj-id {
+    justify-content: space-between;
+    gap: var(--sp-2);
+  }
+  .bj-id .savatar-lg {
+    --size: 28px;
+  }
+  .bj-who {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+  }
+  .bj-wallet,
+  .bj-who .me-lv {
+    display: none;
+  }
+  .bj-who .me-chips {
+    margin: 0;
+    font-size: 17px;
+  }
+  .bj-hands {
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    gap: 6px;
+  }
+  .bj-hand {
+    padding: 2px 6px;
+  }
+  .bj-cards .hcard {
+    --w: clamp(44px, 13.4vw, 56px);
+  }
+  .bj-cards.c4 .hcard + .hcard {
+    margin-left: -18px;
+  }
+  .bj-cards.c5 .hcard + .hcard,
+  .bj-cards.c6 .hcard + .hcard,
+  .bj-cards.c7 .hcard + .hcard {
+    margin-left: -28px;
+  }
+  .bj-hand.many {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .bj-hand.many .hcard {
+    --w: clamp(30px, 9vw, 38px);
+  }
+  .bj-hand.many .hcard + .hcard {
+    margin-left: -20px;
+  }
+  .bj-hand.many .bj-cards.c2 .hcard + .hcard {
+    margin-left: -3px;
+  }
+  .bj-hand.many .bj-cards.c3 .hcard + .hcard {
+    margin-left: -16px;
+  }
+  .bj-hand.many .bj-value small {
+    display: none;
+  }
+  .bj-value b {
+    font-size: 30px;
+  }
+  /* 下注 / 行动 / 等待 / 结果一样高：阶段切换时自己的牌不会上下跳动 */
+  .bj-panel {
+    width: 100%;
+    min-height: 176px;
+    padding: 10px;
+  }
+  .bj-turn {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .bj-acts {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+  .bj-acts.n3 .bj-action:last-child {
+    grid-column: 1 / -1;
+  }
+  .bj-action {
+    min-height: 52px;
+  }
+  .bj-chips {
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .bj-chip {
+    width: 46px;
+    height: 46px;
+  }
+  .bj-mini {
+    min-width: 44px;
+    padding: 0 8px;
+  }
+  .bj-mini:first-of-type {
+    margin-left: 0;
+  }
+  .bj-amount output {
+    min-width: 84px;
+    font-size: 22px;
+  }
+  .bjr-card {
+    padding: 10px 16px;
+  }
+  /* 聊天与跳过按钮放在底部区域上面，不盖住名牌和庄家（--bj-dock 是底部区域的实际高度，拆牌时会变高） */
+  .bjr-skip {
+    top: auto;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--bj-dock, 336px) + var(--sp-2));
+  }
+  .game-hud.bj-hud .chat-fab {
+    top: auto;
+    bottom: calc(var(--bj-dock, 336px) - 4px);
+    transform: scale(0.86);
+    transform-origin: right bottom;
+  }
+}
+/* 矮屏手机（例如 375×667）：再压缩一档 */
+@media (max-width: 760px) and (max-height: 700px) {
+  .bj-dealer {
+    min-height: 58px;
+  }
+  .bj-dealer-cards {
+    min-height: 46px;
+  }
+  .bj-dealer-cards .hcard {
+    --w: 32px;
+  }
+  .bj-me {
+    min-height: 104px;
+    padding: 6px 10px;
+    gap: 2px;
+  }
+  .bj-cards .hcard {
+    --w: 38px;
+  }
+  .bj-panel {
+    min-height: 158px;
+    padding: 8px;
+    gap: 6px;
+  }
+  .bj-chip {
+    width: 44px;
+    height: 44px;
+  }
+  .bj-action {
+    min-height: 50px;
+  }
+  .bj-btn {
+    min-height: 44px;
+  }
+}
+@media (max-width: 380px) {
+  /* 窄屏：限额和阶段比局数重要 */
+  .bj-hud .gbar-round {
+    display: none;
+  }
+}
+@media (max-width: 359px) {
+  .bj-chip {
+    width: 42px;
+    height: 42px;
+  }
+}
+
+/* ───────── 手机横屏：高度很小，左右排开并压缩 ───────── */
+@media (max-height: 520px) and (min-width: 600px) {
+  .bj-dealer {
+    top: calc(var(--safe-top) + 3px);
+    left: calc(var(--safe-left) + 152px);
+    transform: none;
+    min-height: 42px;
+    padding: 2px 10px;
+    z-index: calc(var(--z-hud) + 1);
+  }
+  /* 顶栏只留返回与阶段，中间让给庄家条 */
+  .bj-hud .gbar {
+    grid-template-columns: auto 1fr auto;
+  }
+  .bj-hud .gbar-center {
+    justify-self: start;
+    padding: 3px;
+  }
+  .bj-hud .gbar-brand,
+  .bj-hud .gbar-meta,
+  .bj-dealer-trait {
+    display: none;
+  }
+  .bj-dealer-cards .hcard:nth-child(n + 4) {
+    margin-left: -12px;
+  }
+  .bj-dealer .savatar-md {
+    --size: 26px;
+  }
+  .bj-dealer-cards {
+    min-height: 36px;
+  }
+  .bj-dealer-cards .hcard {
+    --w: 26px;
+  }
+  .bj-dealer-value b {
+    font-size: 18px;
+  }
+  .bj-dealer-value small {
+    display: none;
+  }
+  .bj-me {
+    min-height: 0;
+    padding: 6px 10px;
+    gap: 10px;
+    flex-direction: row;
+    align-items: center;
+  }
+  .bj-id .savatar-lg {
+    --size: 30px;
+  }
+  .bj-who {
+    display: block;
+  }
+  .bj-wallet,
+  .bj-who .me-lv {
+    display: none;
+  }
+  .bj-hands {
+    padding-left: 10px;
+    border-left: 1px solid var(--c-hairline);
+  }
+  .bj-cards .hcard {
+    --w: 38px;
+  }
+  .bj-hand.many {
+    flex-direction: row;
+    gap: 6px;
+  }
+  .bj-hand.many .hcard {
+    --w: 28px;
+  }
+  /* 三四手：竖着叠（牌在上、点数在下），名字让位 */
+  .bj-hands.n3 .bj-hand.many,
+  .bj-hands.n4 .bj-hand.many {
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 4px;
+  }
+  .bj-hands.n3 .hcard,
+  .bj-hands.n4 .hcard {
+    --w: 24px;
+  }
+  .bj-hand.many .bj-cards.c2 .hcard + .hcard {
+    margin-left: -3px;
+  }
+  .bj-hands.n3 .bj-value b,
+  .bj-hands.n4 .bj-value b {
+    font-size: 15px;
+  }
+  .bj-me.split .bj-value small,
+  .bj-hands.n3 .bj-hand-bet,
+  .bj-hands.n4 .bj-hand-bet {
+    display: none;
+  }
+  .bj-me.split .bj-id .savatar-lg,
+  .bj-me.split .me-you {
+    display: none;
+  }
+  .bj-me.split .me-name-text {
+    max-width: 64px;
+  }
+  .bj-me .me-chips {
+    font-size: 16px;
+  }
+  .bj-turn {
+    top: -24px;
+    padding: 1px 10px;
+  }
+  .bj-value b {
+    font-size: 22px;
+  }
+  .bj-panel {
+    width: min(400px, 48vw);
+    min-height: 82px;
+    padding: 8px;
+    gap: 6px;
+  }
+  .bj-acts {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+  }
+  .bj-acts.n3 .bj-action:last-child {
+    grid-column: auto;
+  }
+  .bj-action {
+    min-height: 48px;
+    padding: 4px;
+  }
+  .bj-action-zh {
+    font-size: 15px;
+  }
+  .bj-bet {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+  .bj-bet .bj-bet-head {
+    grid-column: 1;
+  }
+  .bj-bet .bj-chips {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 6px;
+  }
+  .bj-bet .bj-row {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .bj-bet .bj-panel-title,
+  .bj-bet .bj-hint {
+    grid-column: 1 / -1;
+  }
+  .bj-limits {
+    display: none;
+  }
+  .bj-chip {
+    width: 44px;
+    height: 44px;
+  }
+  .bj-btn {
+    min-height: 44px;
+    padding: 4px 10px;
+    font-size: 14px;
+  }
+  .bjr-en {
+    font-size: 40px;
+  }
+  .bjr-card {
+    transform: translateY(-4vh);
+    gap: 2px;
+  }
+}
+
+/* 4K：整体放大 */
+@media (min-width: 2800px) and (min-height: 1500px) and (hover: hover) and (pointer: fine) {
+  .bj-dealer,
+  .bj-me,
+  .bj-panel {
+    zoom: 1.45;
+  }
+  .bj-dealer {
+    top: calc((var(--hud-top) + var(--sp-2)) / 1.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bjr-vig,
+  .bjr-card,
+  .bjr.ph-payout .bjr-card {
+    animation: none;
+  }
+  .bjr-vig {
+    opacity: 1;
+  }
+  .bj-btn,
+  .bj-action,
+  .bj-chip {
+    transition: none;
+  }
+}

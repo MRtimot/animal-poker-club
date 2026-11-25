@@ -30,11 +30,10 @@ function PhaseSteps({ view }: { view: TableView }) {
   );
 }
 
-export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onRules: () => void; onSettings: () => void }) {
+/** 顶栏右侧的工具：视角、音乐、规则、全屏、设置（德州扑克与 21 点共用） */
+export function TableTools({ onRules, onSettings }: { onRules: () => void; onSettings: () => void }) {
   const cameraMode = useGame((s) => s.cameraMode);
   const set = useGame((s) => s.set);
-  const room = useGame((s) => s.room);
-  const mode = useGame((s) => s.mode);
   // 全部静音时音乐也算关着；这时点音乐按钮会取消静音
   const musicVolume = useSettings((s) => s.musicVolume);
   const muted = useSettings((s) => s.muted);
@@ -46,6 +45,37 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
     sound.play('button');
     useGame.getState().toast(`📷 ${CAMERA_LABEL[next]}`);
   };
+  return (
+    <div className="gbar-right">
+      <button type="button" className="gbar-btn" title={`切换视角（当前：${CAMERA_LABEL[cameraMode]}）`} aria-label="切换视角" onClick={nextCam}>
+        <span aria-hidden>{cameraMode === 'overview' ? '🎥' : cameraMode === 'player' ? '👀' : '🕹️'}</span>
+      </button>
+      <button
+        type="button"
+        className="gbar-btn hide-xs"
+        title={music > 0 ? '关闭音乐' : '打开音乐'}
+        aria-label={music > 0 ? '关闭音乐' : '打开音乐'}
+        aria-pressed={music > 0}
+        onClick={() => setS(music > 0 ? { musicVolume: 0 } : { muted: false, musicVolume: musicVolume || 0.35 })}
+      >
+        <span aria-hidden>{music > 0 ? '🎵' : '🔇'}</span>
+      </button>
+      <button type="button" className="gbar-btn hide-xs" title="游戏规则" aria-label="游戏规则" onClick={onRules}>
+        <span aria-hidden>📖</span>
+      </button>
+      {/* 手机 / 平板且浏览器支持时：进入 / 退出全屏（电脑版不显示） */}
+      <FullscreenButton />
+      <button type="button" className="gbar-btn" title="设置" aria-label="设置" onClick={onSettings}>
+        <span aria-hidden>⚙️</span>
+      </button>
+    </div>
+  );
+}
+
+export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onRules: () => void; onSettings: () => void }) {
+  const set = useGame((s) => s.set);
+  const room = useGame((s) => s.room);
+  const mode = useGame((s) => s.mode);
   const online = mode === 'online' && room && !room.solo;
   // 电脑版顶栏额外显示当前需要跟到的下注额（移动端顶栏空间不够，保持原样）
   const pc = useIsPC();
@@ -90,29 +120,7 @@ export function GameTopBar({ view, onRules, onSettings }: { view: TableView; onR
         </div>
         <PhaseSteps view={view} />
       </div>
-      <div className="gbar-right">
-        <button type="button" className="gbar-btn" title={`切换视角（当前：${CAMERA_LABEL[cameraMode]}）`} aria-label="切换视角" onClick={nextCam}>
-          <span aria-hidden>{cameraMode === 'overview' ? '🎥' : cameraMode === 'player' ? '👀' : '🕹️'}</span>
-        </button>
-        <button
-          type="button"
-          className="gbar-btn hide-xs"
-          title={music > 0 ? '关闭音乐' : '打开音乐'}
-          aria-label={music > 0 ? '关闭音乐' : '打开音乐'}
-          aria-pressed={music > 0}
-          onClick={() => setS(music > 0 ? { musicVolume: 0 } : { muted: false, musicVolume: musicVolume || 0.35 })}
-        >
-          <span aria-hidden>{music > 0 ? '🎵' : '🔇'}</span>
-        </button>
-        <button type="button" className="gbar-btn hide-xs" title="游戏规则" aria-label="游戏规则" onClick={onRules}>
-          <span aria-hidden>📖</span>
-        </button>
-        {/* 手机 / 平板且浏览器支持时：进入 / 退出全屏（电脑版不显示） */}
-        <FullscreenButton />
-        <button type="button" className="gbar-btn" title="设置" aria-label="设置" onClick={onSettings}>
-          <span aria-hidden>⚙️</span>
-        </button>
-      </div>
+      <TableTools onRules={onRules} onSettings={onSettings} />
     </header>
   );
 }

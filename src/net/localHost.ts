@@ -8,6 +8,7 @@ import { randomId, pick } from '../core/utils/random';
 import { useGame } from '../store/gameStore';
 import type { DialogueRef } from '../core/character/dialogue';
 import { currentProfile } from '../store/profileStore';
+import { claimLocalTable } from './localTable';
 
 export interface LocalGameSettings {
   opponents: { personality: AIPersonality; difficulty: AIDifficulty; character?: { name: string; animal: AnimalConfig } }[];
@@ -27,6 +28,7 @@ function chat(from: string, name: string, text: string, kind: 'chat' | 'emote' |
 }
 
 export function startLocalGame(settings: LocalGameSettings) {
+  claimLocalTable(stopLocalGame);
   stopLocalGame();
   lastSettings = settings;
   const me = currentProfile();
@@ -54,7 +56,7 @@ export function startLocalGame(settings: LocalGameSettings) {
     if (m) chat(playerId, m.profile.name, text, kind, dialogue);
   };
   const g = useGame.getState();
-  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null });
+  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null, bj: null });
   chat('system', '系统', `欢迎来到动物扑克俱乐部！本局盲注 ${settings.smallBlind}/${settings.bigBlind}，祝你好运 🍀`, 'system');
   unsub = c.subscribe(() => {
     if (controller === c) useGame.getState().setView(c.getView(LOCAL_PLAYER_ID));

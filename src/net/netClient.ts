@@ -2,6 +2,8 @@
 import { PROTOCOL_VERSION, type ClientMessage, type RoomSettings, type ServerMessage, type SoloSettings } from '../core/protocol';
 import { onIdentityChanged, onServerAccount, onServerProgress } from '../store/accountStore';
 import type { PlayerAction } from '../core/table/types';
+import type { BjCommand } from '../core/blackjack/types';
+import type { GameMode } from '../core/gameMode';
 import type { AIDifficulty, AIPersonality } from '../core/ai/ai';
 import { useGame } from '../store/gameStore';
 import { currentProfile } from '../store/profileStore';
@@ -254,7 +256,7 @@ class NetClient {
     this.disconnect();
     const g = useGame.getState();
     if (g.mode === 'online' || g.room) {
-      g.set({ mode: null, view: null, room: null, chat: [], pendingAction: null });
+      g.set({ mode: null, view: null, bj: null, room: null, chat: [], pendingAction: null });
       if (g.screen === 'room' || g.screen === 'game') g.setScreen('online');
     }
     g.toast(message, 'error');
@@ -275,7 +277,7 @@ class NetClient {
         /* 连接已经断开：交给服务器的断线清理 */
       }
       rememberRoom(null);
-      g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
+      g.set({ room: null, view: null, bj: null, mode: null, chat: [], pendingAction: null });
       if (g.screen === 'room' || g.screen === 'game') g.setScreen(g.room?.solo ? 'quick' : 'online');
     }
     // 旧连接上还在路上的消息属于旧身份，不能再处理
@@ -322,7 +324,7 @@ class NetClient {
         }
         return;
       }
-      if (msg.t === 'state' || msg.t === 'chat' || msg.t === 'chatHistory') return;
+      if (msg.t === 'state' || msg.t === 'bjState' || msg.t === 'chat' || msg.t === 'chatHistory') return;
     }
     switch (msg.t) {
       case 'welcome': {
@@ -340,7 +342,7 @@ class NetClient {
           rememberRoom(null);
           g.toast(`房间 ${lastRoom} 已失效：服务器刚刚重启过。在线房间只在服务器运行期间存在，请重新创建房间。`, 'error');
           if (g.mode === 'online') {
-            g.set({ mode: null, view: null, room: null, chat: [] });
+            g.set({ mode: null, view: null, bj: null, room: null, chat: [] });
             if (g.screen === 'room' || g.screen === 'game') g.setScreen('online');
           }
           // 刷新后在首页等待回到房间，房间已经不存在：首页不保持多人连接
@@ -369,7 +371,7 @@ class NetClient {
         rememberRoom(msg.room ? msg.room.code : null);
         if (!msg.room) {
           if (g.mode === 'online') {
-            g.set({ mode: null, view: null });
+            g.set({ mode: null, view: null, bj: null });
             if (g.screen === 'room' || g.screen === 'game') g.setScreen(prev?.solo ? 'quick' : 'online');
           }
           // 在首页等待回到原来的房间，但已经不在房间里了（例如断线期间被移出）：首页不保持多人连接
@@ -385,7 +387,7 @@ class NetClient {
         }
         if (msg.room.status === 'lobby') {
           if (g.screen === 'game' || g.screen === 'online' || !prev || prev.code !== msg.room.code || g.screen === 'home') {
-            g.set({ view: null });
+            g.set({ view: null, bj: null });
             g.setScreen('room');
           }
         } else if (g.screen !== 'game') {
@@ -421,6 +423,32 @@ class NetClient {
         g.setView(view);
         // 轮到别人了：之前的动作一定已经处理完
         if (g.pendingAction && view.currentPlayerId !== view.viewerId) g.set({ pendingAction: null });
+        if (g.screen !== 'game') g.setScreen('game');
+        break;
+      }
+      case 'bjState': {
+        let view = msg.view;
+        const prev = g.bj;
+        if (view.eventsDelta) {
+          // 与德州扑克相同：只收到新增事件与变化的外观，接在本局已有的后面；接不上就请求完整状态
+          const same = prev && prev.round === view.round ? prev : null;
+          const prevLast = same?.events.length ? same.events[same.events.length - 1].seq : 0;
+          const firstNew = view.events[0]?.seq;
+          const profiles = new Map(prev?.players.map((p) => [p.id, p.profile]) ?? []);
+          if (!same || (firstNew !== undefined && firstNew > prevLast + 1) || view.players.some((p) => !p.profile && !profiles.get(p.id))) {
+            this.send({ t: 'resync' });
+            break;
+          }
+          view = {
+            ...view,
+            events: [...same.events, ...view.events.filter((e) => e.seq > prevLast)],
+            players: view.players.map((p) => (p.profile ? p : { ...p, profile: profiles.get(p.id)! })),
+            eventsDelta: undefined,
+          };
+        }
+        g.setBj(view);
+        // 状态已经变化：之前的动作一定处理完了
+        if (g.pendingAction && prev && (prev.token !== view.token || prev.phase !== view.phase)) g.set({ pendingAction: null });
         if (g.screen !== 'game') g.setScreen('game');
         break;
       }
@@ -472,7 +500,7 @@ class NetClient {
       }, timeoutMs);
       this.soloWaiter = waiter;
       const g = useGame.getState();
-      g.set({ chat: [], view: null });
+      g.set({ chat: [], view: null, bj: null });
       this.newIntent();
       this.send({ t: 'startSolo', settings });
     });
@@ -541,7 +569,7 @@ class NetClient {
     this.disconnectAfterLeave = !!opts.disconnect;
     rememberRoom(null);
     const g = useGame.getState();
-    g.set({ room: null, view: null, mode: null, chat: [], pendingAction: null });
+    g.set({ room: null, view: null, bj: null, mode: null, chat: [], pendingAction: null });
   }
 
   /**
@@ -582,6 +610,20 @@ class NetClient {
     window.setTimeout(() => {
       if (useGame.getState().pendingAction?.id === id) useGame.getState().set({ pendingAction: null });
     }, 6000);
+  }
+  /** 21 点命令：同样带 actionId、局号与行动令牌，等待服务器确认 */
+  blackjack(cmd: BjCommand, ref: { round: number; token: number }) {
+    const g = useGame.getState();
+    if (g.pendingAction) return;
+    const id = newActionId();
+    g.set({ pendingAction: { id, type: cmd.type, at: Date.now() } });
+    this.send({ t: 'bj', cmd, actionId: id, round: ref.round, token: ref.token });
+    window.setTimeout(() => {
+      if (useGame.getState().pendingAction?.id === id) useGame.getState().set({ pendingAction: null });
+    }, 6000);
+  }
+  setMode(gameMode: GameMode) {
+    this.send({ t: 'setMode', gameMode });
   }
   chat(text: string) {
     this.send({ t: 'chat', text });

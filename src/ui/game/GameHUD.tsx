@@ -21,6 +21,7 @@ import './hud/gameHud.css';
 import { haptic } from '../../display/haptics';
 import { DefeatOverlay } from './hud/DefeatOverlay';
 import { BoardRail } from './hud/BoardRail';
+import { ConnBanner } from './hud/ConnBanner';
 import { useIsPC } from '../../utils/pc';
 import { defeatActive, useDefeat } from '../../animation/defeat/defeatStore';
 
@@ -191,15 +192,6 @@ export function GameHUD({ view }: { view: TableView }) {
   const modal = useGame((s) => s.modal);
   const set = useGame((s) => s.set);
   const mode = useGame((s) => s.mode);
-  const conn = useGame((s) => s.conn);
-  const restarting = useGame((s) => s.serverRestarting);
-  // 短暂的换连接 / 网络抖动（不到 1.5 秒）不显示横幅，避免频繁闪烁
-  const [connLost, setConnLost] = useState(false);
-  useEffect(() => {
-    if (conn === 'connected') return setConnLost(false);
-    const t = setTimeout(() => setConnLost(true), 1500);
-    return () => clearTimeout(t);
-  }, [conn]);
   const [rules, setRules] = useState(false);
   const [settings, setSettings] = useState(false);
   // 手机 / 平板：底部显示清晰的公共牌条（电脑版牌桌上的牌已经足够大）
@@ -220,11 +212,7 @@ export function GameHUD({ view }: { view: TableView }) {
   return (
     <div className="screen passthrough game-hud">
       <GameTopBar view={view} onRules={() => setRules(true)} onSettings={() => setSettings(true)} />
-      {mode === 'online' && connLost && (
-        <div className="conn-banner" role="alert">
-          {restarting ? '⚠️ 服务器正在重启，正在重新连接…' : '⚠️ 连接中断，正在重新连接…（你的座位会保留）'}
-        </div>
-      )}
+      <ConnBanner />
       <HandFeed view={view} />
       <ChatPanel />
       <div className="gdock">

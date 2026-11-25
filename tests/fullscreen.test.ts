@@ -249,10 +249,12 @@ describe('全屏管理', () => {
     for (const p of ['../src/App.tsx', '../src/ui/common/FullscreenUI.tsx', '../src/ui/home/HomeScreen.tsx', '../src/ui/lobby/RoomLobby.tsx', '../src/ui/lobby/OnlineScreen.tsx', '../src/ui/home/HubScreen.tsx', '../src/ui/game/hud/GameTopBar.tsx'])
       expect(read(p)).not.toMatch(/requestFullscreen|exitFullscreen/);
     const calls: [string, number][] = [
-      ['../src/ui/home/HomeScreen.tsx', 4],
+      // 4 个德州 / 在线入口 + 首页的 21 点入口
+      ['../src/ui/home/HomeScreen.tsx', 5],
       ['../src/ui/lobby/OnlineScreen.tsx', 2],
       ['../src/ui/lobby/RoomLobby.tsx', 1],
       ['../src/ui/home/HubScreen.tsx', 1],
+      ['../src/ui/blackjack/BlackjackSetup.tsx', 1],
     ];
     for (const [p, n] of calls) {
       const src = read(p);

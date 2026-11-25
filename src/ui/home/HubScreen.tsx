@@ -9,10 +9,41 @@ import { useAccount } from '../../store/accountStore';
 import { Avatar, BackButton, Btn, LevelBar, Seg } from '../common/ui';
 import { formatChips, timeAgo } from '../../utils/format';
 import { SPECIES_MAP } from '../../core/player/profile';
+import { GAME_MODES, type GameMode } from '../../core/gameMode';
+import { BlackjackSetup } from '../blackjack/BlackjackSetup';
 import { enterOnEntryGesture } from '../../display/fullscreen';
 
 const P_KEYS = Object.keys(PERSONALITIES) as AIPersonality[];
 const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
+
+const MODE_CARDS: { id: GameMode; suit: string; lines: string[] }[] = [
+  { id: 'texas-holdem', suit: '♥', lines: ['读懂对手。', '赢下底池。'] },
+  { id: 'blackjack-21', suit: '♠', lines: ['READ THE DEALER.', 'PLAY YOUR HAND.', 'BEAT 21.'] },
+];
+
+/** 游戏模式选择 */
+function ModeSelect() {
+  const mode = useGame((s) => s.hubMode);
+  const set = useGame((s) => s.set);
+  return (
+    <div className="mode-select" role="radiogroup" aria-label="游戏模式">
+      {MODE_CARDS.map((m) => (
+        <button key={m.id} type="button" role="radio" aria-checked={mode === m.id} className={`mode-pick ${m.id}${mode === m.id ? ' on' : ''}`} onClick={() => set({ hubMode: m.id })}>
+          <span className="mp-suit" aria-hidden>
+            {m.suit}
+          </span>
+          <span className="mp-en">{GAME_MODES[m.id].en}</span>
+          <span className="mp-zh">{GAME_MODES[m.id].name}</span>
+          <span className="mp-lines">
+            {m.lines.map((l) => (
+              <i key={l}>{l}</i>
+            ))}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** 扑克大厅：与 AI 对战 / 在线房间 / 个人数据 */
 export function HubScreen() {
@@ -36,6 +67,7 @@ export function HubScreen() {
   const signedIn = useAccount((s) => s.status === 'signedIn');
   const cached = useAccount((s) => s.cached);
   const [starting, setStarting] = useState(false);
+  const hubMode = useGame((s) => s.hubMode);
   // ref 立即生效：同一瞬间的连续点击只开始一局（状态还没来得及更新时 disabled 拦不住）
   const startLock = useRef(false);
 
@@ -92,8 +124,12 @@ export function HubScreen() {
           </Btn>
         </div>
         <LevelBar />
+        <ModeSelect />
 
         <div className="card-grid" style={{ marginTop: 16 }}>
+          {hubMode === 'blackjack-21' ? (
+            <BlackjackSetup />
+          ) : (
           <div className="mode-card">
             <h3>🤖 与 AI 对战</h3>
             <div className="small muted" style={{ marginBottom: 12 }}>
@@ -162,6 +198,7 @@ export function HubScreen() {
               {starting ? '正在进入牌桌……' : '🃏 开始对局'}
             </Btn>
           </div>
+          )}
 
           <div className="mode-card">
             <h3>🌏 在线多人</h3>

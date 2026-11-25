@@ -97,6 +97,8 @@ export interface Card3DProps {
   flipDelay?: number;
   /** 尺寸倍数：公共牌比手牌大，远处镜头也能看清 */
   scale?: number;
+  /** 接触阴影不使用按屏幕斜率放大的深度偏移：镜头远、画质低时阴影会浮到牌面上（21 点牌多又叠放，最明显） */
+  flatShadow?: boolean;
 }
 
 const tmpA = new THREE.Vector3();
@@ -108,7 +110,7 @@ const tmpA = new THREE.Vector3();
  */
 export function Card3D({
   card, target, yaw = 0, tilt = 0, faceUp, delay = 0, from = DECK_POS, fromFaceUp = false, fromYaw, highlight = false,
-  flightMs = DUR.cardFlight, arcHeight = 0.22, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent, flipDelay = 0, scale = 1,
+  flightMs = DUR.cardFlight, arcHeight = 0.22, revealPause = 80, moveDelay = 0, vanishOnLand = false, silent, flipDelay = 0, scale = 1, flatShadow = false,
 }: Card3DProps) {
   const ref = useRef<THREE.Group>(null!);
   const glow = useRef<THREE.Mesh>(null!);
@@ -133,7 +135,14 @@ export function Card3D({
   });
   const myGlow = useMemo(() => glowMat.clone(), []);
   const myGlint = useMemo(() => glintMat.clone(), []);
-  const myShadow = useMemo(() => shadowMaterial('rect', 0.6).clone(), []);
+  const myShadow = useMemo(() => {
+    const m = shadowMaterial('rect', 0.6).clone();
+    if (flatShadow) {
+      m.polygonOffsetFactor = 0;
+      m.polygonOffsetUnits = -2;
+    }
+    return m;
+  }, [flatShadow]);
   useEffect(
     () => () => {
       myGlow.dispose();

@@ -38,28 +38,31 @@ export function seatAngle(index: number, count: number, viewerIndex: number): nu
   return ((index - viewerIndex) / count) * Math.PI * 2;
 }
 
+/** 圆桌上某个角度的一个座位（0 = 镜头前的自己，π = 正对面） */
+export function seatLayoutAt(id: string, a: number, isViewer: boolean): SeatLayout {
+  return {
+    id,
+    angle: a,
+    seat: at(a, SEAT_R, SEAT_Y),
+    cards: at(a, isViewer ? 2.45 : 2.6, TABLE_Y + 0.012),
+    bet: at(a, 2.08, TABLE_Y + 0.01),
+    stack: at(a - (isViewer ? 0.3 : 0.34), 2.72, TABLE_Y + 0.004),
+    head: at(a, SEAT_R, SEAT_Y + 2.45),
+    // 名牌在动物头顶上方（不遮住脸）；自己的信息在屏幕下方的座位面板里
+    tag: isViewer ? [SEAT_R * 0.62, SEAT_Y + 1.2, SEAT_R * 0.92] : at(a, SEAT_R + 0.05, SEAT_Y + 2.95),
+    button: at(a + 0.32, 2.35, TABLE_Y + 0.02),
+    // 弃牌推到牌堆旁边的弃牌堆（不进入公共牌区域）；每个座位略有偏移，叠成自然的一小堆
+    muck: [MUCK_POS[0] + Math.sin(a) * 0.16, TABLE_Y + 0.006 + ((a / (Math.PI * 2) + 1) % 1) * 0.018, MUCK_POS[2] + Math.cos(a) * 0.1],
+    isViewer,
+  };
+}
+
 export function computeLayout(view: Pick<TableView, 'players' | 'viewerId'>): Map<string, SeatLayout> {
   const n = view.players.length;
   const viewerIndex = Math.max(0, view.players.findIndex((p) => p.id === view.viewerId));
   const m = new Map<string, SeatLayout>();
   view.players.forEach((p, i) => {
-    const a = seatAngle(i, n, viewerIndex);
-    const isViewer = p.id === view.viewerId;
-    m.set(p.id, {
-      id: p.id,
-      angle: a,
-      seat: at(a, SEAT_R, SEAT_Y),
-      cards: at(a, isViewer ? 2.45 : 2.6, TABLE_Y + 0.012),
-      bet: at(a, 2.08, TABLE_Y + 0.01),
-      stack: at(a - (isViewer ? 0.3 : 0.34), 2.72, TABLE_Y + 0.004),
-      head: at(a, SEAT_R, SEAT_Y + 2.45),
-      // 名牌在动物头顶上方（不遮住脸）；自己的信息在屏幕下方的座位面板里
-      tag: isViewer ? [SEAT_R * 0.62, SEAT_Y + 1.2, SEAT_R * 0.92] : at(a, SEAT_R + 0.05, SEAT_Y + 2.95),
-      button: at(a + 0.32, 2.35, TABLE_Y + 0.02),
-      // 弃牌推到牌堆旁边的弃牌堆（不进入公共牌区域）；每个座位略有偏移，叠成自然的一小堆
-      muck: [MUCK_POS[0] + Math.sin(a) * 0.16, TABLE_Y + 0.006 + ((a / (Math.PI * 2) + 1) % 1) * 0.018, MUCK_POS[2] + Math.cos(a) * 0.1],
-      isViewer,
-    });
+    m.set(p.id, seatLayoutAt(p.id, seatAngle(i, n, viewerIndex), p.id === view.viewerId));
   });
   return m;
 }

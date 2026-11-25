@@ -4,6 +4,7 @@ import { ACHIEVEMENTS, normalizeStats, type RecentGame } from '../progress/progr
 import { sanitizeAnimal, sanitizeName } from '../core/player/profile';
 import { useProfile, type SavedCharacter } from '../store/profileStore';
 import { useSettings, type SettingsState } from '../store/settingsStore';
+import { STARTING_CHIPS } from '../core/account/types';
 
 export const SAVE_FORMAT = 'animal-poker-save';
 export const SAVE_VERSION = 1;
@@ -28,6 +29,8 @@ export interface SaveFile {
     achievements: Record<string, number>;
     recent: RecentGame[];
     createdCharacter: boolean;
+    /** 虚拟金币（旧存档没有：按起始数额） */
+    chips: number;
   };
   settings: SavedSettings;
 }
@@ -48,6 +51,7 @@ export function buildSave(): SaveFile {
       achievements: p.achievements,
       recent: p.recent,
       createdCharacter: p.createdCharacter,
+      chips: p.chips,
     },
     settings: Object.fromEntries(SETTING_KEYS.map((k) => [k, s[k]])) as SavedSettings,
   };
@@ -128,6 +132,7 @@ export function parseSave(text: string): SaveFile {
       achievements,
       recent,
       createdCharacter: !!p.createdCharacter,
+      chips: Math.floor(num(p.chips, 0, 1e9, STARTING_CHIPS)),
     },
     settings: cleanSettings(raw.settings),
   };

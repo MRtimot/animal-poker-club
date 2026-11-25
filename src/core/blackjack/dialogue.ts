@@ -1,0 +1,233 @@
+// 21 点台词：接入现有的角色台词系统（按说话风格挑选、冷却、优先级、去重都由 DialogueDirector 负责）。
+// 口语、短句；{v} 会被换成点数。庄家的台词只根据“看得见的事情”说，绝不透露暗牌。
+import type { DialogueLine } from '../character/dialogue';
+import type { AnimalEmotion, SpeechStyle } from '../character/voice';
+
+export type BjDialogueEvent =
+  | 'bj_hit'
+  | 'bj_stand'
+  | 'bj_double'
+  | 'bj_split'
+  | 'bj_blackjack'
+  | 'bj_bust'
+  | 'bj_win'
+  | 'bj_lose'
+  | 'bj_push'
+  | 'bjd_greet'
+  | 'bjd_tease'
+  | 'bjd_stand'
+  | 'bjd_bust'
+  | 'bjd_blackjack'
+  | 'bjd_player_bj'
+  | 'bjd_win'
+  | 'bjd_lose'
+  | 'bjd_push';
+
+export const BJ_DIALOGUE_NAME: Record<BjDialogueEvent, string> = {
+  bj_hit: '21 点：要牌',
+  bj_stand: '21 点：停牌',
+  bj_double: '21 点：加倍',
+  bj_split: '21 点：拆牌',
+  bj_blackjack: '21 点：自己黑杰克',
+  bj_bust: '21 点：爆牌',
+  bj_win: '21 点：赢了',
+  bj_lose: '21 点：输了',
+  bj_push: '21 点：平局',
+  bjd_greet: '庄家：开场',
+  bjd_tease: '庄家：看玩家要牌',
+  bjd_stand: '庄家：停牌',
+  bjd_bust: '庄家：爆牌',
+  bjd_blackjack: '庄家：黑杰克',
+  bjd_player_bj: '庄家：玩家黑杰克',
+  bjd_win: '庄家：赢了玩家',
+  bjd_lose: '庄家：输给玩家',
+  bjd_push: '庄家：平局',
+};
+
+export const BJ_DIALOGUE_PRIORITY: Record<BjDialogueEvent, 0 | 1 | 2 | 3> = {
+  bj_hit: 1,
+  bj_stand: 0,
+  bj_double: 2,
+  bj_split: 1,
+  bj_blackjack: 3,
+  bj_bust: 3,
+  bj_win: 2,
+  bj_lose: 2,
+  bj_push: 1,
+  bjd_greet: 1,
+  bjd_tease: 1,
+  bjd_stand: 2,
+  bjd_bust: 3,
+  bjd_blackjack: 3,
+  bjd_player_bj: 2,
+  bjd_win: 1,
+  bjd_lose: 1,
+  bjd_push: 1,
+};
+
+const L = (text: string, emotion: AnimalEmotion, taunt = false): DialogueLine => ({ text, emotion, ...(taunt ? { taunt: true } : {}) });
+
+type Table = Record<BjDialogueEvent, DialogueLine[]>;
+
+export const BJ_DIALOGUE: Record<SpeechStyle, Table> = {
+  cool: {
+    bj_hit: [L('再来。', 'neutral'), L('……一张。', 'confident')],
+    bj_stand: [L('够了。', 'neutral'), L('停。', 'neutral')],
+    bj_double: [L('加倍。', 'confident')],
+    bj_split: [L('分开打。', 'confident')],
+    bj_blackjack: [L('21。', 'confident'), L('……结束了。', 'confident')],
+    bj_bust: [L('……爆了。', 'disappointed'), L('啧。', 'angry')],
+    bj_win: [L('意料之中。', 'confident')],
+    bj_lose: [L('……下一局。', 'disappointed')],
+    bj_push: [L('平手。', 'neutral')],
+    bjd_greet: [L('请下注。', 'neutral'), L('……坐吧。', 'neutral')],
+    bjd_tease: [L('你确定？', 'confident', true), L('……有意思。', 'neutral')],
+    bjd_stand: [L('{v}。停牌。', 'neutral'), L('{v}。', 'confident')],
+    bjd_bust: [L('……超了。', 'disappointed')],
+    bjd_blackjack: [L('21。抱歉。', 'confident')],
+    bjd_player_bj: [L('漂亮。', 'surprised')],
+    bjd_win: [L('收了。', 'neutral', true)],
+    bjd_lose: [L('算你的。', 'neutral')],
+    bjd_push: [L('退回。', 'neutral')],
+  },
+  regal: {
+    bj_hit: [L('再来一张！', 'confident'), L('发。', 'neutral')],
+    bj_stand: [L('就到这里。', 'confident')],
+    bj_double: [L('加倍！让你看看气势。', 'confident', true)],
+    bj_split: [L('分两路，一起拿下。', 'confident')],
+    bj_blackjack: [L('21。理所当然。', 'excited')],
+    bj_bust: [L('岂有此理……爆了。', 'angry')],
+    bj_win: [L('这才对。', 'happy')],
+    bj_lose: [L('哼，再来。', 'angry')],
+    bj_push: [L('平局？勉强接受。', 'neutral')],
+    bjd_greet: [L('入座，下注。', 'confident'), L('今晚，由我发牌。', 'confident')],
+    bjd_tease: [L('还敢要？有胆量。', 'surprised', true)],
+    bjd_stand: [L('{v}。停牌。', 'confident')],
+    bjd_bust: [L('哼……超过了。', 'angry')],
+    bjd_blackjack: [L('21。到此为止。', 'confident')],
+    bjd_player_bj: [L('好手气，值得敬你。', 'surprised')],
+    bjd_win: [L('筹码，我收下了。', 'confident', true)],
+    bjd_lose: [L('拿去，你应得的。', 'neutral')],
+    bjd_push: [L('不分胜负。', 'neutral')],
+  },
+  smug: {
+    bj_hit: [L('哼，再来一张啦。', 'neutral'), L('再一张……应该没事吧？', 'nervous')],
+    bj_stand: [L('够啦够啦。', 'confident'), L('停～', 'happy')],
+    bj_double: [L('加倍！才不是冲动。', 'excited')],
+    bj_split: [L('分开分开，两份赢。', 'happy')],
+    bj_blackjack: [L('哼哼，21。', 'happy'), L('早就知道会这样～', 'confident', true)],
+    bj_bust: [L('啊……爆了。', 'disappointed'), L('才、才不是我的错！', 'angry')],
+    bj_win: [L('嘿嘿，谢啦。', 'happy')],
+    bj_lose: [L('这不公平！', 'angry')],
+    bj_push: [L('平手？没劲。', 'disappointed')],
+    bjd_greet: [L('想好下多少了吗？', 'confident'), L('请吧～我不会手软的。', 'sarcastic', true)],
+    bjd_tease: [L('你真的要？', 'sarcastic', true), L('嗯……有趣。', 'confident')],
+    bjd_stand: [L('{v}。停牌哦。', 'confident')],
+    bjd_bust: [L('……哼，便宜你了。', 'angry')],
+    bjd_blackjack: [L('你的牌不错呢……可惜。', 'sarcastic', true)],
+    bjd_player_bj: [L('哦？运气不错嘛。', 'surprised')],
+    bjd_win: [L('归我啦～', 'happy', true)],
+    bjd_lose: [L('……就这一次。', 'disappointed')],
+    bjd_push: [L('平局，拿回去吧。', 'neutral')],
+  },
+  mysterious: {
+    bj_hit: [L('再来一张……', 'neutral'), L('让我看看下一张。', 'confident')],
+    bj_stand: [L('就停在这里。', 'confident')],
+    bj_double: [L('加倍……我有预感。', 'confident')],
+    bj_split: [L('一分为二，更有意思。', 'confident')],
+    bj_blackjack: [L('21……正如我所料。', 'excited')],
+    bj_bust: [L('……失算了。', 'disappointed')],
+    bj_win: [L('呵，承让。', 'happy')],
+    bj_lose: [L('有意思……我记住了。', 'neutral')],
+    bj_push: [L('打平了……不急。', 'neutral')],
+    bjd_greet: [L('又见面了……请下注。', 'neutral'), L('今晚，谁会先停手呢？', 'confident')],
+    bjd_tease: [L('再来？我喜欢你的胆量。', 'confident', true), L('你在赌下一张……对吧？', 'sarcastic', true)],
+    bjd_stand: [L('{v}。我停在这里。', 'confident')],
+    bjd_bust: [L('呵……这次是你赢。', 'disappointed')],
+    bjd_blackjack: [L('21。命运偏心了一点。', 'confident')],
+    bjd_player_bj: [L('精彩。', 'surprised')],
+    bjd_win: [L('谢谢你的筹码。', 'happy', true)],
+    bjd_lose: [L('聪明的一手。', 'neutral')],
+    bjd_push: [L('谁也没赢……有趣。', 'neutral')],
+  },
+  friendly: {
+    bj_hit: [L('再来一张！', 'excited'), L('给我一张吧！', 'happy')],
+    bj_stand: [L('我停啦！', 'happy')],
+    bj_double: [L('加倍！冲！', 'excited')],
+    bj_split: [L('分成两手，一起加油！', 'excited')],
+    bj_blackjack: [L('哇！21！', 'excited')],
+    bj_bust: [L('呜……爆了。', 'sad')],
+    bj_win: [L('耶！赢啦！', 'happy')],
+    bj_lose: [L('没关系，下一局！', 'sad')],
+    bj_push: [L('平手，也不错！', 'happy')],
+    bjd_greet: [L('欢迎！请下注吧！', 'happy')],
+    bjd_tease: [L('真的要吗？加油！', 'surprised')],
+    bjd_stand: [L('{v}，我停牌啦。', 'happy')],
+    bjd_bust: [L('哎呀，我爆了！', 'surprised')],
+    bjd_blackjack: [L('啊，我是 21……不好意思！', 'surprised')],
+    bjd_player_bj: [L('太厉害了！', 'excited')],
+    bjd_win: [L('下次一定行！', 'neutral')],
+    bjd_lose: [L('恭喜你！', 'happy')],
+    bjd_push: [L('平局，还给你！', 'happy')],
+  },
+  nervous: {
+    bj_hit: [L('再、再来一张……', 'nervous'), L('就一张，拜托了……', 'nervous')],
+    bj_stand: [L('停、停下吧……', 'nervous')],
+    bj_double: [L('加、加倍！不管了！', 'excited')],
+    bj_split: [L('分、分开……对吧？', 'nervous')],
+    bj_blackjack: [L('诶？！是 21！', 'surprised')],
+    bj_bust: [L('啊……爆了。', 'sad'), L('呜……就知道……', 'sad')],
+    bj_win: [L('我、我赢了？！', 'surprised')],
+    bj_lose: [L('我的胡萝卜……', 'sad')],
+    bj_push: [L('呼……还好是平局。', 'nervous')],
+    bjd_greet: [L('请、请下注……', 'nervous')],
+    bjd_tease: [L('诶？还要吗？', 'surprised')],
+    bjd_stand: [L('{v}……我停。', 'nervous')],
+    bjd_bust: [L('呀！超过了……', 'surprised')],
+    bjd_blackjack: [L('对、对不起……是 21。', 'nervous')],
+    bjd_player_bj: [L('哇……好厉害！', 'surprised')],
+    bjd_win: [L('那、那我收走咯？', 'nervous')],
+    bjd_lose: [L('恭、恭喜……', 'happy')],
+    bjd_push: [L('一样大……好险。', 'nervous')],
+  },
+  heavy: {
+    bj_hit: [L('嗯……再来一张。', 'neutral')],
+    bj_stand: [L('嗯，停。', 'neutral')],
+    bj_double: [L('嘿……加倍吧。', 'confident')],
+    bj_split: [L('分成两堆……慢慢来。', 'neutral')],
+    bj_blackjack: [L('嗯……21。', 'happy')],
+    bj_bust: [L('唉……爆了。', 'sad')],
+    bj_win: [L('嘿嘿……赢了。', 'happy')],
+    bj_lose: [L('唔……下次吧。', 'disappointed')],
+    bj_push: [L('平局……也好。', 'neutral')],
+    bjd_greet: [L('嗯……不急，慢慢下注。', 'neutral')],
+    bjd_tease: [L('嗯？……还要啊。', 'surprised')],
+    bjd_stand: [L('嗯……{v}，停牌。', 'neutral')],
+    bjd_bust: [L('唔……多了。', 'disappointed')],
+    bjd_blackjack: [L('嗯……是 21。', 'neutral')],
+    bjd_player_bj: [L('哦……好牌啊。', 'surprised')],
+    bjd_win: [L('我收下了……', 'neutral')],
+    bjd_lose: [L('给你……拿好。', 'neutral')],
+    bjd_push: [L('一样大……还你。', 'neutral')],
+  },
+  playful: {
+    bj_hit: [L('再来再来！', 'excited'), L('给我一张大的～不对，小的！', 'happy')],
+    bj_stand: [L('停！不许动！', 'happy')],
+    bj_double: [L('加倍加倍！刺激！', 'excited')],
+    bj_split: [L('变成两份啦！', 'happy')],
+    bj_blackjack: [L('21！哈哈哈哈！', 'excited')],
+    bj_bust: [L('哎呀……爆了爆了！', 'surprised')],
+    bj_win: [L('谢谢老板！', 'happy', true)],
+    bj_lose: [L('不服！再来！', 'angry')],
+    bj_push: [L('平局？那不算不算！', 'happy')],
+    bjd_greet: [L('来来来，下注下注！', 'excited')],
+    bjd_tease: [L('还要？你胆子好大！', 'excited', true)],
+    bjd_stand: [L('{v}！我不要啦～', 'happy')],
+    bjd_bust: [L('啊！我爆了！', 'surprised')],
+    bjd_blackjack: [L('嘿嘿，我是 21！', 'excited', true)],
+    bjd_player_bj: [L('哇！你开挂了吧！', 'excited')],
+    bjd_win: [L('都是我的啦！', 'happy', true)],
+    bjd_lose: [L('呜哇，我的筹码！', 'sad')],
+    bjd_push: [L('一样一样！', 'happy')],
+  },
+};

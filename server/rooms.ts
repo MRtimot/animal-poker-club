@@ -8,6 +8,11 @@
 import { GameController } from '../src/core/game/controller';
 import type { SeatConfig, TableView } from '../src/core/game/view';
 import type { ControllerState } from '../src/core/game/controller';
+import { BlackjackController, type BlackjackState } from '../src/core/blackjack/controller';
+import { isDealerChoice, pickDealer } from '../src/core/blackjack/dealers';
+import { REFILL_CHIPS, tierById } from '../src/core/blackjack/rules';
+import { DEALER_ID, type BjRoundFacts, type BlackjackView } from '../src/core/blackjack/types';
+import { GAME_MODES, gameModeOf, isGameMode } from '../src/core/gameMode';
 import {
   BLIND_OPTIONS,
   CHIP_OPTIONS,
@@ -42,6 +47,9 @@ export interface AccountLink {
   getState(userId: string): AccountState;
   recordHand(userId: string, key: string, f: HandFacts): ProgressEvent | null;
   recordGame(userId: string, key: string, f: GameFacts): ProgressEvent | null;
+  recordBlackjack(userId: string, key: string, f: BjRoundFacts, useWallet: boolean): ProgressEvent | null;
+  chipsOf(userId: string): number;
+  refillChips(userId: string, below: number, amount: number): number;
 }
 
 /** 本机上的连接会话（连接只存在于接受它的那台服务器上） */
@@ -87,6 +95,8 @@ interface RoomRec {
   members: MemberRec[];
   status: RoomInfo['status'];
   game: ControllerState | null;
+  /** 21 点牌桌（与 game 同一时间只会有一个） */
+  bj?: BlackjackState | null;
   chat: ChatMessage[];
   emptySince: number | null;
   solo: boolean;
@@ -147,6 +157,7 @@ class Tx {
   deleted = false;
   sess = new Map<string, string | null>();
   ctrl: GameController | null = null;
+  bjc: BlackjackController | null = null;
   collision = false;
   /** 请求者已经不在房间里 */
   notMember = false;
@@ -154,6 +165,7 @@ class Tx {
   constructor(
     public room: RoomRec | null,
     private hydrate: (tx: Tx) => GameController | null,
+    private hydrateBj: (tx: Tx) => BlackjackController | null,
   ) {}
 
   touch() {
@@ -163,6 +175,11 @@ class Tx {
   controller(): GameController | null {
     if (!this.ctrl) this.ctrl = this.hydrate(this);
     return this.ctrl;
+  }
+  /** 21 点牌桌的控制器 */
+  blackjack(): BlackjackController | null {
+    if (!this.bjc) this.bjc = this.hydrateBj(this);
+    return this.bjc;
   }
   error(message: string) {
     this.direct.push({ t: 'error', message });
@@ -272,7 +289,7 @@ export class RoomServer {
           return;
         }
         if (verdict === 'limited') {
-          if (msg.t === 'action' && typeof (msg as any).actionId === 'string')
+          if ((msg.t === 'action' || msg.t === 'bj') && typeof (msg as any).actionId === 'string')
             conn.send({ t: 'ack', actionId: String((msg as any).actionId).slice(0, 40), ok: false, message: '操作太频繁，请稍后再试' });
           else if (limiter.shouldWarn()) conn.send({ t: 'error', message: '操作太频繁，请稍后再试' });
           return;
@@ -328,6 +345,63 @@ export class RoomServer {
     return c;
   };
 
+  private hydrateBj = (tx: Tx): BlackjackController | null => {
+    const room = tx.room;
+    if (!room?.bj) return null;
+    const c = BlackjackController.fromState(JSON.parse(JSON.stringify(room.bj)), { autoRun: false });
+    this.wireBj(tx, c);
+    return c;
+  };
+
+  /** 把 21 点控制器接到本次修改上：台词、结算、持久筹码（只有登录玩家的单人桌使用账号筹码） */
+  private wireBj(tx: Tx, c: BlackjackController) {
+    const room = tx.room!;
+    const key = `${room.instanceId}:${room.gameSeq}`;
+    const accounts = this.accounts;
+    const userOf = (id: string) => (room.solo && accounts ? (room.members.find((m) => m.id === id)?.userId ?? null) : null);
+    const wallet = (userId: string) => {
+      try {
+        // 同一账号在别的牌桌上还没结算的下注不能再押一次
+        return Math.max(0, accounts!.chipsOf(userId) - this.heldElsewhere(userId, room.code));
+      } catch {
+        return null;
+      }
+    };
+    c.hooks = {
+      balanceOf: (id) => {
+        const userId = userOf(id);
+        return userId ? wallet(userId) : null;
+      },
+      refill: (id) => {
+        const userId = userOf(id);
+        if (!userId || this.heldElsewhere(userId, room.code) > 0) return null;
+        try {
+          return accounts!.refillChips(userId, c.engine.rules.minBet, REFILL_CHIPS);
+        } catch {
+          return null;
+        }
+      },
+      onChat: (id, text, dialogue) => {
+        const name = id === DEALER_ID ? c.dealer.profile.name : room.members.find((m) => m.id === id)?.profile.name;
+        if (name) tx.chat({ from: id, name, text, kind: 'chat', dialogue });
+      },
+      onRound: (results, roundId) => this.settleBlackjack(room, results, `${key}:bj:${roundId}`),
+    };
+  }
+
+  /** 这个账号在其他房间的 21 点牌桌上还没结算的下注（账号系统只在单台服务器上开启，所以本机缓存就是全部房间） */
+  private heldElsewhere(userId: string, code: string): number {
+    let held = 0;
+    for (const [other, rec] of this.cache) {
+      if (other === code || !rec.room.bj || !rec.room.solo) continue;
+      const m = rec.room.members.find((x) => x.userId === userId);
+      const p = m && rec.room.bj.engine.players.find((x) => x.id === m.id);
+      if (!p) continue;
+      held += rec.room.bj.engine.phase === 'betting' ? p.bet : rec.room.bj.engine.phase === 'round-end' ? 0 : p.hands.reduce((s, h) => s + h.bet, 0);
+    }
+    return held;
+  }
+
   /** 把控制器的回调（AI 聊天、每手结算）接到本次修改上 */
   private wire(tx: Tx, c: GameController) {
     const room = tx.room!;
@@ -353,7 +427,7 @@ export class RoomServer {
     try {
       for (let attempt = 0; attempt < 8; attempt++) {
         const base = await this.getRoomRec(code);
-        const tx = new Tx(base ? (JSON.parse(JSON.stringify(base.room)) as RoomRec) : null, this.hydrate);
+        const tx = new Tx(base ? (JSON.parse(JSON.stringify(base.room)) as RoomRec) : null, this.hydrate, this.hydrateBj);
         fn(tx);
         if (tx.collision) return tx;
         if (tx.ctrl && tx.room && !tx.deleted) {
@@ -365,6 +439,7 @@ export class RoomServer {
           }
           if (tx.changed) tx.room.game = tx.ctrl.toState();
         }
+        if (tx.bjc && tx.room && !tx.deleted && tx.changed) tx.room.bj = tx.bjc.toState();
         if (!tx.changed) {
           for (const m of tx.direct) requester?.conn?.send(m);
           return tx;
@@ -394,7 +469,7 @@ export class RoomServer {
         return tx;
       }
       requester?.conn?.send({ t: 'error', message: '服务器繁忙，请重试' });
-      return new Tx(null, this.hydrate);
+      return new Tx(null, this.hydrate, this.hydrateBj);
     } finally {
       release();
       if (this.locks.get(code) === chained) this.locks.delete(code);
@@ -448,6 +523,7 @@ export class RoomServer {
     if (latest) {
       const info = JSON.stringify(this.roomInfo(latest));
       let ctrl: GameController | null = null;
+      let bjc: BlackjackController | null = null;
       for (const s of local) {
         if (!latest.members.some((m) => m.id === s.playerId)) continue;
         if (s.lastRoomJson !== info) {
@@ -457,6 +533,10 @@ export class RoomServer {
         if (latest.game) {
           ctrl ??= GameController.fromState(JSON.parse(JSON.stringify(latest.game)), { autoRun: false });
           this.sendState(s, latest, ctrl, s.playerId);
+        }
+        if (latest.bj) {
+          bjc ??= BlackjackController.fromState(JSON.parse(JSON.stringify(latest.bj)), { autoRun: false });
+          this.sendBlackjack(s, latest, bjc, s.playerId);
         }
       }
     }
@@ -469,7 +549,7 @@ export class RoomServer {
     if (old) clearTimeout(old);
     this.wake.delete(code);
     const rec = this.cache.get(code);
-    const at = rec?.room.game?.pending?.at;
+    const at = rec?.room.game?.pending?.at ?? rec?.room.bj?.pending?.at;
     if (!rec || at == null || rec.room.game?.gameOver) return;
     const hasLocal = [...this.sessions.values()].some((s) => s.conn && s.roomCode === code);
     if (!primary && !hasLocal) return;
@@ -482,7 +562,7 @@ export class RoomServer {
         // 期间已经被别的服务器推进过：不用再做
         if (!primary && this.cache.get(code)?.v !== v) return;
         void this.mutate(code, null, (tx) => {
-          const c = tx.controller();
+          const c = tx.controller() ?? tx.blackjack();
           // 计时器可能早触发 1 毫秒：按预定时间推进
           if (c && c.tick(Math.max(Date.now(), at))) tx.touch();
         })
@@ -512,7 +592,7 @@ export class RoomServer {
         continue;
       }
       await this.resendRoom(s);
-      if (room.game) this.sendState(s, room, GameController.fromState(JSON.parse(JSON.stringify(room.game)), { autoRun: false }), s.playerId, true);
+      this.sendTable(s, room);
     }
     this.arm(code, false);
   }
@@ -618,7 +698,7 @@ export class RoomServer {
         m.userId = userId;
         if (room.status === 'lobby') m.profile = profile;
         room.emptySince = null;
-        tx.controller()?.setConnected(m.id, true);
+        (tx.controller() ?? tx.blackjack())?.setConnected(m.id, true);
         if (wasOffline) tx.system(`${m.profile.name} 重新连接了`);
         tx.touch();
       });
@@ -632,7 +712,7 @@ export class RoomServer {
     const info = this.roomInfo(latest);
     session.lastRoomJson = JSON.stringify(info);
     conn.send({ t: 'room', room: info });
-    if (latest.game) this.sendState(session, latest, GameController.fromState(JSON.parse(JSON.stringify(latest.game)), { autoRun: false }), session.playerId, true);
+    this.sendTable(session, latest);
     this.arm(code, false);
     return session;
   }
@@ -658,7 +738,7 @@ export class RoomServer {
         if (!room || !m || !m.connected) return;
         m.connected = false;
         m.offlineSince = Date.now();
-        tx.controller()?.setConnected(m.id, false);
+        (tx.controller() ?? tx.blackjack())?.setConnected(m.id, false);
         tx.system(`${m.profile.name} 断线了`);
         if (!room.members.some((x) => !x.isAI && x.connected)) room.emptySince = Date.now();
         tx.touch();
@@ -688,7 +768,8 @@ export class RoomServer {
       // 比赛结束后房主一直不在线：只有房主能带大家回房间大厅，所以把房主交给还在线的玩家
       const hostAway = (r: RoomRec) => {
         const h = r.members.find((m) => m.id === r.hostId);
-        if (r.status !== 'finished' || !h || h.connected || !h.offlineSince || Date.now() - h.offlineSince <= this.opts.lobbyGraceMs) return null;
+        // 21 点没有“比赛结束”：一直在打的牌桌上房主长时间不在线也要交接
+        if ((r.status !== 'finished' && !(r.status === 'playing' && r.bj)) || !h || h.connected || !h.offlineSince || Date.now() - h.offlineSince <= this.opts.lobbyGraceMs) return null;
         return r.members.find((m) => !m.isAI && m.connected) ?? null;
       };
       if (hostAway(room)) {
@@ -765,7 +846,7 @@ export class RoomServer {
         if (s.roomCode) await this.leave(s);
         await this.createRoom(
           s,
-          { maxPlayers: solo.opponents.length + 1, startingChips: solo.startingChips, smallBlind: solo.smallBlind, bigBlind: solo.bigBlind, turnSeconds: 45 },
+          { gameMode: solo.blackjack ? 'blackjack-21' : 'texas-holdem', maxPlayers: solo.opponents.length + 1, startingChips: solo.startingChips, smallBlind: solo.smallBlind, bigBlind: solo.bigBlind, turnSeconds: 45 },
           solo,
         );
         return;
@@ -815,7 +896,7 @@ export class RoomServer {
 
     const code = s.roomCode;
     if (!code) {
-      if (msg.t === 'action' && typeof msg.actionId === 'string') s.conn?.send({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
+      if ((msg.t === 'action' || msg.t === 'bj') && typeof msg.actionId === 'string') s.conn?.send({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
       else if (['ready', 'chat', 'emote', 'resync', 'pause'].includes(msg.t)) return;
       else if (msg.t === 'updateProfile') s.profile = this.profileFor(s.userId, msg.profile, s.playerId);
       else err('你不在任何房间中');
@@ -825,7 +906,7 @@ export class RoomServer {
     switch (msg.t) {
       case 'resync': {
         const rec = await this.getRoomRec(code);
-        if (rec?.room.game) this.sendState(s, rec.room, GameController.fromState(JSON.parse(JSON.stringify(rec.room.game)), { autoRun: false }), s.playerId, true);
+        if (rec) this.sendTable(s, rec.room);
         return;
       }
       case 'updateProfile':
@@ -847,7 +928,7 @@ export class RoomServer {
       const isHost = !!room && room.hostId === s.playerId;
       if (!room || !me) {
         // 已经不在这个房间（被移出 / 房间已关闭）：告诉客户端，并清掉本机记录
-        if (msg.t === 'action' && typeof msg.actionId === 'string') tx.direct.push({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
+        if ((msg.t === 'action' || msg.t === 'bj') && typeof msg.actionId === 'string') tx.direct.push({ t: 'ack', actionId: msg.actionId.slice(0, 40), ok: false, message: '当前没有进行中的游戏' });
         tx.direct.push({ t: 'room', room: null });
         tx.notMember = true;
         return;
@@ -881,10 +962,51 @@ export class RoomServer {
           // 只有房主可以开始：服务器根据房间记录判断，客户端无法伪造
           if (!isHost) return tx.error('只有房主可以开始游戏');
           if (room.status === 'playing') return tx.error('游戏已经开始');
-          if (room.members.length < 2) return tx.error('至少需要 2 名玩家（可以添加 AI）');
+          const mode = GAME_MODES[gameModeOf(room.settings)];
+          if (room.members.length < mode.minPlayers) return tx.error(`至少需要 ${mode.minPlayers} 名玩家（可以添加 AI）`);
           const notReady = room.members.filter((m) => !m.isAI && !m.ready && m.id !== room.hostId);
           if (notReady.length) return tx.error(`还有玩家没有准备：${notReady.map((m) => m.profile.name).join('、')}`);
           this.startGame(tx);
+          return;
+        }
+        case 'setMode': {
+          if (!isHost) return tx.error('只有房主可以切换游戏模式');
+          if (room.status !== 'lobby' || room.solo) return tx.error('牌局进行中不能切换游戏模式');
+          if (!isGameMode(msg.gameMode)) return tx.error('没有这个游戏模式');
+          if (gameModeOf(room.settings) === msg.gameMode) return;
+          room.settings.gameMode = msg.gameMode;
+          // 换了玩法：请大家重新确认准备
+          for (const m of room.members) if (!m.isAI) m.ready = false;
+          tx.system(`房主把游戏模式切换为「${GAME_MODES[msg.gameMode].name}」`);
+          return;
+        }
+        case 'bj': {
+          const actionId = typeof msg.actionId === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(msg.actionId) ? msg.actionId : null;
+          const reply = (message: string | null, duplicate = false) => {
+            const ack: ServerMessage | null = actionId ? { t: 'ack', actionId, ok: !message, ...(message ? { message } : {}), ...(duplicate ? { duplicate } : {}) } : null;
+            if (!ack) {
+              if (message) tx.error(message);
+            } else if (!message && !duplicate) tx.to(s.sessionId, ack);
+            else tx.direct.push(ack);
+          };
+          const c = tx.blackjack();
+          if (!c) return reply('当前没有进行中的牌局');
+          const seen = me.recentActions?.find(([id]) => id === actionId);
+          if (actionId && seen) return reply(seen[1], true);
+          const cmd = msg.cmd;
+          const result =
+            !cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string'
+              ? '无效操作'
+              : c.handle(me.id, cmd.type === 'bet' ? { type: 'bet', amount: cmd.amount } : { type: cmd.type }, {
+                  round: typeof msg.round === 'number' ? msg.round : undefined,
+                  token: typeof msg.token === 'number' ? msg.token : undefined,
+                });
+          if (actionId) {
+            me.recentActions = [...(me.recentActions ?? []), [actionId, result] as [string, string | null]].slice(-30);
+            tx.touch();
+          }
+          if (!result) tx.touch();
+          reply(result);
           return;
         }
         case 'action': {
@@ -930,7 +1052,7 @@ export class RoomServer {
           return;
         }
         case 'restartSolo': {
-          if (!room.solo || !isHost) return tx.error('当前不是单人对局');
+          if (!room.solo || !isHost || room.bj) return tx.error('当前不是单人对局');
           const c = tx.controller();
           if (room.status === 'playing' && !c?.isGameOver()) return tx.error('游戏仍在进行中');
           for (const m of room.members) m.chips = room.settings.startingChips;
@@ -948,9 +1070,12 @@ export class RoomServer {
         case 'backToLobby': {
           if (!isHost) return tx.error('只有房主可以返回大厅');
           const c = tx.controller();
-          if (room.status === 'playing' && !c?.isGameOver()) return tx.error('游戏仍在进行中');
+          const bjc = tx.blackjack();
+          if (bjc ? !bjc.betweenRounds() : room.status === 'playing' && !c?.isGameOver()) return tx.error(bjc ? '这一局结束后才能返回大厅' : '游戏仍在进行中');
           tx.ctrl = null;
+          tx.bjc = null;
           room.game = null;
+          room.bj = null;
           room.status = 'lobby';
           for (const m of room.members.filter((x) => !x.isAI && !x.connected)) if (m.sessionId) tx.sess.set(m.sessionId, null);
           room.members = room.members.filter((m) => m.isAI || m.connected);
@@ -1011,7 +1136,7 @@ export class RoomServer {
         this.addHuman(t, s);
         if (solo) {
           for (const o of solo.opponents) this.pushAI(room, o.personality, o.difficulty, o.character);
-          t.system(`欢迎来到动物扑克俱乐部！本局盲注 ${solo.smallBlind}/${solo.bigBlind}，祝你好运 🍀`);
+          t.system(solo.blackjack ? `欢迎来到 21 点牌桌！${tierById(solo.blackjack.tier).name}，祝你好运 🍀` : `欢迎来到动物扑克俱乐部！本局盲注 ${solo.smallBlind}/${solo.bigBlind}，祝你好运 🍀`);
           t.to(s.sessionId, { t: 'chatHistory', messages: room.chat });
           this.startGame(t);
         } else {
@@ -1031,11 +1156,13 @@ export class RoomServer {
     const startingChips = CHIP_OPTIONS.includes(Number(s.startingChips)) ? Number(s.startingChips) : 1000;
     const blinds = BLIND_OPTIONS.find(([sb, bb]) => sb === Number(s.smallBlind) && bb === Number(s.bigBlind)) ?? BLIND_OPTIONS[0];
     const turnSeconds = [15, 20, 30, 45, 60].includes(Number(s.turnSeconds)) ? Number(s.turnSeconds) : 30;
-    return { maxPlayers, startingChips, smallBlind: blinds[0], bigBlind: blinds[1], turnSeconds };
+    return { gameMode: gameModeOf(s), maxPlayers, startingChips, smallBlind: blinds[0], bigBlind: blinds[1], turnSeconds };
   }
 
   private cleanSolo(x: any): SoloSettings | null {
-    if (!x || !Array.isArray(x.opponents) || x.opponents.length < 1 || x.opponents.length > 7) return null;
+    // 21 点是玩家对庄家：可以没有同桌
+    const bj = x?.blackjack && typeof x.blackjack === 'object' ? { dealer: isDealerChoice(x.blackjack.dealer) ? x.blackjack.dealer : ('auto' as const), tier: tierById(x.blackjack.tier).id } : null;
+    if (!x || !Array.isArray(x.opponents) || x.opponents.length < (bj ? 0 : 1) || x.opponents.length > (bj ? 3 : 7)) return null;
     const startingChips = Number(x.startingChips);
     if (!CHIP_OPTIONS.includes(startingChips)) return null;
     const blinds = BLIND_OPTIONS.find(([sb, bb]) => sb === Number(x.smallBlind) && bb === Number(x.bigBlind));
@@ -1046,7 +1173,7 @@ export class RoomServer {
       // 玩家保存的角色：名字与外观都在服务器端重新校验
       ...(o?.character && typeof o.character === 'object' ? { character: { name: this.profileFor(null, { name: o.character.name }).name, animal: sanitizeAnimal(o.character.animal) } } : {}),
     }));
-    return { opponents, startingChips, smallBlind: blinds[0], bigBlind: blinds[1] };
+    return { opponents, startingChips, smallBlind: blinds[0], bigBlind: blinds[1], ...(bj ? { blackjack: bj } : {}) };
   }
 
   private pushAI(room: RoomRec, p: any, d: any, character?: { name: string; animal: PlayerProfile['animal'] }) {
@@ -1105,7 +1232,12 @@ export class RoomServer {
     if (!room) return;
     const m = room.members.find((x) => x.id === id);
     if (!m) return;
-    if (room.status === 'playing') tx.controller()?.removePlayer(id);
+    if (room.status === 'playing') {
+      // 21 点一局中途离开：下注按输掉结算（必须在离开前算好；房间可能随后就被删除）
+      const facts = tx.blackjack()?.forfeitFacts(id);
+      if (facts && m.userId) this.settleBlackjack(room, [{ playerId: id, facts }], `${room.instanceId}:${room.gameSeq}:bj:${facts.roundId}`);
+      (tx.controller() ?? tx.blackjack())?.removePlayer(id);
+    }
     room.members = room.members.filter((x) => x.id !== id);
     if (m.sessionId) {
       tx.sess.set(m.sessionId, null);
@@ -1131,6 +1263,7 @@ export class RoomServer {
   private startGame(tx: Tx) {
     const room = tx.room!;
     room.gameSeq++;
+    if (gameModeOf(room.settings) === 'blackjack-21') return this.startBlackjack(tx);
     const seats: SeatConfig[] = room.members.map((m) => ({
       id: m.id,
       profile: m.profile,
@@ -1151,6 +1284,8 @@ export class RoomServer {
       if (!m.isAI && !m.connected) c.setConnected(m.id, false);
     }
     room.status = 'playing';
+    room.bj = null;
+    tx.bjc = null;
     tx.ctrl = c;
     this.wire(tx, c);
     if (!room.solo) tx.system('游戏开始！祝大家好运 🍀');
@@ -1158,7 +1293,61 @@ export class RoomServer {
     tx.touch();
   }
 
+  /** 开一桌 21 点：牌靴、洗牌、下注、庄家、结算全部在服务器；客户端只负责显示 */
+  private startBlackjack(tx: Tx) {
+    const room = tx.room!;
+    const solo = room.solo ? room.soloSettings?.blackjack : undefined;
+    const tier = solo ? tierById(solo.tier) : null;
+    const wallet = !!solo && !!this.accounts;
+    const c = new BlackjackController(
+      room.members.map((m) => ({ id: m.id, profile: m.profile, chips: m.isAI && tier ? tier.minBet * 40 : room.settings.startingChips, isAI: m.isAI, aiPersonality: m.aiPersonality })),
+      {
+        solo: !!solo,
+        economy: wallet ? 'profile' : 'table',
+        startingChips: tier ? tier.minBet * 40 : room.settings.startingChips,
+        // 多人房间：最低下注 = 房间的大盲，最高 = 起始筹码（与德州房间共用同一套设置）
+        rules: tier ? { minBet: tier.minBet, maxBet: tier.maxBet } : { minBet: room.settings.bigBlind, maxBet: room.settings.startingChips },
+        turnTimeMs: solo ? 0 : this.opts.turnTimeMs === 30_000 ? room.settings.turnSeconds * 1000 : this.opts.turnTimeMs,
+        ...(this.opts.turnTimeMs === 30_000 ? {} : { betTimeMs: this.opts.turnTimeMs, offlineTurnMs: this.opts.turnTimeMs }),
+        pace: this.opts.pace,
+        dealer: pickDealer(solo?.dealer ?? 'auto', Math.random),
+        autoRun: false,
+      },
+    );
+    for (const m of room.members) {
+      m.recentActions = undefined;
+      if (!m.isAI && !m.connected) c.setConnected(m.id, false);
+    }
+    room.status = 'playing';
+    room.game = null;
+    tx.ctrl = null;
+    tx.bjc = c;
+    this.wireBj(tx, c);
+    for (const m of room.members) {
+      const chips = m.isAI ? null : c.hooks.balanceOf?.(m.id);
+      if (typeof chips === 'number') c.engine.setBalance(m.id, chips);
+    }
+    if (!room.solo) tx.system('21 点开始！祝大家好运 🍀');
+    c.start();
+    tx.touch();
+  }
+
   // ───────────── 结算（交给账号系统） ─────────────
+
+  /** 一局 21 点结算：每名登录玩家每局恰好一次（key 唯一，重试 / 重放不会重复发） */
+  private settleBlackjack(room: RoomRec, results: { playerId: string; facts: BjRoundFacts }[], key: string) {
+    if (!this.accounts) return;
+    for (const r of results) {
+      const m = room.members.find((x) => x.id === r.playerId);
+      if (!m || m.isAI || !m.userId) continue;
+      try {
+        const ev = this.accounts.recordBlackjack(m.userId, key, r.facts, room.solo);
+        if (ev) this.pushProgress(m.userId, ev);
+      } catch (err) {
+        console.error('[结算] 保存 21 点结果失败', err);
+      }
+    }
+  }
 
   private settleHand(room: RoomRec, c: GameController, gameKey: string) {
     if (!this.accounts) return;
@@ -1272,7 +1461,7 @@ export class RoomServer {
   // ───────────── 发送给客户端 ─────────────
 
   roomInfo(room: RoomRec): RoomInfo {
-    const chipsMap = new Map(room.game?.engine.players.map((p) => [p.id, p.chips]) ?? []);
+    const chipsMap = new Map(room.game?.engine.players.map((p) => [p.id, p.chips]) ?? room.bj?.engine.players.map((p) => [p.id, p.balance]) ?? []);
     return {
       code: room.code,
       hostId: room.hostId,
@@ -1291,6 +1480,34 @@ export class RoomServer {
         chips: chipsMap.get(m.id) ?? m.chips,
       })),
     };
+  }
+
+  /** 完整地发送当前牌桌（重新连接 / 请求同步） */
+  private sendTable(s: Session, room: RoomRec) {
+    if (room.game) this.sendState(s, room, GameController.fromState(JSON.parse(JSON.stringify(room.game)), { autoRun: false }), s.playerId, true);
+    else if (room.bj) this.sendBlackjack(s, room, BlackjackController.fromState(JSON.parse(JSON.stringify(room.bj)), { autoRun: false }), s.playerId, true);
+  }
+
+  /** 发送 21 点视图：暗牌翻开之前不含它的任何信息；同一局只附带新增事件与变化的外观 */
+  private sendBlackjack(s: Session, room: RoomRec, c: BlackjackController, id: string, full = false) {
+    if (!s.conn) return;
+    const view = c.getView(id);
+    const game = `${room.instanceId}:${room.gameSeq}`;
+    const lastSeq = view.events.length ? view.events[view.events.length - 1].seq : (s.sent?.seq ?? 0);
+    const firstSeq = view.events[0]?.seq ?? 0;
+    const prev = s.sent;
+    const profiles = new Map(view.players.map((p) => [p.id, JSON.stringify(p.profile)]));
+    let out: BlackjackView = view;
+    if (!full && prev && prev.game === game && prev.conn === s.conn && prev.hand === view.round && prev.seq >= firstSeq - 1) {
+      out = {
+        ...view,
+        events: view.events.filter((e) => e.seq > prev.seq),
+        players: view.players.map((p) => (prev.profiles.get(p.id) === profiles.get(p.id) ? ({ ...p, profile: undefined } as unknown as typeof p) : p)),
+        eventsDelta: true,
+      };
+    }
+    s.sent = { game, conn: s.conn, hand: view.round, seq: lastSeq, profiles };
+    s.conn.send({ t: 'bjState', view: out });
   }
 
   /**

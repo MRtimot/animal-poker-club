@@ -37,7 +37,7 @@ export function useBrowserBack() {
         push();
         return;
       }
-      if (g.screen === 'onboarding' || (g.screen === 'game' && g.view && !g.view.gameOver)) {
+      if (g.screen === 'onboarding' || (g.screen === 'game' && ((g.view && !g.view.gameOver) || g.bj))) {
         push();
         if (g.screen === 'game') g.set({ modal: 'leave' });
         return;

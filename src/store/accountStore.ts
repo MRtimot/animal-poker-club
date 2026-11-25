@@ -525,14 +525,19 @@ export function onServerProgress(event: ProgressEvent, state: AccountState) {
   if (outbox.profile) useAccount.getState().set({ account: state });
   else applyState(state);
   if (!outbox.profile) setSync('saved');
-  for (const id of event.newAchievements) {
-    const a = ACHIEVEMENTS.find((x) => x.id === id);
-    if (a) toast(`${a.icon} 达成成就：${a.name}`, 'unlock');
-  }
-  if (event.levelAfter > event.levelBefore) toast(`🎉 升级！你现在是 ${event.levelAfter} 级`, 'unlock');
-  for (const sp of event.newAnimals) toast(`${SPECIES_MAP[sp].emoji} 解锁新动物：${SPECIES_MAP[sp].name}！`, 'unlock');
-  if (event.chipsGained > 0 && before) toast(`🪙 获得 ${event.chipsGained.toLocaleString('en-US')} 虚拟筹码`, 'success');
-  if (event.newAchievements.length || event.levelAfter > event.levelBefore || event.newAnimals.length) sound.play('unlock', 0.6);
+  const announce = () => {
+    for (const id of event.newAchievements) {
+      const a = ACHIEVEMENTS.find((x) => x.id === id);
+      if (a) toast(`${a.icon} 达成成就：${a.name}`, 'unlock');
+    }
+    if (event.levelAfter > event.levelBefore) toast(`🎉 升级！你现在是 ${event.levelAfter} 级`, 'unlock');
+    for (const sp of event.newAnimals) toast(`${SPECIES_MAP[sp].emoji} 解锁新动物：${SPECIES_MAP[sp].name}！`, 'unlock');
+    if (event.chipsGained > 0 && before) toast(`🪙 获得 ${event.chipsGained.toLocaleString('en-US')} 虚拟筹码`, 'success');
+    if (event.newAchievements.length || event.levelAfter > event.levelBefore || event.newAnimals.length) sound.play('unlock', 0.6);
+  };
+  // 21 点：等结果演出之后再提示，不提前剧透
+  if (useGame.getState().bj) setTimeout(announce, 2600);
+  else announce();
 }
 
 export function isSignedIn() {

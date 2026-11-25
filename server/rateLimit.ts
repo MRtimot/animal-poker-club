@@ -47,12 +47,14 @@ export function categoryOf(t: string): WsCategory {
     case 'startGame':
     case 'backToLobby':
     case 'ready':
+    case 'setMode':
       return 'room';
     // leaveRoom 不算在建房限额里：离开被限流拒绝时，玩家会回到首页却仍占着座位
     case 'chat':
     case 'emote':
       return 'chat';
     case 'action':
+    case 'bj':
       return 'action';
     case 'hello':
       return 'hello';

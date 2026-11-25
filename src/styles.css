@@ -2167,6 +2167,23 @@ h1, h2, h3 {
   max-width: min(320px, calc(100vw - 16px));
   word-break: break-all;
 }
+/* 只在开发模式出现（NetDebugPanel） */
+.net-debug-force {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  pointer-events: auto;
+}
+.net-debug-force button {
+  padding: 2px 6px;
+  border: 1px solid rgba(120, 255, 160, 0.4);
+  border-radius: 4px;
+  background: rgba(20, 60, 32, 0.8);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 .dot.warn {
   background: #f0c040;
   box-shadow: 0 0 6px #f0c040;
@@ -4557,4 +4574,277 @@ html::backdrop {
   cursor: pointer;
   animation: toastIn 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
   -webkit-tap-highlight-color: transparent;
+}
+
+/* ═════════ 游戏模式选择（扑克大厅）与 21 点设置 ═════════ */
+.mode-select {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.mode-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 104px;
+  padding: 14px 16px;
+  overflow: hidden;
+  text-align: left;
+  font: inherit;
+  color: var(--c-text);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline-strong);
+  background: linear-gradient(160deg, rgba(38, 30, 24, 0.9), rgba(14, 12, 16, 0.94));
+  cursor: pointer;
+  transition: border-color var(--t-ui), box-shadow var(--t-ui);
+}
+.mode-pick.blackjack-21 {
+  background: linear-gradient(160deg, rgba(14, 46, 34, 0.92), rgba(10, 12, 14, 0.95));
+}
+.mode-pick.on {
+  border-color: var(--c-gold);
+  box-shadow: 0 0 0 1px var(--c-gold-line), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.mode-pick:focus-visible {
+  outline: 2px solid var(--c-gold);
+  outline-offset: 2px;
+}
+.mp-suit {
+  position: absolute;
+  right: -4px;
+  bottom: -26px;
+  font-size: 96px;
+  line-height: 1;
+  color: rgba(233, 207, 134, 0.12);
+  font-variant-emoji: text;
+}
+.mp-en {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 1.5px;
+  color: var(--c-gold);
+}
+.mp-zh {
+  font-size: 13px;
+  font-weight: 700;
+}
+.mp-lines {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+.mp-lines i {
+  font-style: normal;
+}
+.bj-setup-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.bj-setup-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 2px;
+  color: var(--c-gold);
+}
+.bj-setup-suit {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--c-gold-line);
+  font-size: 22px;
+  color: var(--c-gold);
+  font-variant-emoji: text;
+}
+.bj-link {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--c-gold);
+  cursor: pointer;
+}
+.bj-purse {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline);
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+  color: var(--c-text-2);
+}
+.bj-purse b {
+  font-family: var(--font-num);
+  font-size: 18px;
+  color: var(--c-gold-strong);
+}
+.bj-dealers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.bj-dealers button {
+  min-height: 62px;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-text-2);
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface-raised);
+  cursor: pointer;
+}
+.bj-dealers button span {
+  font-size: 22px;
+}
+.bj-dealers button.on {
+  color: var(--c-text);
+  border-color: var(--c-gold);
+}
+.bj-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0 4px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--c-text-3);
+}
+.bj-mini-stats b {
+  display: block;
+  font-family: var(--font-num);
+  font-size: 16px;
+  color: var(--c-text);
+}
+.lobby-mode {
+  margin-bottom: 12px;
+}
+/* 首页结尾：21 点入口 */
+.home-bj {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 14px 20px;
+  max-width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--c-text);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-gold-line);
+  background: linear-gradient(160deg, rgba(14, 46, 34, 0.82), rgba(10, 12, 14, 0.9));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color var(--t-ui), transform var(--t-ui) var(--e-out);
+}
+.home-bj:hover {
+  border-color: var(--c-gold);
+  transform: translateY(-2px);
+}
+.home-bj:focus-visible {
+  outline: 2px solid var(--c-gold);
+  outline-offset: 3px;
+}
+.home-bj-suit {
+  font-size: 28px;
+  color: var(--c-gold);
+  font-variant-emoji: text;
+}
+.home-bj-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.home-bj-text b {
+  font-family: var(--font-display);
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: var(--c-gold);
+}
+.home-bj-text small {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--c-text-3);
+}
+.home-bj-go {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .mode-pick {
+    min-height: 92px;
+    padding: 12px;
+  }
+  .mp-en {
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+  .home-bj {
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  .home-bj {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .home-bj-text {
+    flex: 1;
+  }
+  .home-bj-text b {
+    font-size: 16px;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .home-bj-text small {
+    display: none;
+  }
+  .home-bj-go {
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+}
+@media (max-width: 400px) {
+  .home-bj {
+    gap: 8px;
+    padding: 12px;
+  }
+  .home-bj-suit {
+    font-size: 20px;
+  }
+  .home-bj-text b {
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+  .home-bj-go {
+    font-size: 10.5px;
+    letter-spacing: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-bj,
+  .mode-pick {
+    transition: none;
+  }
 }

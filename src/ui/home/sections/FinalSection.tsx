@@ -26,6 +26,18 @@ export function FinalCTASection() {
             </PremiumButton>
           </div>
         </Reveal>
+        <Reveal at={0.44} span={0.12}>
+          <button type="button" className="home-bj" onClick={a.blackjack}>
+            <span className="home-bj-suit" aria-hidden>
+              ♠
+            </span>
+            <span className="home-bj-text">
+              <b>BLACKJACK 21</b>
+              <small>READ THE DEALER · PLAY YOUR HAND · BEAT 21</small>
+            </span>
+            <span className="home-bj-go">PLAY BLACKJACK →</span>
+          </button>
+        </Reveal>
       </div>
     </StorySection>
   );
@@ -38,6 +50,7 @@ export function HomeFooter() {
     ['开始游戏', a.play],
     ['在线房间', a.createRoom],
     ['AI 对战', a.aiMode],
+    ['21 点', a.blackjack],
     ['动物创建器', a.creator],
     ['我的收藏', a.collection],
     ['游戏规则', a.rules],

@@ -5,7 +5,10 @@ import { useFx } from '../store/fxStore';
 import { useAccount } from '../store/accountStore';
 import { voice } from '../audio/voice';
 import { sound } from '../audio/sound';
-import { localAction, localChat, restartLocalGame, stopLocalGame } from './localHost';
+import type { BjCommand } from '../core/blackjack/types';
+import { localAction, localChat, restartLocalGame } from './localHost';
+import { blackjackChat, blackjackCommand } from './localBlackjack';
+import { stopLocalTable } from './localTable';
 import { net } from './netClient';
 
 /** 清理牌桌上的临时表现：角色语音、气泡、动画、说话状态、音乐紧张度（不碰玩家永久存档） */
@@ -25,16 +28,28 @@ export const session = {
       net.action(a, g.view?.handNumber);
     }
   },
+  /** 21 点命令（下注、要牌、停牌、加倍、拆牌、下一局、补给） */
+  blackjack(cmd: BjCommand) {
+    const g = useGame.getState();
+    if (!g.bj) return;
+    const ref = { round: g.bj.round, token: g.bj.token };
+    if (g.mode === 'local') {
+      const err = blackjackCommand(cmd, ref);
+      if (err) g.toast(err, 'error');
+    } else if (g.mode === 'online') net.blackjack(cmd, ref);
+  },
   chat(text: string) {
     const t = text.trim().slice(0, 100);
     if (!t) return;
     const g = useGame.getState();
-    if (g.mode === 'local') localChat(t, 'chat');
+    if (g.mode === 'local' && g.bj) blackjackChat(t, 'chat');
+    else if (g.mode === 'local') localChat(t, 'chat');
     else net.chat(t);
   },
   emote(e: string) {
     const g = useGame.getState();
-    if (g.mode === 'local') localChat(e, 'emote');
+    if (g.mode === 'local' && g.bj) blackjackChat(e, 'emote');
+    else if (g.mode === 'local') localChat(e, 'emote');
     else net.emote(e);
   },
 
@@ -46,11 +61,11 @@ export const session = {
    */
   leave(to: Screen = 'home') {
     const g = useGame.getState();
-    if (g.mode === 'local') stopLocalGame();
+    if (g.mode === 'local') stopLocalTable();
     // 游客回首页 / 大厅时断开连接（首页不保持多人连接）；回到“在线”页面要继续创建 / 加入房间，保持连接
     if (g.mode === 'online' || g.room) net.leaveRoom({ disconnect: useAccount.getState().status !== 'signedIn' && to !== 'online' });
     clearTableFx();
-    g.set({ mode: null, view: null, room: null, chat: [], pendingAction: null, modal: null, cameraMode: 'overview' });
+    g.set({ mode: null, view: null, bj: null, room: null, chat: [], pendingAction: null, modal: null, cameraMode: 'overview' });
     g.setScreen(to);
   },
 

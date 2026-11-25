@@ -20,6 +20,8 @@ import { HAND_NAME } from '../../core/poker/handEvaluator';
 import { Avatar, BackButton, Btn, LevelBar, Modal } from '../common/ui';
 import { formatChips } from '../../utils/format';
 import { sound } from '../../audio/sound';
+import { BlackjackStatsGrid } from '../blackjack/BlackjackStats';
+import { normalizeBlackjack } from '../../progress/blackjackStats';
 
 // ───────────── Google 登录按钮（Google Identity Services，标准 OpenID Connect） ─────────────
 
@@ -653,6 +655,9 @@ export function ProfileScreen() {
             </div>
           ))}
         </div>
+
+        {/* 离线缓存可能是旧版本保存的，没有 21 点统计 */}
+        <BlackjackStatsGrid s={normalizeBlackjack(s.blackjack)} />
 
         <div className="row wrap" style={{ gap: 10 }}>
           <Btn kind="ghost" onClick={() => setScreen('collection')}>

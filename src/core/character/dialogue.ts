@@ -3,6 +3,7 @@
 // 现在是预设台词库；以后接入 AI 生成台词时，只需要替换 pickLine()，语音 / 动画 / 同步都不用改。
 import type { Species } from '../player/profile';
 import { PERSONALITIES_BY_SPECIES, VOICE_PROFILES, type AnimalEmotion, type SpeechStyle } from './voice';
+import { BJ_DIALOGUE, BJ_DIALOGUE_NAME, BJ_DIALOGUE_PRIORITY, type BjDialogueEvent } from '../blackjack/dialogue';
 
 export type DialogueEvent =
   | 'greet'
@@ -19,7 +20,8 @@ export type DialogueEvent =
   | 'bluff_win'
   | 'lose'
   | 'big_hand'
-  | 'catchphrase';
+  | 'catchphrase'
+  | BjDialogueEvent;
 
 export const DIALOGUE_EVENT_NAME: Record<DialogueEvent, string> = {
   greet: '开局问候',
@@ -37,6 +39,7 @@ export const DIALOGUE_EVENT_NAME: Record<DialogueEvent, string> = {
   lose: '输掉底池',
   big_hand: '同花顺 / 皇家同花顺',
   catchphrase: '口头禅',
+  ...BJ_DIALOGUE_NAME,
 };
 
 /** 优先级：重大牌局事件 > 情绪事件 > 玩家互动 > 闲聊 */
@@ -56,6 +59,7 @@ export const DIALOGUE_PRIORITY: Record<DialogueEvent, 0 | 1 | 2 | 3> = {
   greet: 0,
   think: 0,
   catchphrase: 0,
+  ...BJ_DIALOGUE_PRIORITY,
 };
 
 /** 牌局情境：同一个事件，牌好 / 牌差 / 在诈唬时说的话不一样 */
@@ -89,7 +93,7 @@ const L = (text: string, emotion: AnimalEmotion, flags = ''): DialogueLine => ({
 });
 
 // 台词原则：口语 > 书面语；短句；符合角色；“……”只在真的犹豫 / 停顿时用，不是每句都加。
-export const DIALOGUE: Record<SpeechStyle, Table> = {
+const HOLDEM_DIALOGUE: Record<SpeechStyle, Table> = {
   // 🐺 狼 / 🐧 企鹅：短句、慢、低沉、自信、话少
   cool: {
     greet: [L('……开始吧。', 'confident'), L('别浪费时间。', 'neutral'), L('嗯。都到齐了。', 'neutral')],
@@ -227,6 +231,11 @@ export const DIALOGUE: Record<SpeechStyle, Table> = {
     big_hand: [L('哇哇哇！这牌太夸张了！', 'excited')],
   },
 };
+
+/** 所有台词：德州扑克 + 21 点（同一套挑选、冷却与优先级） */
+export const DIALOGUE: Record<SpeechStyle, Table> = Object.fromEntries(
+  (Object.keys(HOLDEM_DIALOGUE) as SpeechStyle[]).map((style) => [style, { ...HOLDEM_DIALOGUE[style], ...BJ_DIALOGUE[style] }]),
+) as Record<SpeechStyle, Table>;
 
 export interface DialogueRef {
   /** 台词 ID（例如 cool.react_allin.0）；口头禅为 custom.catchphrase */

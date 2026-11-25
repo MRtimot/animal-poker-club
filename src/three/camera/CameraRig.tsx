@@ -20,7 +20,18 @@ const BOARD_CENTER = new THREE.Vector3(boardPos(2)[0], 1.0, boardPos(2)[2]);
 const tmpV = new THREE.Vector3();
 
 /** 牌局 HUD 占用的屏幕区域（与 gameHud.css 中的 --hud-top / --hud-bottom 一致） */
-export function hudInsets(w: number, h: number): { top: number; bottom: number } {
+export type TablePreset = 'holdem' | 'blackjack';
+
+/** 21 点：顶栏下面还有庄家的牌条，底部操作区更高（与 blackjack.css 一致） */
+function blackjackInsets(w: number, h: number): { top: number; bottom: number } {
+  if (h <= 520 && w >= 600) return { top: 50, bottom: 108 };
+  if (w <= 760) return h <= 700 ? { top: 118, bottom: 290 } : { top: 138, bottom: 330 };
+  if (w <= 1100 && h > w) return { top: 150, bottom: 268 };
+  return { top: 118, bottom: 150 };
+}
+
+export function hudInsets(w: number, h: number, preset: TablePreset = 'holdem'): { top: number; bottom: number } {
+  if (preset === 'blackjack') return blackjackInsets(w, h);
   if (w <= 760) return { top: 54, bottom: 196 };
   if (w <= 1100 && h > w) return { top: 60, bottom: 210 };
   if (h <= 520 && w >= 600) return { top: 48, bottom: 104 };
@@ -32,7 +43,7 @@ export function hudInsets(w: number, h: number): { top: number; bottom: number }
 /**
  * 摄像机系统：普通视角 / 玩家视角 + 自动镜头（行动、全押、摊牌环绕、获胜特写）
  */
-export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<string, SeatLayout> }) {
+export function CameraRig({ mode, layout, preset = 'holdem' }: { mode: CameraMode; layout: Map<string, SeatLayout>; preset?: TablePreset }) {
   const { camera, size } = useThree();
   const look = useRef(new THREE.Vector3(0, 1, 0));
   const base = useRef(new THREE.Vector3().copy(camera.position));
@@ -52,11 +63,11 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
   // 镜头取景避开 HUD：把画面中心移到顶栏与底部操作区之间（镜头位移，不改变透视），离开牌桌时恢复
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera;
-    const { top, bottom } = hudInsets(size.width, size.height);
+    const { top, bottom } = hudInsets(size.width, size.height, preset);
     const shift = Math.round((bottom - top) / 2);
     cam.setViewOffset(size.width, size.height, 0, shift, size.width, size.height);
     cam.updateProjectionMatrix();
-  }, [camera, size.width, size.height]);
+  }, [camera, size.width, size.height, preset]);
   useEffect(
     () => () => {
       const cam = camera as THREE.PerspectiveCamera;
@@ -95,7 +106,12 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
     }
 
     // 基础机位
-    if (mode === 'overview') {
+    if (mode === 'overview' && preset === 'blackjack') {
+      // 21 点：视线从玩家越过桌面看向庄家，庄家、双方的牌与下注区都在画面里
+      const short = !portrait && size.height < 520;
+      tmpPos.set(0, portrait ? 11.6 : short ? 10.4 : aspect < 1.4 ? 9.8 : 8, portrait ? 8.4 : short ? 9.4 : aspect < 1.4 ? 9.4 : 8.5);
+      tmpLook.set(0, 0.5, portrait ? -1 : short ? -1.1 : -1.1);
+    } else if (mode === 'overview') {
       // 默认牌桌镜头：完整的牌桌 + 所有座位与名牌 + 公共牌区 + 一点环境；
       // 视线略微看向远端，越过自己动物的头顶，并给顶栏与底部操作区留出空间
       // 手机横屏（高度很小）：镜头拉远一些，让名牌、牌桌与底部操作区都放得下
@@ -122,7 +138,14 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
       } else {
         const seat = cue.playerId ? layout.get(cue.playerId) : undefined;
         const fade = Math.min(1, t / 0.3) * Math.min(1, (d - t) / 0.5) * amp;
-        if (cue.type === 'flop' || cue.type === 'turn' || cue.type === 'river') {
+        if (cue.type === 'focus' && cue.focus) {
+          // 21 点的特写：竖屏视野窄，机位再拉远一些
+          const f = cue.focus;
+          tmpV.set(f.eye[0], f.eye[1] * (portrait ? 1.5 : 1), f.eye[2] * (portrait ? 1.35 : 1));
+          tmpPos.lerp(tmpV, fade * f.amt);
+          tmpLook.lerp(tmpV.set(f.look[0], f.look[1], f.look[2]), fade * Math.min(1, f.amt * 1.3));
+          speed = f.speed ?? 1.8;
+        } else if (cue.type === 'flop' || cue.type === 'turn' || cue.type === 'river') {
           // 公共牌镜头：翻牌关注、转牌靠近、河牌最靠近也最慢（制造期待感）
           const amt = cue.type === 'flop' ? 0.32 : cue.type === 'turn' ? 0.42 : 0.55;
           tmpV.set(0, portrait ? 9.5 : 6.4, portrait ? 6.4 : 4.6);
@@ -170,7 +193,7 @@ export function CameraRig({ mode, layout }: { mode: CameraMode; layout: Map<stri
       cineFrame.current = !!dShot;
       if (dShot) cam.clearViewOffset();
       else {
-        const { top, bottom } = hudInsets(size.width, size.height);
+        const { top, bottom } = hudInsets(size.width, size.height, preset);
         cam.setViewOffset(size.width, size.height, 0, Math.round((bottom - top) / 2), size.width, size.height);
       }
       cam.updateProjectionMatrix();

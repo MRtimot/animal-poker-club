@@ -8,6 +8,7 @@ import { ChatPanel } from '../game/ChatPanel';
 import { formatChips } from '../../utils/format';
 import { useIsPC } from '../../utils/pc';
 import { enterOnEntryGesture } from '../../display/fullscreen';
+import { GAME_MODES, gameModeOf, type GameMode } from '../../core/gameMode';
 
 export function RoomLobby() {
   const room = useGame((s) => s.room);
@@ -28,7 +29,10 @@ export function RoomLobby() {
   const mine = room.members.find((m) => m.id === me);
   const full = room.members.length >= room.settings.maxPlayers;
   const notReady = room.members.filter((m) => !m.isAI && !m.ready);
-  const canStart = isHost && room.members.length >= 2 && notReady.length === 0;
+  const mode = gameModeOf(room.settings);
+  const bj = mode === 'blackjack-21';
+  const minPlayers = GAME_MODES[mode].minPlayers;
+  const canStart = isHost && room.members.length >= minPlayers && notReady.length === 0;
   const humans = room.members.filter((m) => !m.isAI).length;
 
   const copy = async () => {
@@ -58,7 +62,7 @@ export function RoomLobby() {
             <span className={`lbar-status ${conn !== 'connected' ? 'lost' : canStart ? 'ready' : ''}`} role="status">
               {conn !== 'connected'
                 ? '连接中断，正在重新连接…'
-                : room.members.length < 2
+                : room.members.length < minPlayers
                   ? '等待玩家加入'
                   : notReady.length
                     ? `等待 ${notReady.length} 位玩家准备`
@@ -80,7 +84,7 @@ export function RoomLobby() {
                 net.startGame();
               }}
               disabled={!canStart || starting}
-              title={canStart ? '开始游戏' : room.members.length < 2 ? '至少需要 2 名玩家' : '还有玩家没有准备'}
+              title={canStart ? '开始游戏' : room.members.length < minPlayers ? `至少需要 ${minPlayers} 名玩家` : '还有玩家没有准备'}
             >
               {starting ? '开始中…' : '开始游戏'}
             </Btn>
@@ -107,10 +111,19 @@ export function RoomLobby() {
         <div className="row wrap small muted" style={{ marginBottom: 14, gap: 6 }}>
           <span className="tag">👥 {room.members.length} / {room.settings.maxPlayers}</span>
           <span className="tag">🪙 {formatChips(room.settings.startingChips)}</span>
-          <span className="tag">
-            盲注 {room.settings.smallBlind}/{room.settings.bigBlind}
-          </span>
+          <span className="tag">{bj ? `最低下注 ${room.settings.bigBlind}` : `盲注 ${room.settings.smallBlind}/${room.settings.bigBlind}`}</span>
           <span className="tag">⏱ {room.settings.turnSeconds} 秒</span>
+        </div>
+
+        <div className="field lobby-mode">
+          <label>游戏模式{isHost ? '' : '（由房主选择）'}</label>
+          {isHost ? (
+            <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${m === 'blackjack-21' ? '♠' : '♥'} ${GAME_MODES[m].name}` }))} value={mode} onChange={(m) => m !== mode && net.setMode(m)} />
+          ) : (
+            <div className="tag">
+              {bj ? '♠' : '♥'} {GAME_MODES[mode].name} · {GAME_MODES[mode].en}
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -162,7 +175,7 @@ export function RoomLobby() {
           )}
           {isHost && !canStart && (
             <div className="small muted center">
-              {room.members.length < 2 ? '至少需要 2 名玩家，可以添加 AI' : `等待 ${notReady.map((m) => m.profile.name).join('、')} 准备`}
+              {room.members.length < minPlayers ? `至少需要 ${minPlayers} 名玩家，可以添加 AI` : `等待 ${notReady.map((m) => m.profile.name).join('、')} 准备`}
             </div>
           )}
           {!isHost && <div className="small muted center">{mine?.ready ? '已准备，等待房主开始游戏' : '点击右上角「准备」，所有玩家准备后由房主开始游戏'}</div>}

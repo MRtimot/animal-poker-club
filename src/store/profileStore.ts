@@ -3,7 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { AnimalConfig, DEFAULT_ANIMAL, NAME_IDEAS, PlayerProfile, sanitizeAnimal, sanitizeName } from '../core/player/profile';
 import { randomId } from '../core/utils/random';
 import { ACHIEVEMENTS, EMPTY_STATS, RecentGame, Stats, levelFromXp, normalizeStats } from '../progress/progression';
-import type { AccountState } from '../core/account/types';
+import { STARTING_CHIPS, type AccountState } from '../core/account/types';
+import { REFILL_CHIPS } from '../core/blackjack/rules';
 import { safeStorage } from '../utils/format';
 
 /**
@@ -41,6 +42,8 @@ export interface ProfileState {
   achievements: Record<string, number>;
   recent: RecentGame[];
   createdCharacter: boolean;
+  /** 虚拟金币（与账号的虚拟筹码是同一种货币；登录后显示服务器上的数额） */
+  chips: number;
 
   setName: (n: string) => void;
   setAnimal: (a: AnimalConfig) => void;
@@ -49,9 +52,19 @@ export interface ProfileState {
   deleteCharacter: (id: string) => void;
   /** 增加经验并更新统计；返回新解锁的成就与升级信息 */
   applyProgress: (xpGain: number, patch: (s: Stats) => Stats) => { newAchievements: string[]; levelUp: number | null };
+  /**
+   * 游客在本机结算一局 21 点：经验、统计、成就与金币；同一局（roundId）只结算一次，重复调用返回 null。
+   * chipsDelta = 0：在线房间的桌上筹码，不影响持久金币
+   */
+  settleBlackjack: (roundId: string, xpGain: number, stats: Stats, chipsDelta: number) => { newAchievements: string[]; levelUp: number | null } | null;
+  /** 金币不够最低下注时补给到固定数额（虚拟金币，没有任何购买）；还够时不变。返回现在的数额 */
+  refillChips: (below: number) => number;
   addRecent: (g: RecentGame) => void;
   resetAll: () => void;
 }
+
+/** 已经结算过的 21 点局号（同一局的结果再次到达时不会重复发放） */
+const settledRounds = new Set<string>();
 
 const initialName = NAME_IDEAS[Math.floor(Math.random() * 6)];
 
@@ -66,6 +79,7 @@ export const useProfile = create<ProfileState>()(
       achievements: {},
       recent: [],
       createdCharacter: false,
+      chips: STARTING_CHIPS,
 
       setName: (n) => set({ name: n.slice(0, 12) }),
       setAnimal: (a) => set({ animal: a }),
@@ -101,9 +115,21 @@ export const useProfile = create<ProfileState>()(
         set({ stats, xp, achievements });
         return { newAchievements, levelUp: newLevel > prevLevel ? newLevel : null };
       },
+      settleBlackjack: (roundId, xpGain, stats, chipsDelta) => {
+        if (settledRounds.has(roundId)) return null;
+        settledRounds.add(roundId);
+        if (settledRounds.size > 200) settledRounds.delete(settledRounds.values().next().value!);
+        const res = get().applyProgress(xpGain, () => stats);
+        if (chipsDelta) set({ chips: Math.max(0, get().chips + Math.trunc(chipsDelta)) });
+        return res;
+      },
+      refillChips: (below) => {
+        if (!accountMode && get().chips < below) set({ chips: REFILL_CHIPS });
+        return get().chips;
+      },
       addRecent: (g) => set({ recent: [g, ...get().recent].slice(0, 12) }),
       resetAll: () =>
-        set({ xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], characters: [], animal: DEFAULT_ANIMAL, name: initialName, createdCharacter: false }),
+        set({ xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], characters: [], animal: DEFAULT_ANIMAL, name: initialName, createdCharacter: false, chips: STARTING_CHIPS }),
     }),
     {
       name: GUEST_KEY,
@@ -161,6 +187,8 @@ export function cleanGuestSave(raw: unknown, cur: ProfileState): Partial<Profile
           }))
       : [],
     createdCharacter: !!p.createdCharacter,
+    // 旧存档没有金币：按新玩家的起始数额
+    chips: typeof p.chips === 'number' && Number.isFinite(p.chips) && p.chips >= 0 ? Math.min(1_000_000_000, Math.floor(p.chips)) : STARTING_CHIPS,
   };
 }
 
@@ -176,13 +204,14 @@ export function showAccount(a: AccountState) {
     achievements: a.achievements,
     recent: a.recent,
     createdCharacter: a.onboarded,
+    chips: a.chips,
   });
 }
 
 /** 退出登录：恢复本机的游客存档 */
 export async function showGuest() {
   accountMode = false;
-  useProfile.setState({ name: initialName, animal: DEFAULT_ANIMAL, characters: [], xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], createdCharacter: false });
+  useProfile.setState({ name: initialName, animal: DEFAULT_ANIMAL, characters: [], xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], createdCharacter: false, chips: STARTING_CHIPS });
   await useProfile.persist.rehydrate();
 }
 

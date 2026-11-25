@@ -141,6 +141,11 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       );
     `,
   },
+  {
+    // 21 点统计（JSON：字段由 normalizeBlackjack 校验，以后增加统计项不用再改表）
+    version: 2,
+    sql: `ALTER TABLE player_statistics ADD COLUMN blackjack TEXT NOT NULL DEFAULT '{}';`,
+  },
 ];
 
 export function openDatabase(file: string): DB {

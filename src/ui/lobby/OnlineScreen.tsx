@@ -8,6 +8,7 @@ import { BUILT_IN_SERVER } from '../../net/serverAddress';
 import { BackButton, Btn, Seg, useBusy } from '../common/ui';
 import { formatChips } from '../../utils/format';
 import { enterOnEntryGesture } from '../../display/fullscreen';
+import { GAME_MODES, type GameMode } from '../../core/gameMode';
 
 function ConnStatus() {
   const conn = useGame((s) => s.conn);
@@ -47,6 +48,9 @@ export function OnlineScreen() {
   const conn = useGame((s) => s.conn);
   const serverUrl = useSettings((s) => s.serverUrl);
 
+  // 从扑克大厅的 21 点过来时默认 21 点
+  const [gameMode, setGameMode] = useState<GameMode>(useGame.getState().hubMode);
+  const bj = gameMode === 'blackjack-21';
   const [players, setPlayers] = useState(6);
   const [chips, setChips] = useState(1000);
   const [blinds, setBlinds] = useState(0);
@@ -66,7 +70,7 @@ export function OnlineScreen() {
     enterOnEntryGesture();
     const [sb, bb] = BLIND_OPTIONS[blinds];
     net.updateProfile();
-    net.createRoom({ maxPlayers: players, startingChips: chips, smallBlind: sb, bigBlind: bb, turnSeconds: turn });
+    net.createRoom({ gameMode, maxPlayers: players, startingChips: chips, smallBlind: sb, bigBlind: bb, turnSeconds: turn });
   };
   const join = () => {
     const c = code.trim().toUpperCase();
@@ -102,6 +106,10 @@ export function OnlineScreen() {
         {tab === 'create' ? (
           <>
             <div className="field">
+              <label>游戏模式</label>
+              <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${m === 'blackjack-21' ? '♠' : '♥'} ${GAME_MODES[m].name}` }))} value={gameMode} onChange={setGameMode} />
+            </div>
+            <div className="field">
               <label>玩家人数</label>
               <Seg options={Array.from({ length: MAX_ROOM_PLAYERS - 1 }, (_, i) => i + 2).map((n) => ({ value: n, label: n }))} value={players} onChange={setPlayers} />
             </div>
@@ -110,8 +118,8 @@ export function OnlineScreen() {
               <Seg options={CHIP_OPTIONS.map((c) => ({ value: c, label: formatChips(c) }))} value={chips} onChange={setChips} />
             </div>
             <div className="field">
-              <label>盲注</label>
-              <Seg options={BLIND_OPTIONS.map(([s, b], i) => ({ value: i, label: `${s} / ${b}` }))} value={blinds} onChange={setBlinds} />
+              <label>{bj ? '最低下注' : '盲注'}</label>
+              <Seg options={BLIND_OPTIONS.map(([s, b], i) => ({ value: i, label: bj ? String(b) : `${s} / ${b}` }))} value={blinds} onChange={setBlinds} />
             </div>
             <div className="field">
               <label>每次行动时间</label>

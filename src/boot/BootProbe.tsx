@@ -21,9 +21,20 @@ function FrameCounter({ onDone }: { onDone: () => void }) {
   return null;
 }
 
-async function precompile(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
-  if (typeof gl.compileAsync === 'function') await gl.compileAsync(scene, camera);
-  else gl.compile(scene, camera);
+/**
+ * 与 three.js 的 compileAsync 相同，但编译期间材质被释放时不会出错。
+ * （刷新网页后直接回到牌局：首页场景还在编译就被换掉，compileAsync 会在定时器里抛异常，
+ *   而且它的 Promise 永远不会完成，加载页只能等超时）
+ */
+async function precompile(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, alive: () => boolean) {
+  const waiting = gl.compile(scene, camera);
+  while (waiting.size && alive()) {
+    await new Promise((r) => setTimeout(r, 10));
+    for (const m of waiting) {
+      const program = (gl.properties.get(m) as { currentProgram?: { isReady(): boolean } }).currentProgram;
+      if (!program || program.isReady()) waiting.delete(m);
+    }
+  }
 }
 
 export function BootProbe() {
@@ -36,7 +47,7 @@ export function BootProbe() {
     if (boot.done.frames) return; // 已经启动过（例如切换页面后重新挂载）
     markBoot('scene');
     let alive = true;
-    precompile(gl, scene, camera)
+    precompile(gl, scene, camera, () => alive)
       .catch((e) => {
         // 编译检查失败不影响显示（第一帧渲染时仍会编译）：照常继续，只记录
         console.warn('[启动] 预编译着色器失败，改为在第一帧编译：', e);

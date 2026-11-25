@@ -8,6 +8,8 @@ export interface HomeActions {
   createRoom: () => void;
   joinRoom: () => void;
   aiMode: () => void;
+  /** 21 点：直接打开扑克大厅的 21 点 */
+  blackjack: () => void;
   creator: () => void;
   collection: () => void;
   settings: () => void;

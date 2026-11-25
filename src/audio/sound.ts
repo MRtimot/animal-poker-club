@@ -11,7 +11,9 @@ import type { Species } from '../core/player/profile';
 
 type SfxName =
   | 'card' | 'flip' | 'chip' | 'chips' | 'button' | 'hover' | 'win' | 'lose' | 'turn' | 'allin'
-  | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick' | 'royal';
+  | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick' | 'royal'
+  // 21 点：揭牌的一下、黑杰克、爆牌、平局
+  | 'bjReveal' | 'bjNatural' | 'bjBust' | 'bjPush';
 
 export type AudioStatus = 'uninitialized' | 'locked' | 'initializing' | 'ready' | 'suspended' | 'resuming' | 'error';
 
@@ -864,6 +866,28 @@ export class SoundEngine {
         this.noise(t + 0.2, 1.6, { freq: 9000, q: 0.5, vol: 0.03, attack: 0.6, type: 'highpass' });
         break;
       }
+      case 'bjReveal':
+        // 暗牌翻开：低沉的一下 + 纸牌的脆响
+        this.tone(96, t, 0.32, { type: 'sine', vol: 0.2, attack: 0.004, glide: 58 });
+        this.noise(t, 0.05, { freq: 3000, q: 1.2, vol: 0.12 });
+        break;
+      case 'bjNatural': {
+        // 黑杰克：温暖的低音铺底 + 克制的上行和弦 + 一点金色的闪光（不吵闹）
+        this.tone(98, t, 2.2, { type: 'sine', vol: 0.12, attack: 0.15 });
+        [392, 493.9, 587.3, 784].forEach((f, i) => this.tone(f, t + 0.08 + i * 0.13, 1.7 - i * 0.15, { type: 'sine', vol: 0.075, attack: 0.04 }));
+        this.noise(t + 0.35, 1.1, { freq: 8800, q: 0.6, vol: 0.022, attack: 0.4, type: 'highpass' });
+        break;
+      }
+      case 'bjBust':
+        // 爆牌：两个下沉的低音，像泄了气
+        this.tone(196, t, 0.5, { type: 'triangle', vol: 0.09, attack: 0.01, glide: 138 });
+        this.tone(130.8, t + 0.18, 0.8, { type: 'sine', vol: 0.13, attack: 0.02, glide: 82 });
+        this.noise(t, 0.16, { freq: 420, q: 0.8, vol: 0.1, type: 'lowpass' });
+        break;
+      case 'bjPush':
+        // 平局：中性的两个相同音
+        [329.6, 329.6].forEach((f, i) => this.tone(f, t + i * 0.2, 0.55, { type: 'sine', vol: 0.06, attack: 0.03 }));
+        break;
       case 'unlock': {
         [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, t + i * 0.07, 0.35, { type: 'sine', vol: 0.12 }));
         break;

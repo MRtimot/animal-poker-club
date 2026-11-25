@@ -1,6 +1,7 @@
 // 等级、经验值与成就（纯本地，不涉及任何真实货币）
 import { HandCategory } from '../core/poker/handEvaluator';
 import { SPECIES, Species } from '../core/player/profile';
+import { EMPTY_BLACKJACK, normalizeBlackjack, type BlackjackStats } from './blackjackStats';
 
 export const XP_RULES = {
   handPlayed: 30,
@@ -51,6 +52,8 @@ export interface Stats {
   totalBet: number;
   totalWinnings: number;
   speciesWins: Partial<Record<Species, number>>;
+  /** 21 点 */
+  blackjack: BlackjackStats;
 }
 
 export const EMPTY_STATS: Stats = {
@@ -71,14 +74,15 @@ export const EMPTY_STATS: Stats = {
   totalBet: 0,
   totalWinnings: 0,
   speciesWins: {},
+  blackjack: EMPTY_BLACKJACK,
 };
 
 /** 旧存档缺少的统计字段补 0（数据版本升级时不丢失存档） */
 export function normalizeStats(s: any): Stats {
-  const out: any = { ...EMPTY_STATS, speciesWins: {} };
+  const out: any = { ...EMPTY_STATS, speciesWins: {}, blackjack: normalizeBlackjack(s?.blackjack) };
   if (s && typeof s === 'object') {
     for (const k of Object.keys(EMPTY_STATS) as (keyof Stats)[]) {
-      if (k === 'speciesWins') continue;
+      if (k === 'speciesWins' || k === 'blackjack') continue;
       const v = Number(s[k]);
       if (Number.isFinite(v)) out[k] = Math.floor(v);
     }
@@ -115,6 +119,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'bluffer', name: '诈唬大师', desc: '让所有对手弃牌赢下 10 次底池', icon: '🎭', check: (s) => s.uncontestedWins >= 10 },
   { id: 'big_pot', name: '大赢家', desc: '单手赢得 5,000 以上筹码', icon: '💰', check: (s) => s.biggestPot >= 5000 },
   { id: 'online', name: '在线初体验', desc: '完成一手在线对局', icon: '🌏', check: (s) => s.onlineHands >= 1 },
+  { id: 'bj_first', name: '黑杰克', desc: '21 点：第一次拿到黑杰克', icon: '♠️', check: (s) => s.blackjack.blackjacks >= 1 },
+  { id: 'bj_ten', name: '黑杰克行家', desc: '21 点：累计拿到 10 次黑杰克', icon: '💫', check: (s) => s.blackjack.blackjacks >= 10 },
+  { id: 'bj_win10', name: '庄家克星', desc: '21 点：赢下 10 局', icon: '🎩', check: (s) => s.blackjack.wins >= 10 },
+  { id: 'bj_double', name: '加倍成功', desc: '21 点：加倍之后赢下这一手', icon: '⏫', check: (s) => s.blackjack.doubleWins >= 1 },
+  { id: 'bj_exact', name: '刚好 21', desc: '21 点：用三张以上的 21 点赢下一手', icon: '🎯', check: (s) => s.blackjack.wins21 >= 1 },
+  { id: 'bj_comeback', name: '绝地反击', desc: '21 点：连输 3 局之后赢回一局', icon: '🌅', check: (s) => s.blackjack.comebacks >= 1 },
 ];
 
 export function isSpeciesUnlocked(id: Species, level: number, achievements: Record<string, number>): boolean {

@@ -3,6 +3,7 @@
 import { HandCategory } from '../core/poker/handEvaluator';
 import type { Species } from '../core/player/profile';
 import { ACHIEVEMENTS, MAX_LEVEL, type Stats, levelFromXp } from './progression';
+import type { BjRoundFacts } from '../core/blackjack/types';
 
 /** 一手牌结束时服务器从牌桌状态中提取的事实（不是客户端上报的数据） */
 export interface HandFacts {
@@ -42,6 +43,10 @@ export const REWARD = {
     gameWon: 300,
     dailyFirstGame: 100,
     achievement: 150,
+    /** 21 点一局很快，所以每局经验比一手德州少 */
+    blackjackRound: 10,
+    blackjackWin: 20,
+    blackjackNatural: 30,
   },
   chips: {
     gameFinished: 50,
@@ -59,7 +64,7 @@ export function effectiveBet(totalBet: number, events: readonly { type: string; 
 }
 
 export function cloneStats(s: Stats): Stats {
-  return { ...s, speciesWins: { ...s.speciesWins } };
+  return { ...s, speciesWins: { ...s.speciesWins }, blackjack: { ...s.blackjack } };
 }
 
 /** 一手牌：更新统计并计算经验（不只靠赢牌：完成每一手都有经验） */
@@ -110,6 +115,46 @@ export function applyGame(before: Stats, f: GameFacts, dailyFirst: boolean): { s
     chips += REWARD.chips.dailyFirstGame;
   }
   return { stats: s, xp, chips };
+}
+
+/** 一局 21 点：更新统计并计算经验。按“这一局净赢 / 净输 / 打平”计胜负；离桌放弃算输 */
+export function applyBlackjackRound(before: Stats, f: BjRoundFacts): { stats: Stats; xp: number } {
+  const s = cloneStats(before);
+  const b = s.blackjack;
+  let xp = REWARD.xp.blackjackRound;
+  b.rounds++;
+  b.totalBet += f.bet;
+  b.totalPayout += f.payout;
+  b.largestBet = Math.max(b.largestBet, f.bet);
+  b.largestWin = Math.max(b.largestWin, f.profit);
+  if (f.hands.some((h) => h.fromSplit)) b.splits += f.hands.length - 1;
+  for (const h of f.hands) {
+    if (h.doubled) b.doubleDowns++;
+    if (h.result === 'bust') b.busts++;
+    if (h.result === 'blackjack') {
+      b.blackjacks++;
+      xp += REWARD.xp.blackjackNatural;
+    }
+    if (h.result === 'win') {
+      if (h.doubled) b.doubleWins++;
+      if (h.value === 21 && h.cards > 2) b.wins21++;
+    }
+  }
+  // 与庄家同时黑杰克是平局，但这确实是一次黑杰克
+  if (f.hands.length === 1 && f.hands[0].result === 'push' && f.hands[0].value === 21 && f.hands[0].cards === 2 && !f.hands[0].fromSplit) b.blackjacks++;
+  if (f.profit > 0) {
+    b.wins++;
+    if (b.lossStreak >= 3) b.comebacks++;
+    b.lossStreak = 0;
+    b.winStreak++;
+    b.bestWinStreak = Math.max(b.bestWinStreak, b.winStreak);
+    xp += REWARD.xp.blackjackWin;
+  } else if (f.profit < 0) {
+    b.losses++;
+    b.lossStreak++;
+    b.winStreak = 0;
+  } else b.pushes++;
+  return { stats: s, xp };
 }
 
 /** 根据统计找出新达成的成就 */

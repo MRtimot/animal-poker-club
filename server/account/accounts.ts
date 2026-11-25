@@ -14,7 +14,9 @@ import {
 } from '../../src/core/account/types';
 import { DEFAULT_ANIMAL, NAME_IDEAS, SPECIES, sanitizeAnimal, sanitizeName, type AnimalConfig, type PlayerProfile, type Species } from '../../src/core/player/profile';
 import { EMPTY_STATS, isSpeciesUnlocked, normalizeStats, xpForLevel, type RecentGame, type Stats } from '../../src/progress/progression';
-import { REWARD, applyGame, applyHand, clampLevel, newAchievements, type GameFacts, type HandFacts } from '../../src/progress/rewards';
+import { REWARD, applyBlackjackRound, applyGame, applyHand, clampLevel, newAchievements, type GameFacts, type HandFacts } from '../../src/progress/rewards';
+import { mergeGuestBlackjack } from '../../src/progress/blackjackStats';
+import type { BjRoundFacts } from '../../src/core/blackjack/types';
 
 export class AccountError extends Error {
   constructor(
@@ -177,14 +179,15 @@ export class AccountService {
     const s: any = {};
     for (const [k, col] of STAT_COLS) s[k] = Number(r[col]);
     s.speciesWins = safeJson(r.species_wins, {});
+    s.blackjack = safeJson(r.blackjack, {});
     return normalizeStats(s);
   }
 
   private writeStats(userId: string, s: Stats) {
     const sets = STAT_COLS.map(([, c]) => `${c} = ?`).join(', ');
     this.db
-      .prepare(`UPDATE player_statistics SET ${sets}, species_wins = ?, updated_at = ? WHERE user_id = ?`)
-      .run(...STAT_COLS.map(([k]) => Math.floor(Number(s[k]) || 0)), JSON.stringify(s.speciesWins), Date.now(), userId);
+      .prepare(`UPDATE player_statistics SET ${sets}, species_wins = ?, blackjack = ?, updated_at = ? WHERE user_id = ?`)
+      .run(...STAT_COLS.map(([k]) => Math.floor(Number(s[k]) || 0)), JSON.stringify(s.speciesWins), JSON.stringify(s.blackjack), Date.now(), userId);
   }
 
   private readAchievements(userId: string): Record<string, number> {
@@ -385,6 +388,7 @@ export class AccountService {
         merged[k] = cur[k] + gs[k];
       for (const k of ['biggestPot', 'biggestProfit', 'bestHand', 'bestStreak'] as const) merged[k] = Math.max(cur[k], gs[k]);
       for (const [sp, v] of Object.entries(gs.speciesWins)) merged.speciesWins[sp as Species] = (merged.speciesWins[sp as Species] ?? 0) + (v ?? 0);
+      merged.blackjack = mergeGuestBlackjack(cur.blackjack, gs.blackjack, { rounds: GUEST_LIMITS.maxHands, chips: GUEST_LIMITS.maxPot });
       this.writeStats(userId, merged);
       this.applyRewards(userId, guestXp, 0, merged);
 
@@ -417,7 +421,7 @@ export class AccountService {
   // ───────────── 结算（只由服务器的牌桌调用） ─────────────
 
   /** 写入统计、经验、筹码，并在同一事务中判定成就、升级与解锁 */
-  private applyRewards(userId: string, xpGain: number, chipsGain: number, stats: Stats): ProgressEvent {
+  private applyRewards(userId: string, xpGain: number, chipsGain: number, stats: Stats, tableDelta = 0): ProgressEvent {
     const before = this.readProgress(userId);
     const have = this.readAchievements(userId);
     const fresh = newAchievements(stats, have);
@@ -429,8 +433,8 @@ export class AccountService {
     const newXp = before.xp + xp;
     const newLevel = Math.max(before.level, clampLevel(newXp));
     this.db
-      .prepare('UPDATE player_progress SET experience = ?, level = ?, virtual_chips = virtual_chips + ?, version = version + 1, updated_at = ? WHERE user_id = ?')
-      .run(newXp, newLevel, chips, now, userId);
+      .prepare('UPDATE player_progress SET experience = ?, level = ?, virtual_chips = MAX(0, virtual_chips + ?), version = version + 1, updated_at = ? WHERE user_id = ?')
+      .run(newXp, newLevel, chips + Math.trunc(tableDelta), now, userId);
     this.writeStats(userId, stats);
     const newAnimals = this.syncUnlocks(userId);
     return { xpGained: xp, chipsGained: chips, levelBefore: before.level, levelAfter: newLevel, newAchievements: fresh, newAnimals };
@@ -466,6 +470,35 @@ export class AccountService {
         )
         .run(userId, gameKey, f.mode, f.place, f.players, f.hands, f.finalChips, before.chips, after.chips, ev.xpGained, before.level, after.level, Date.now());
       return ev;
+    });
+  }
+
+  /**
+   * 一局 21 点结束。eventKey 唯一，同一局重复调用不会重复发奖、也不会重复增减筹码。
+   * useWallet：单人桌押的是账号的虚拟筹码（多人房间用桌上筹码，不影响账号）
+   */
+  recordBlackjack(userId: string, eventKey: string, f: BjRoundFacts, useWallet: boolean): ProgressEvent | null {
+    return tx(this.db, () => {
+      if (!this.exists(userId)) return null;
+      const ins = this.db.prepare('INSERT OR IGNORE INTO processed_events (user_id, event_key, created_at) VALUES (?, ?, ?)').run(userId, eventKey, Date.now());
+      if (Number(ins.changes) === 0) return null;
+      const { stats, xp } = applyBlackjackRound(this.readStats(userId), f);
+      return this.applyRewards(userId, xp, 0, stats, useWallet ? f.profit : 0);
+    });
+  }
+
+  /** 虚拟筹码余额 */
+  chipsOf(userId: string): number {
+    return this.readProgress(userId).chips;
+  }
+
+  /** 虚拟筹码低于 below 时补给到 amount；还够时不变。返回现在的数额 */
+  refillChips(userId: string, below: number, amount: number): number {
+    return tx(this.db, () => {
+      const { chips } = this.readProgress(userId);
+      if (chips >= below) return chips;
+      this.db.prepare('UPDATE player_progress SET virtual_chips = ?, version = version + 1, updated_at = ? WHERE user_id = ?').run(amount, Date.now(), userId);
+      return amount;
     });
   }
 

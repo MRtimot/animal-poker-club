@@ -34,6 +34,27 @@ function validView(v: unknown): boolean {
   );
 }
 
+function validBlackjack(v: unknown): boolean {
+  if (!isObj(v) || v.kind !== 'blackjack') return false;
+  const d = v.dealer;
+  return (
+    isStr(v.viewerId) &&
+    isNum(v.round) &&
+    isStr(v.roundId) &&
+    isStr(v.phase) &&
+    isNum(v.token) &&
+    isNum(v.serverTime) &&
+    isObj(v.rules) &&
+    isObj(d) &&
+    isObj(d.profile) &&
+    isArr(d.cards) &&
+    isArr(v.events) &&
+    v.events.every((e) => isObj(e) && isStr(e.type) && isNum(e.seq)) &&
+    isArr(v.players) &&
+    v.players.every((p) => isObj(p) && isStr(p.id) && isNum(p.balance) && isArr(p.hands) && p.hands.every((h) => isObj(h) && isStr(h.id) && isArr(h.cards)))
+  );
+}
+
 /** 解析并检查一条服务器消息；结构不对或未知类型返回 null */
 export function parseServerMessage(raw: unknown): ServerMessage | null {
   let msg: unknown;
@@ -57,6 +78,8 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
       return 'room' in m && validRoom(m.room) ? (m as unknown as ServerMessage) : null;
     case 'state':
       return validView(m.view) ? (m as unknown as ServerMessage) : null;
+    case 'bjState':
+      return validBlackjack(m.view) ? (m as unknown as ServerMessage) : null;
     case 'chat':
       return validChat(m.message) ? (m as unknown as ServerMessage) : null;
     case 'chatHistory':
