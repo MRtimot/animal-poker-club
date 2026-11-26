@@ -50,6 +50,8 @@ export interface RoomInfo {
   status: 'lobby' | 'playing' | 'finished';
   /** 单人练习房（与 AI 对战，由服务器运行并结算奖励），其他人无法加入 */
   solo?: boolean;
+  /** 服务器决定的过期时间（服务器时间，毫秒）；null = 牌局进行中且有人在线，不会因为时间过期 */
+  expiresAt?: number | null;
 }
 
 /** 与 AI 对战的设置（登录玩家的对局在服务器上运行，奖励由服务器计算） */

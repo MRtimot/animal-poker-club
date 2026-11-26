@@ -84,6 +84,10 @@ export function createRedisStore(instanceId: string, makeClient: () => RedisClie
       const ok = await cmd.eval(COMMIT_LUA, 2, ROOM(code), VER(code), expected, next, json ?? '', ttlMs, CHANNEL, event);
       return Number(ok) === 1;
     },
+    async touchRoom(code, ttlMs) {
+      await cmd.pexpire(ROOM(code), ttlMs);
+      await cmd.pexpire(VER(code), ttlMs);
+    },
     async publish(event) {
       if (subscribed) await subscribed;
       await cmd.publish(CHANNEL, event);

@@ -15,6 +15,8 @@ export interface SharedStore {
    * json = null 表示删除房间。
    */
   commitRoom(code: string, expected: number, next: number, json: string | null, ttlMs: number, event: string): Promise<boolean>;
+  /** 延长房间记录的有效期（不改内容、不改版本号）；有人在线但长时间没有修改时使用 */
+  touchRoom?(code: string, ttlMs: number): Promise<void>;
   /** 只发布事件、不修改房间（例如“玩家已在另一台服务器重新连接”） */
   publish(event: string): Promise<void>;
   /** 订阅所有房间事件（包括自己发布的） */
@@ -67,6 +69,10 @@ export class MemoryHub {
         else hub.rooms.set(code, { v: next, json, exp: Date.now() + ttlMs });
         deliver(event);
         return true;
+      },
+      async touchRoom(code, ttlMs) {
+        const r = hub.rooms.get(code);
+        if (r && r.exp >= Date.now()) r.exp = Date.now() + ttlMs;
       },
       async publish(event) {
         deliver(event);

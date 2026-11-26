@@ -48,6 +48,11 @@ class NetClient {
   private queue: ClientMessage[] = [];
   private wanted = false;
   private pingTimer: number | null = null;
+  /** 服务器时间 − 本机时间（来自心跳；只用于显示房间保留到几点） */
+  serverOffset = 0;
+  /** 回到前台后确认连接还活着：等不到回应就换一条新连接 */
+  private probeTimer: number | null = null;
+  private hiddenAt: number | null = null;
   /**
    * 已经发出“离开房间”、还没收到服务器确认（room: null）。
    * 这期间服务器之前已经发出的牌局状态 / 房间更新 / 聊天可能还在路上，必须忽略，
@@ -142,6 +147,8 @@ class NetClient {
       if (this.rotateTimer) clearTimeout(this.rotateTimer);
       this.rotateTimer = null;
       this.ws = null;
+      if (this.probeTimer) clearTimeout(this.probeTimer);
+      this.probeTimer = null;
       useGame.getState().set({ conn: 'disconnected' });
       if (this.wanted) this.scheduleReconnect();
     };
@@ -210,6 +217,36 @@ class NetClient {
     };
   }
 
+  noteHidden() {
+    this.hiddenAt = Date.now();
+  }
+
+  /** 回到前台 / 网络恢复 */
+  wake() {
+    const away = this.hiddenAt ? Date.now() - this.hiddenAt : Infinity;
+    this.hiddenAt = null;
+    if (!this.wanted) return;
+    const ws = this.ws;
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      // 跳过剩下的退避等待，马上重连
+      if (this.retryTimer) clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+      this.retry = 0;
+      this.connect();
+      return;
+    }
+    if (ws.readyState !== WebSocket.OPEN || away < 3000 || this.probeTimer) return;
+    this.raw({ t: 'ping', time: Date.now() });
+    this.probeTimer = window.setTimeout(() => {
+      this.probeTimer = null;
+      // 没有回应：这条连接已经失效（例如锁屏期间被系统断开但浏览器还不知道）
+      if (this.ws === ws && ws.readyState === WebSocket.OPEN) {
+        this.retry = 0;
+        ws.close();
+      }
+    }, 4000);
+  }
+
   private scheduleReconnect() {
     if (this.retryTimer) return;
     const delay = Math.min(8000, 500 * 2 ** this.retry++);
@@ -237,6 +274,8 @@ class NetClient {
     this.rotateTimer = null;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = null;
     this.retry = 0;
     this.queue = [];
     this.soloWaiter?.(false);
@@ -462,9 +501,14 @@ class NetClient {
         g.toast(msg.message, 'error');
         this.creating?.done({ ok: false, message: msg.message });
         break;
-      case 'pong':
-        g.set({ latency: Math.max(0, Date.now() - msg.time) });
+      case 'pong': {
+        const rtt = Math.max(0, Date.now() - msg.time);
+        g.set({ latency: rtt });
+        if (typeof msg.serverTime === 'number') this.serverOffset = msg.serverTime + rtt / 2 - Date.now();
+        if (this.probeTimer) clearTimeout(this.probeTimer);
+        this.probeTimer = null;
         break;
+      }
       case 'account':
         onServerAccount(msg.state);
         break;
@@ -640,6 +684,21 @@ class NetClient {
 }
 
 export const net = new NetClient();
+
+// 手机切到后台 / 锁屏 / 换网络时，连接可能已经悄悄断了（或者重连在等退避时间）。
+// 回到前台或网络恢复时：没连上就立刻重连；看起来连着就发一次心跳确认，几秒内没有回应就换一条新连接。
+// 断线不等于离开：服务器会保留座位与房间，重新连上后自动回到原来的房间与牌局。
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  const wake = () => net.wake();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') net.noteHidden();
+    else wake();
+  });
+  window.addEventListener('online', wake);
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) wake();
+  });
+}
 // 刷新前所在的房间（本标签页）：界面据此显示“正在回到房间”
 if (typeof window !== 'undefined') useGame.getState().set({ lastRoom: tabStorage()?.getItem(LAST_ROOM_KEY) ?? null });
 onIdentityChanged(() => net.reconnect());

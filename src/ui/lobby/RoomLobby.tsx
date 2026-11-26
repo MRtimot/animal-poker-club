@@ -113,6 +113,11 @@ export function RoomLobby() {
           <span className="tag">🪙 {formatChips(room.settings.startingChips)}</span>
           <span className="tag">{bj ? `最低下注 ${room.settings.bigBlind}` : `盲注 ${room.settings.smallBlind}/${room.settings.bigBlind}`}</span>
           <span className="tag">⏱ {room.settings.turnSeconds} 秒</span>
+          {room.expiresAt ? (
+            <span className="tag" title="房间由服务器保留；断线不会马上失去座位，重新连上会回到这里">
+              ⏳ 保留到 {new Date(room.expiresAt - net.serverOffset).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          ) : null}
         </div>
 
         <div className="field lobby-mode">
