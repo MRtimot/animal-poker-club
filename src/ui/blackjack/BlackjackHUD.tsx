@@ -35,11 +35,14 @@ function TopBar({ view, onRules, onSettings }: { view: BlackjackView; onRules: (
         <button type="button" className="gbar-btn" aria-label="离开牌桌" title="离开牌桌" onClick={() => set({ modal: 'leave' })}>
           <span aria-hidden>←</span>
         </button>
-        <div className="gbar-brand">
+        <div className="gbar-brand with-virtual">
           <span className="gbar-mark" aria-hidden>
             🐾
           </span>
-          <span className="gbar-name">动物扑克俱乐部</span>
+          <span className="gbar-brand-text">
+            <span className="gbar-name">动物扑克俱乐部</span>
+            <span className="gbar-virtual">VIRTUAL GAME · 虚拟金币</span>
+          </span>
         </div>
       </div>
       <div className="gbar-center">

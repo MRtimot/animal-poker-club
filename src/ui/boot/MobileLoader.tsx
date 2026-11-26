@@ -76,6 +76,10 @@ export function MobileLoader({ onReady }: { onReady: () => void }) {
           )}
         </div>
       </div>
+      <div className="apm-notice" role="note" aria-label="虚拟游戏，仅供娱乐，不涉及真钱赌博">
+        <span aria-hidden>VIRTUAL GAME • FOR ENTERTAINMENT ONLY</span>
+        <span aria-hidden>虚拟游戏 · 仅供娱乐 · 不涉及真钱赌博</span>
+      </div>
       <div className="apm-credits" aria-hidden>
         <span>
           <b>创始人</b>Timothy Ong · Founder of APEX

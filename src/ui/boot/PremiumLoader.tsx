@@ -77,6 +77,10 @@ export function PremiumLoader({ onReady }: { onReady: () => void }) {
           )}
         </div>
       </div>
+      <div className="apl-notice" role="note" aria-label="虚拟游戏，仅供娱乐，不涉及真钱赌博">
+        <span aria-hidden>VIRTUAL GAME • FOR ENTERTAINMENT ONLY</span>
+        <span aria-hidden>虚拟游戏 · 仅供娱乐 · 不涉及真钱赌博 · NO REAL-MONEY GAMBLING</span>
+      </div>
       <div className="apl-credits" aria-hidden>
         <b>创始人</b> Timothy Ong · Founder of APEX<span>·</span>
         <b>游戏测试员</b> 熊

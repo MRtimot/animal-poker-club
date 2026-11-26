@@ -1,0 +1,387 @@
+/* ═════ 游戏说明（第一次进入时）：深色玻璃 + 柔和金边 + 轻微阴影，克制的入场 ═════ */
+.gnx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95; /* 在页面、对话框与 Cookie 说明条之上，在加载页（100）之下 */
+  display: grid;
+  place-items: center;
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+  background: radial-gradient(120% 90% at 50% 40%, rgba(10, 8, 12, 0.55), rgba(4, 3, 6, 0.82));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: gnxFade 420ms var(--e-out) both;
+}
+.gnx {
+  position: relative;
+  width: min(460px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  border: 1px solid rgba(233, 207, 134, 0.34);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(244, 220, 152, 0.07), transparent 60%),
+    linear-gradient(180deg, rgba(24, 19, 26, 0.94), rgba(12, 10, 14, 0.96));
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--c-text);
+  text-align: center;
+  overflow: hidden;
+  animation: gnxRise 520ms var(--e-out) 80ms both;
+}
+/* 内容过高（横屏手机、超大字号）时只滚动内容，“继续”始终在面板底部可见 */
+.gnx-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 30px 28px 6px;
+}
+.gnx-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: rgba(233, 207, 134, 0.72);
+  white-space: nowrap;
+}
+.gnx-eyebrow span {
+  letter-spacing: 0;
+  color: var(--c-gold-strong);
+}
+.gnx-eyebrow i {
+  display: block;
+  width: 28px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(233, 207, 134, 0.6));
+}
+.gnx-eyebrow i:last-child {
+  transform: scaleX(-1);
+}
+.gnx-title {
+  margin: 14px 0 0;
+  display: grid;
+  gap: 4px;
+  font-weight: 400;
+}
+.gnx-title-en {
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  background: linear-gradient(180deg, #fffaf0 0%, #f7e3b0 50%, #d9a23a 125%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gnx-title-zh {
+  font-size: 13px;
+  letter-spacing: 0.4em;
+  text-indent: 0.4em;
+  color: var(--c-text-2);
+}
+.gnx-lead {
+  margin: 20px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.gnx-lead b {
+  font-weight: 600;
+  color: var(--c-gold-strong);
+}
+.gnx-en {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--c-text-3);
+}
+.gnx-modes {
+  margin: 18px auto 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--c-hairline-strong);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  color: var(--c-text-2);
+}
+.gnx-modes i {
+  font-style: normal;
+  color: var(--c-gold);
+}
+.gnx-body {
+  margin: 16px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--c-text-2);
+}
+.gnx-list {
+  list-style: none;
+  margin: 16px auto 0;
+  padding: 14px 0 0;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--c-hairline);
+  font-size: 14px;
+  color: var(--c-text);
+}
+.gnx-list li .gnx-en {
+  margin-top: 0;
+}
+.gnx-foot {
+  margin: 18px 0 0;
+  font-size: 11.5px;
+  letter-spacing: 0.16em;
+  color: rgba(233, 207, 134, 0.62);
+}
+.gnx-actions {
+  flex: none;
+  padding: 18px 28px 24px;
+}
+.gnx-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: #1a130a;
+  background: linear-gradient(180deg, #f7e3b0, #d9b45e);
+  border: 1px solid rgba(255, 240, 200, 0.6);
+  box-shadow: 0 8px 24px rgba(217, 162, 58, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  touch-action: manipulation;
+  transition: filter var(--t-fast, 140ms) ease, transform var(--t-fast, 140ms) ease;
+}
+.gnx-btn-en {
+  font-size: 12.5px;
+  letter-spacing: 0.24em;
+}
+.gnx-btn:hover {
+  filter: brightness(1.05);
+}
+.gnx-btn:active {
+  transform: scale(0.985);
+}
+.gnx-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #0b0a0e, 0 0 0 4px rgba(244, 220, 152, 0.9);
+}
+@keyframes gnxFade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes gnxRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+/* 窄屏：两个模式上下排列（不留下孤零零的分隔点） */
+@media (max-width: 400px) {
+  .gnx-modes {
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 16px;
+  }
+  .gnx-modes i {
+    display: none;
+  }
+}
+/* 小屏手机（360 宽）：稍微收紧 */
+@media (max-width: 380px) {
+  .gnx-scroll {
+    padding: 24px 20px 4px;
+  }
+  .gnx-actions {
+    padding: 14px 20px 20px;
+  }
+  .gnx-title-en {
+    font-size: 22px;
+  }
+  .gnx-lead {
+    font-size: 15px;
+  }
+}
+/* 横屏手机：高度很小，内容滚动、按钮留在底部 */
+@media (orientation: landscape) and (max-height: 540px) {
+  .gnx {
+    width: min(560px, 100%);
+    border-radius: 18px;
+  }
+  .gnx-scroll {
+    padding: 18px 24px 2px;
+  }
+  .gnx-title {
+    margin-top: 8px;
+  }
+  .gnx-lead {
+    margin-top: 10px;
+    font-size: 15px;
+  }
+  .gnx-modes {
+    margin-top: 10px;
+    padding: 5px 14px;
+  }
+  .gnx-body {
+    margin-top: 8px;
+    font-size: 13px;
+  }
+  .gnx-body .gnx-en {
+    display: none;
+  }
+  /* 三条“不提供……”排成一行，不用滚动就能看到 */
+  .gnx-list {
+    margin-top: 10px;
+    padding-top: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    font-size: 13px;
+  }
+  .gnx-list .gnx-en {
+    font-size: 11px;
+  }
+  .gnx-foot {
+    margin-top: 10px;
+  }
+  .gnx-actions {
+    padding: 10px 24px 14px;
+  }
+  .gnx-btn {
+    min-height: 44px;
+  }
+}
+/* 减少动态效果：没有入场动画与缩放，说明照常显示 */
+@media (prefers-reduced-motion: reduce) {
+  .gnx-backdrop,
+  .gnx {
+    animation: none !important;
+  }
+  .gnx-btn {
+    transition: none;
+  }
+  .gnx-btn:active {
+    transform: none;
+  }
+}
+
+/* ═════ 各模式页面的轻量标识 ═════ */
+.vtag {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(233, 207, 134, 0.22);
+  background: rgba(233, 207, 134, 0.05);
+  font-size: 11.5px;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--c-text-2);
+}
+.vtag-en {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  color: rgba(233, 207, 134, 0.8);
+}
+.vtag-sep {
+  width: 1px;
+  height: 10px;
+  background: rgba(233, 207, 134, 0.3);
+}
+.vtag.compact {
+  padding: 3px 10px;
+  font-size: 10.5px;
+}
+.vtag.block {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px auto 0;
+}
+/* 牌局顶栏品牌下方：极小的一行（顶栏隐藏品牌时一起隐藏） */
+.gbar-virtual {
+  display: block;
+  margin-top: 1px;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+.gbar-brand.with-virtual {
+  align-items: center;
+}
+.gbar-brand.with-virtual .gbar-brand-text {
+  display: grid;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.vnote {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(233, 207, 134, 0.2);
+  background: rgba(233, 207, 134, 0.04);
+  text-align: left;
+}
+.vnote-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.vnote-head b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-gold);
+}
+.vnote p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--c-text-2);
+}
+.vnote .gnx-en {
+  font-size: 11px;
+}
+
+/* 模式卡片标题下方的一行说明 */
+.mode-virtual {
+  margin: 2px 0 10px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  letter-spacing: 0.14em;
+  color: rgba(233, 207, 134, 0.7);
+}
+.mode-virtual span {
+  white-space: nowrap;
+}
+.bj-setup-head .mode-virtual {
+  margin: 4px 0 0;
+}
+.lobby-virtual {
+  margin: -4px 0 14px;
+}
+@media (max-width: 1180px) {
+  .gbar-virtual {
+    display: none;
+  }
+}

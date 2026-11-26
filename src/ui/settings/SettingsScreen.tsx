@@ -31,7 +31,7 @@ export function QuickSettings() {
         <label>扑克房间</label>
         <Seg options={(Object.keys(ROOM_NAME) as RoomTheme[]).map((r) => ({ value: r, label: ROOM_NAME[r] }))} value={s.room} onChange={(r) => s.set({ room: r })} />
         <div className="small muted" style={{ marginTop: 6 }}>
-          豪华赌场：木材、皮革与吧台 · 夜景高层：落地窗外的城市夜景 · 森林小屋：壁炉与窗外森林
+          豪华会所：木材、皮革与吧台 · 夜景高层：落地窗外的城市夜景 · 森林小屋：壁炉与窗外森林
         </div>
       </div>
       <div className="field">
@@ -207,7 +207,10 @@ export function SettingsScreen() {
         </div>
         <div className="grow" />
         <p className="small muted" style={{ marginTop: 16, lineHeight: 1.7 }}>
-          《动物扑克俱乐部》只使用虚拟筹码，没有充值、提现或任何真钱玩法。{signedIn ? '你的游戏进度保存在云端服务器，设置会自动同步到你的其他设备。' : canLogin ? '游客数据只保存在这台设备的浏览器中，登录后可以保存到云端。' : '你的进度只保存在这台设备的浏览器中，可以在上方导出存档备份。在线房间只在服务器运行期间存在。'}
+          《动物扑克俱乐部》是一款虚拟娱乐游戏：只使用虚拟金币与筹码，没有充值、提现、现实货币兑换或任何真钱玩法，虚拟金币也不能在玩家之间转让。
+          <br />
+          <span lang="en">This game is designed as a virtual entertainment experience and does not provide real-money gambling or wagering services.</span>
+          <br />{signedIn ? '你的游戏进度保存在云端服务器，设置会自动同步到你的其他设备。' : canLogin ? '游客数据只保存在这台设备的浏览器中，登录后可以保存到云端。' : '你的进度只保存在这台设备的浏览器中，可以在上方导出存档备份。在线房间只在服务器运行期间存在。'}
           <br />
           创始人：<b className="gold">Timothy Ong</b>（Founder of APEX）
         </p>

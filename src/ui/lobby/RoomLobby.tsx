@@ -9,6 +9,7 @@ import { formatChips } from '../../utils/format';
 import { useIsPC } from '../../utils/pc';
 import { enterOnEntryGesture } from '../../display/fullscreen';
 import { GAME_MODES, gameModeOf, type GameMode } from '../../core/gameMode';
+import { VirtualTag } from '../notice/GameNotice';
 
 export function RoomLobby() {
   const room = useGame((s) => s.room);
@@ -119,6 +120,7 @@ export function RoomLobby() {
             </span>
           ) : null}
         </div>
+        <VirtualTag compact className="lobby-virtual" />
 
         <div className="field lobby-mode">
           <label>游戏模式{isHost ? '' : '（由房主选择）'}</label>

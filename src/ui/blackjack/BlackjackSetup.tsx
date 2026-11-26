@@ -73,6 +73,7 @@ export function BlackjackSetup() {
         <div className="grow">
           <h3>BLACKJACK 21</h3>
           <div className="small muted">读懂庄家，打好手牌，别超过 21。</div>
+          <div className="mode-virtual"><span>VIRTUAL GAME · PLAYER vs DEALER</span> · <span>仅限虚拟金币 · 不涉及真钱赌博</span></div>
         </div>
         <button type="button" className="bj-link" onClick={() => setRules(true)}>
           规则

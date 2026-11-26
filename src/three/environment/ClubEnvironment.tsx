@@ -289,7 +289,7 @@ function PendantLamp() {
   );
 }
 
-/** 扑克房间：根据设置切换 豪华赌场 / 夜景高层 / 森林小屋 */
+/** 扑克房间：根据设置切换 豪华会所 / 夜景高层 / 森林小屋 */
 export function ClubEnvironment({ quality }: { quality: Quality }) {
   const theme = useSettings((s) => s.room);
   const T = THEME[theme];

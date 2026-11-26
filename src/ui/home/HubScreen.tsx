@@ -12,6 +12,7 @@ import { SPECIES_MAP } from '../../core/player/profile';
 import { GAME_MODES, type GameMode } from '../../core/gameMode';
 import { BlackjackSetup } from '../blackjack/BlackjackSetup';
 import { enterOnEntryGesture } from '../../display/fullscreen';
+import { VirtualTag } from '../notice/GameNotice';
 
 const P_KEYS = Object.keys(PERSONALITIES) as AIPersonality[];
 const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
@@ -125,6 +126,7 @@ export function HubScreen() {
         </div>
         <LevelBar />
         <ModeSelect />
+        <VirtualTag className="block" />
 
         <div className="card-grid" style={{ marginTop: 16 }}>
           {hubMode === 'blackjack-21' ? (
@@ -132,6 +134,7 @@ export function HubScreen() {
           ) : (
           <div className="mode-card">
             <h3>🤖 与 AI 对战</h3>
+            <div className="mode-virtual"><span>TEXAS HOLD&rsquo;EM · VIRTUAL GAME</span> · <span>仅限虚拟金币 · 不涉及真钱赌博</span></div>
             <div className="small muted" style={{ marginBottom: 12 }}>
               {signedIn ? '对局结果由服务器结算，经验、筹码和成就自动保存到云端。' : '游客模式：AI 在你的电脑上运行，进度只保存在本机。'}
             </div>
