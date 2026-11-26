@@ -20,7 +20,7 @@ const BOARD_CENTER = new THREE.Vector3(boardPos(2)[0], 1.0, boardPos(2)[2]);
 const tmpV = new THREE.Vector3();
 
 /** 牌局 HUD 占用的屏幕区域（与 gameHud.css 中的 --hud-top / --hud-bottom 一致） */
-export type TablePreset = 'holdem' | 'blackjack';
+export type TablePreset = 'holdem' | 'blackjack' | 'baccarat';
 
 /** 21 点：顶栏下面还有庄家的牌条，底部操作区更高（与 blackjack.css 一致） */
 function blackjackInsets(w: number, h: number): { top: number; bottom: number } {
@@ -30,8 +30,17 @@ function blackjackInsets(w: number, h: number): { top: number; bottom: number } 
   return { top: 118, bottom: 150 };
 }
 
+/** 百家乐：顶栏下面是闲 / 庄的牌条，底部是下注区（与 baccarat.css 一致） */
+function baccaratInsets(w: number, h: number): { top: number; bottom: number } {
+  if (h <= 520 && w >= 600) return { top: 50, bottom: 118 };
+  if (w <= 760) return h <= 700 ? { top: 150, bottom: 268 } : { top: 172, bottom: 318 };
+  if (w <= 1100 && h > w) return { top: 150, bottom: 280 };
+  return { top: 118, bottom: 168 };
+}
+
 export function hudInsets(w: number, h: number, preset: TablePreset = 'holdem'): { top: number; bottom: number } {
   if (preset === 'blackjack') return blackjackInsets(w, h);
+  if (preset === 'baccarat') return baccaratInsets(w, h);
   if (w <= 760) return { top: 54, bottom: 196 };
   if (w <= 1100 && h > w) return { top: 60, bottom: 210 };
   if (h <= 520 && w >= 600) return { top: 48, bottom: 104 };
@@ -106,7 +115,7 @@ export function CameraRig({ mode, layout, preset = 'holdem' }: { mode: CameraMod
     }
 
     // 基础机位
-    if (mode === 'overview' && preset === 'blackjack') {
+    if (mode === 'overview' && (preset === 'blackjack' || preset === 'baccarat')) {
       // 21 点：视线从玩家越过桌面看向庄家，庄家、双方的牌与下注区都在画面里
       const short = !portrait && size.height < 520;
       tmpPos.set(0, portrait ? 11.6 : short ? 10.4 : aspect < 1.4 ? 9.8 : 8, portrait ? 8.4 : short ? 9.4 : aspect < 1.4 ? 9.4 : 8.5);

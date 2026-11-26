@@ -8,7 +8,7 @@ import { BUILT_IN_SERVER } from '../../net/serverAddress';
 import { BackButton, Btn, Seg, useBusy } from '../common/ui';
 import { formatChips } from '../../utils/format';
 import { enterOnEntryGesture } from '../../display/fullscreen';
-import { GAME_MODES, type GameMode } from '../../core/gameMode';
+import { GAME_MODES, MODE_SUIT, isHouseGame, type GameMode } from '../../core/gameMode';
 import { OnlineVirtualNote } from '../notice/GameNotice';
 
 function ConnStatus() {
@@ -51,7 +51,7 @@ export function OnlineScreen() {
 
   // 从扑克大厅的 21 点过来时默认 21 点
   const [gameMode, setGameMode] = useState<GameMode>(useGame.getState().hubMode);
-  const bj = gameMode === 'blackjack-21';
+  const bj = isHouseGame(gameMode);
   const [players, setPlayers] = useState(6);
   const [chips, setChips] = useState(1000);
   const [blinds, setBlinds] = useState(0);
@@ -109,7 +109,7 @@ export function OnlineScreen() {
           <>
             <div className="field">
               <label>游戏模式</label>
-              <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${m === 'blackjack-21' ? '♠' : '♥'} ${GAME_MODES[m].name}` }))} value={gameMode} onChange={setGameMode} />
+              <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${MODE_SUIT[m]} ${GAME_MODES[m].name}` }))} value={gameMode} onChange={setGameMode} />
             </div>
             <div className="field">
               <label>玩家人数</label>

@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useContext } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { chipSideTexture, chipTopTexture } from '../textures';
@@ -10,6 +10,8 @@ import { TABLE_Y } from '../layout';
 import { tableJolt } from '../../animation/defeat/defeatStore';
 
 /** 赌场筹码配色（低饱和、接近真实粘土筹码） */
+import { CHIP_SKINS, ChipSkinContext, type ChipSkinId } from '../skins';
+
 export const DENOMS: { value: number; color: string; label: string }[] = [
   { value: 100000, color: '#1f6a73', label: '100K' },
   { value: 25000, color: '#8e3558', label: '25K' },
@@ -25,17 +27,20 @@ export const DENOMS: { value: number; color: string; label: string }[] = [
 export const CHIP_R = 0.105;
 export const CHIP_H = 0.026;
 const chipGeo = new THREE.CylinderGeometry(CHIP_R, CHIP_R, CHIP_H, 36);
-const matCache = new Map<number, THREE.Material[]>();
+const matCache = new Map<string, THREE.Material[]>();
 
-function chipMats(value: number) {
-  let m = matCache.get(value);
+/** 筹码材质：按面额与外观缓存（外观只换颜色，面额与数量不变） */
+function chipMats(value: number, skin: ChipSkinId = 'classic') {
+  const key = `${skin}:${value}`;
+  let m = matCache.get(key);
   if (!m) {
     const d = DENOMS.find((x) => x.value === value)!;
+    const color = CHIP_SKINS[skin].colors[value] ?? d.color;
     // 粘土筹码：略带光泽的清漆，非金属
-    const side = new THREE.MeshPhysicalMaterial({ map: chipSideTexture(d.color), roughness: 0.55, clearcoat: 0.3, clearcoatRoughness: 0.45 });
-    const top = new THREE.MeshPhysicalMaterial({ map: chipTopTexture(d.color, d.label), roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.4 });
+    const side = new THREE.MeshPhysicalMaterial({ map: chipSideTexture(color), roughness: 0.55, clearcoat: 0.3, clearcoatRoughness: 0.45 });
+    const top = new THREE.MeshPhysicalMaterial({ map: chipTopTexture(color, d.label), roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.4 });
     m = [side, top, top];
-    matCache.set(value, m);
+    matCache.set(key, m);
   }
   return m;
 }
@@ -101,7 +106,7 @@ const ONE = new THREE.Vector3(1, 1, 1);
 /** 一列筹码：实例化渲染（一次绘制调用），每枚筹码有微小的错位和旋转 */
 function ChipColumn({ value, count, seed }: { value: number; count: number; seed: number }) {
   const ref = useRef<THREE.InstancedMesh>(null!);
-  const mats = chipMats(value);
+  const mats = chipMats(value, useContext(ChipSkinContext));
   useLayoutEffect(() => {
     const m = ref.current;
     if (!m) return;

@@ -41,7 +41,7 @@ describe('21 点公平性', () => {
   it('FAIR-02 牌组模块只依赖牌与随机数（读不到玩家、下注、余额、等级、动物、连胜连败）', () => {
     const src = fs.readFileSync(new URL('../src/core/blackjack/shoe.ts', import.meta.url), 'utf8');
     const imports = [...src.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort();
-    expect(imports).toEqual(['../cards/card', '../utils/random']);
+    expect(imports).toEqual(['../cards/physical', '../utils/random']);
     const engine = fs.readFileSync(new URL('../src/core/blackjack/engine.ts', import.meta.url), 'utf8');
     // 引擎只在三个地方碰牌组：新的一局、发一张、保存 / 恢复
     const uses = [...engine.matchAll(/this\.shoe\.(\w+)/g)].map((m) => m[1]);

@@ -1,12 +1,11 @@
 // 牌组：每局一副新的 52 张。每张实体牌有唯一编号（uid），同一张实体牌不可能同时出现两次。
 // 内部只存编号，保存到共享存储时很小；只在服务器 / 本地主机里，从不发给客户端。
-import { RANKS, SUITS, makeCard, type Card } from '../cards/card';
+import { cardFromCode, deckCodes, type PhysicalCard } from '../cards/physical';
 import { cryptoRandom, type RNG } from '../utils/random';
 
-export interface BjCard extends Card {
-  /** 实体牌编号，例如 “As-3”（第 3 副牌里的黑桃 A） */
-  uid: string;
-}
+/** 21 点的实体牌（与百家乐共用同一种实体牌） */
+export type BjCard = PhysicalCard;
+export { cardFromCode };
 
 export interface ShoeState {
   order: number[];
@@ -15,14 +14,7 @@ export interface ShoeState {
   opened: number;
 }
 
-export function cardFromCode(code: number): BjCard {
-  const deck = Math.floor(code / 52);
-  const k = code % 52;
-  const c = makeCard(RANKS[k % 13], SUITS[Math.floor(k / 13)]);
-  return { ...c, uid: `${c.id}-${deck}` };
-}
-
-const fresh = (deck: number) => Array.from({ length: 52 }, (_, i) => deck * 52 + i);
+const fresh = deckCodes;
 
 /**
  * 每一局一副新的标准 52 张牌：生成 → Fisher–Yates 洗牌（加密安全随机数）→ 从顶上依次发 → 一局结束整副丢弃。

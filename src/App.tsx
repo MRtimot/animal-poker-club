@@ -34,6 +34,8 @@ import { FullscreenNotice } from './ui/common/FullscreenUI';
 import { useDefeatDirector } from './animation/defeat/useDefeatDirector';
 import { useBlackjackDirector } from './animation/blackjack/useBlackjackDirector';
 import { useBlackjackProgress } from './progress/blackjackTracker';
+import { useBaccaratDirector } from './animation/baccarat/useBaccaratDirector';
+import { useBaccaratProgress } from './progress/baccaratTracker';
 
 const DPR: Record<Quality, [number, number]> = { low: [0.75, 1], medium: [1, 1.5], high: [1, 2], ultra: [1.5, 2] };
 
@@ -44,6 +46,8 @@ const loadGameScene = () => import('./three/scenes/GameScene');
 const loadGameHUD = () => import('./ui/game/GameHUD');
 const loadBlackjackScene = () => import('./three/blackjack/BlackjackScene');
 const loadBlackjackHUD = () => import('./ui/blackjack/BlackjackHUD');
+const loadBaccaratScene = () => import('./three/baccarat/BaccaratScene');
+const loadBaccaratHUD = () => import('./ui/baccarat/BaccaratHUD');
 const loadCreator = () => import('./ui/creator/CreatorScreen');
 const loadHub = () => import('./ui/home/HubScreen');
 const loadOnline = () => import('./ui/lobby/OnlineScreen');
@@ -93,6 +97,8 @@ const GameScene = lazyRetry(() => loadGameScene().then((m) => ({ default: m.Game
 const GameHUD = lazyRetry(() => loadGameHUD().then((m) => ({ default: m.GameHUD })));
 const BlackjackScene = lazyRetry(() => loadBlackjackScene().then((m) => ({ default: m.BlackjackScene })));
 const BlackjackHUD = lazyRetry(() => loadBlackjackHUD().then((m) => ({ default: m.BlackjackHUD })));
+const BaccaratScene = lazyRetry(() => loadBaccaratScene().then((m) => ({ default: m.BaccaratScene })));
+const BaccaratHUD = lazyRetry(() => loadBaccaratHUD().then((m) => ({ default: m.BaccaratHUD })));
 const CreatorScreen = lazyRetry(() => loadCreator().then((m) => ({ default: m.CreatorScreen })));
 const HubScreen = lazyRetry(() => loadHub().then((m) => ({ default: m.HubScreen })));
 const OnlineScreen = lazyRetry(() => loadOnline().then((m) => ({ default: m.OnlineScreen })));
@@ -104,7 +110,7 @@ const PostFXLazy = lazyRetry(loadPostFX);
 /** 首屏完成后，在浏览器空闲时预取其他页面的代码（失败也没关系，真正进入时会重试） */
 function prefetchScreens() {
   const run = () => {
-    for (const load of [loadHub, loadOnline, loadLobby, loadGameScene, loadGameHUD, loadBlackjackScene, loadBlackjackHUD, loadCreator, loadSettings, loadCollection]) load().catch(() => undefined);
+    for (const load of [loadHub, loadOnline, loadLobby, loadGameScene, loadGameHUD, loadBlackjackScene, loadBlackjackHUD, loadBaccaratScene, loadBaccaratHUD, loadCreator, loadSettings, loadCollection]) load().catch(() => undefined);
     if (useSettings.getState().quality === 'high' || useSettings.getState().quality === 'ultra') loadPostFX().catch(() => undefined);
   };
   const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
@@ -184,6 +190,7 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
   const screen = useGame((s) => s.screen);
   const view = useGame((s) => s.view);
   const bj = useGame((s) => s.bj);
+  const bac = useGame((s) => s.bac);
   const room = useGame((s) => s.room);
   const playerId = useGame((s) => s.playerId);
   const cameraMode = useGame((s) => s.cameraMode);
@@ -192,6 +199,7 @@ function Scene({ creatorAnim }: { creatorAnim: { name: AnimName; start: number }
 
   let content: ReactNode;
   if (screen === 'game' && bj) content = <BlackjackScene view={bj} />;
+  else if (screen === 'game' && bac) content = <BaccaratScene view={bac} />;
   else if (screen === 'game' && view) content = <GameScene view={view} />;
   else if (screen === 'home') content = <HomeWorld />;
   else if (screen === 'creator' || screen === 'onboarding') content = <CreatorScene config={animal} anim={creatorAnim} />;
@@ -361,15 +369,19 @@ function Directors() {
   const mode = useGame((s) => s.mode);
   const screen = useGame((s) => s.screen);
   const bj = useGame((s) => s.bj);
+  const bac = useGame((s) => s.bac);
   const active = screen === 'game' ? view : null;
   const activeBj = screen === 'game' ? bj : null;
+  const activeBac = screen === 'game' ? bac : null;
   useTableDirector(active);
   // 失败演出：自己输掉关键一手（出局 / 一手输掉一半以上筹码）时的电影化演出（只是画面表现）
   useDefeatDirector(active);
   useBlackjackDirector(activeBj);
-  useChatReactions(active, activeBj);
+  useBaccaratDirector(activeBac);
+  useChatReactions(active, activeBj, activeBac);
   useProgressTracker(view, mode);
   useBlackjackProgress(bj, mode);
+  useBaccaratProgress(bac, mode);
   // 离开牌桌 / 关闭角色语音：立刻停止所有角色说话（不留下排队中的台词）
   const voiceOn = useSettings((s) => s.voiceEnabled);
   useEffect(() => {
@@ -390,7 +402,9 @@ function Directors() {
 function HudConnector() {
   const view = useGame((s) => s.view);
   const bj = useGame((s) => s.bj);
+  const bac = useGame((s) => s.bac);
   if (bj) return <BlackjackHUD view={bj} />;
+  if (bac) return <BaccaratHUD view={bac} />;
   return view ? <GameHUD view={view} /> : null;
 }
 
@@ -405,7 +419,7 @@ export default function App() {
 function AppContent() {
   const screen = useGame((s) => s.screen);
   // 只订阅“是否有牌桌”，避免每次状态同步都重新渲染整个画布
-  const hasView = useGame((s) => s.view !== null || s.bj !== null);
+  const hasView = useGame((s) => s.view !== null || s.bj !== null || s.bac !== null);
   const room = useGame((s) => s.room);
   const quality = useSettings((s) => s.quality);
   const [ready, setReady] = useState(false);

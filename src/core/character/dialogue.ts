@@ -4,6 +4,7 @@
 import type { Species } from '../player/profile';
 import { PERSONALITIES_BY_SPECIES, VOICE_PROFILES, type AnimalEmotion, type SpeechStyle } from './voice';
 import { BJ_DIALOGUE, BJ_DIALOGUE_NAME, BJ_DIALOGUE_PRIORITY, type BjDialogueEvent } from '../blackjack/dialogue';
+import { BAC_DIALOGUE, BAC_DIALOGUE_NAME, BAC_DIALOGUE_PRIORITY, type BacDialogueEvent } from '../baccarat/dialogue';
 
 export type DialogueEvent =
   | 'greet'
@@ -21,7 +22,8 @@ export type DialogueEvent =
   | 'lose'
   | 'big_hand'
   | 'catchphrase'
-  | BjDialogueEvent;
+  | BjDialogueEvent
+  | BacDialogueEvent;
 
 export const DIALOGUE_EVENT_NAME: Record<DialogueEvent, string> = {
   greet: '开局问候',
@@ -40,6 +42,7 @@ export const DIALOGUE_EVENT_NAME: Record<DialogueEvent, string> = {
   big_hand: '同花顺 / 皇家同花顺',
   catchphrase: '口头禅',
   ...BJ_DIALOGUE_NAME,
+  ...BAC_DIALOGUE_NAME,
 };
 
 /** 优先级：重大牌局事件 > 情绪事件 > 玩家互动 > 闲聊 */
@@ -60,6 +63,7 @@ export const DIALOGUE_PRIORITY: Record<DialogueEvent, 0 | 1 | 2 | 3> = {
   think: 0,
   catchphrase: 0,
   ...BJ_DIALOGUE_PRIORITY,
+  ...BAC_DIALOGUE_PRIORITY,
 };
 
 /** 牌局情境：同一个事件，牌好 / 牌差 / 在诈唬时说的话不一样 */
@@ -234,7 +238,7 @@ const HOLDEM_DIALOGUE: Record<SpeechStyle, Table> = {
 
 /** 所有台词：德州扑克 + 21 点（同一套挑选、冷却与优先级） */
 export const DIALOGUE: Record<SpeechStyle, Table> = Object.fromEntries(
-  (Object.keys(HOLDEM_DIALOGUE) as SpeechStyle[]).map((style) => [style, { ...HOLDEM_DIALOGUE[style], ...BJ_DIALOGUE[style] }]),
+  (Object.keys(HOLDEM_DIALOGUE) as SpeechStyle[]).map((style) => [style, { ...HOLDEM_DIALOGUE[style], ...BJ_DIALOGUE[style], ...BAC_DIALOGUE[style] }]),
 ) as Record<SpeechStyle, Table>;
 
 export interface DialogueRef {

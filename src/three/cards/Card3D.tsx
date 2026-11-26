@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useContext, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Card } from '../../core/cards/card';
@@ -7,6 +7,7 @@ import { CARD_H, CARD_W, DECK_POS, V3 } from '../layout';
 import { sound } from '../../audio/sound';
 import { DUR, arc, clamp01, damp, ease, settle } from '../../animation/motion';
 import { shadowGeo, shadowMaterial } from '../realism';
+import { CardSkinContext, type CardSkinId } from '../skins';
 import { TABLE_Y } from '../layout';
 import { tableJolt } from '../../animation/defeat/defeatStore';
 
@@ -49,7 +50,7 @@ const edgeGeo = (() => {
 const hiddenMat = new THREE.MeshBasicMaterial({ visible: false });
 const edgeMat = new THREE.MeshStandardMaterial({ color: '#ece6d8', roughness: 0.7 });
 const edgeMats = [hiddenMat, edgeMat];
-let backMat: THREE.MeshPhysicalMaterial | null = null;
+const backMats = new Map<CardSkinId, THREE.MeshPhysicalMaterial>();
 const faceMats = new Map<string, THREE.MeshPhysicalMaterial>();
 const glowMat = new THREE.MeshBasicMaterial({ color: '#ffd98a', transparent: true, opacity: 0.0, depthWrite: false });
 const glowGeo = new THREE.PlaneGeometry(CARD_W * 1.12, CARD_H * 1.09);
@@ -57,15 +58,21 @@ const glintMat = new THREE.MeshBasicMaterial({ color: '#fff3c8', transparent: tr
 const glintGeo = new THREE.PlaneGeometry(CARD_W * 0.98, CARD_H * 0.98);
 
 // 覆膜纸牌：略带清漆光泽，灯光下会出现柔和的高光
-function getBack() {
-  if (!backMat) backMat = new THREE.MeshPhysicalMaterial({ map: cardBackTexture(), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
-  return backMat;
-}
-function getFace(card: Card) {
-  let m = faceMats.get(card.id);
+function getBack(skin: CardSkinId = 'classic') {
+  let m = backMats.get(skin);
   if (!m) {
-    m = new THREE.MeshPhysicalMaterial({ map: cardFaceTexture(card), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
-    faceMats.set(card.id, m);
+    m = new THREE.MeshPhysicalMaterial({ map: cardBackTexture(skin), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
+    backMats.set(skin, m);
+  }
+  return m;
+}
+/** 牌面材质：按牌面缓存，外观不同另存一份；外观只换颜色与边框，牌的身份不变 */
+function getFace(card: Card, skin: CardSkinId = 'classic') {
+  const key = skin === 'classic' ? card.id : `${skin}:${card.id}`;
+  let m = faceMats.get(key);
+  if (!m) {
+    m = new THREE.MeshPhysicalMaterial({ map: cardFaceTexture(card, skin), roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.35 });
+    faceMats.set(key, m);
   }
   return m;
 }
@@ -152,7 +159,8 @@ export function Card3D({
     [myGlow, myGlint, myShadow],
   );
 
-  const faceMat = card ? getFace(card) : getBack();
+  const skin = useContext(CardSkinContext);
+  const faceMat = card ? getFace(card, skin) : getBack(skin);
 
   const want = faceUp && card ? 0 : Math.PI;
 
@@ -319,7 +327,7 @@ export function Card3D({
     <mesh ref={shadow} geometry={shadowGeo} material={myShadow} visible={false} renderOrder={1} />
     <group ref={ref} visible={false} scale={scale}>
       <mesh geometry={faceGeo} material={faceMat} castShadow receiveShadow />
-      <mesh geometry={backGeo} material={getBack()} castShadow />
+      <mesh geometry={backGeo} material={getBack(skin)} castShadow />
       <mesh geometry={edgeGeo} material={edgeMats} />
       <mesh ref={glow} geometry={glowGeo} material={myGlow} rotation={[-Math.PI / 2, 0, 0]} position={[0, -CARD_T, 0]} visible={false} />
       <mesh ref={glint} geometry={glintGeo} material={myGlint} rotation={[-Math.PI / 2, 0, 0]} position={[0, CARD_T / 2 + 0.001, 0]} visible={false} />

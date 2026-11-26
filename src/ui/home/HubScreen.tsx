@@ -11,6 +11,7 @@ import { formatChips, timeAgo } from '../../utils/format';
 import { SPECIES_MAP } from '../../core/player/profile';
 import { GAME_MODES, type GameMode } from '../../core/gameMode';
 import { BlackjackSetup } from '../blackjack/BlackjackSetup';
+import { BaccaratSetup } from '../baccarat/BaccaratSetup';
 import { enterOnEntryGesture } from '../../display/fullscreen';
 import { VirtualTag } from '../notice/GameNotice';
 
@@ -20,6 +21,7 @@ const DIFFS: AIDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
 const MODE_CARDS: { id: GameMode; suit: string; lines: string[] }[] = [
   { id: 'texas-holdem', suit: '♥', lines: ['读懂对手。', '赢下底池。'] },
   { id: 'blackjack-21', suit: '♠', lines: ['READ THE DEALER.', 'PLAY YOUR HAND.', 'BEAT 21.'] },
+  { id: 'baccarat', suit: '♦', lines: ['CLASSIC PUNTO BANCO.', 'PLAYER OR BANKER.', 'CLOSEST TO 9.'] },
 ];
 
 /** 游戏模式选择 */
@@ -131,6 +133,8 @@ export function HubScreen() {
         <div className="card-grid" style={{ marginTop: 16 }}>
           {hubMode === 'blackjack-21' ? (
             <BlackjackSetup />
+          ) : hubMode === 'baccarat' ? (
+            <BaccaratSetup />
           ) : (
           <div className="mode-card">
             <h3>🤖 与 AI 对战</h3>

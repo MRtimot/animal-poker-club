@@ -1,6 +1,7 @@
 // 程序化生成的纹理（Canvas），无需任何外部图片资源
 import * as THREE from 'three';
 import { Card, SUIT_SYMBOL, isRed, rankLabel } from '../core/cards/card';
+import { CARD_SKINS, type CardSkinId } from './skins';
 
 const cache = new Map<string, THREE.Texture>();
 
@@ -64,16 +65,18 @@ function paper(g: CanvasRenderingContext2D, w: number, h: number, base: string) 
  * 牌面：大号角标（jumbo index）设计——牌桌镜头离得较远时也能一眼看清点数与花色。
  * 左上角是大号点数 + 花色，右下角是大号花色；人头牌加一个皇冠记号。红黑高对比。
  */
-export function cardFaceTexture(card: Card) {
-  return canvasTex('card-jumbo-' + card.id, CW, CH, (g, w, h) => {
-    paper(g, w, h, '#fbf8f0');
+export function cardFaceTexture(card: Card, skin: CardSkinId = 'classic') {
+  const S = CARD_SKINS[skin];
+  // 经典外观沿用原来的缓存键（德州、21 点的牌完全不变）
+  return canvasTex(skin === 'classic' ? 'card-jumbo-' + card.id : `card-jumbo-${skin}-${card.id}`, CW, CH, (g, w, h) => {
+    paper(g, w, h, S.paper);
     const red = isRed(card);
-    const color = red ? '#c0152f' : '#121216';
+    const color = red ? S.red : S.black;
     const sym = SUIT_SYMBOL[card.suit];
     const lab = rankLabel(card.rank);
     // 细金线内框：牌面更精致，也让牌在绿色桌布上轮廓清楚
-    g.strokeStyle = 'rgba(184,144,47,0.55)';
-    g.lineWidth = 3;
+    g.strokeStyle = S.frame;
+    g.lineWidth = skin === 'premium' || skin === 'gold' ? 6 : 3;
     roundRect(g, 12, 12, w - 24, h - 24, 12);
     g.stroke();
     g.fillStyle = color;
@@ -104,7 +107,8 @@ export function cardFaceTexture(card: Card) {
 }
 
 /** 写实牌背：白色留边 + 细密菱格纹 */
-export function cardBackTexture() {
+export function cardBackTexture(skin: CardSkinId = 'classic') {
+  if (skin !== 'classic') return skinBackTexture(skin);
   return canvasTex('card-back', CW, CH, (g, w, h) => {
     paper(g, w, h, '#f7f3ea');
     const m = 16;
@@ -142,6 +146,73 @@ export function cardBackTexture() {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText('APC', w / 2, h / 2 + 2);
+  });
+}
+
+/** 其他外观的牌背：留边 + 底色 + 花纹 + 中央记号（只是图案，牌的身份不变） */
+function skinBackTexture(skin: CardSkinId) {
+  const S = CARD_SKINS[skin];
+  return canvasTex('card-back-' + skin, CW, CH, (g, w, h) => {
+    paper(g, w, h, skin === 'dark' ? '#2a2b30' : '#f7f3ea');
+    const m = 16;
+    g.fillStyle = S.back;
+    roundRect(g, m, m, w - m * 2, h - m * 2, 10);
+    g.fill();
+    g.save();
+    roundRect(g, m, m, w - m * 2, h - m * 2, 10);
+    g.clip();
+    const ink = skin === 'gold' || skin === 'premium' ? 'rgba(230,190,90,0.55)' : 'rgba(255,240,230,0.4)';
+    g.strokeStyle = ink;
+    g.fillStyle = ink;
+    g.lineWidth = 1.4;
+    if (S.pattern === 'diamond') {
+      for (let i = -h; i < w + h; i += 13) {
+        g.beginPath();
+        g.moveTo(i, 0);
+        g.lineTo(i + h, h);
+        g.moveTo(i, h);
+        g.lineTo(i + h, 0);
+        g.stroke();
+      }
+    } else if (S.pattern === 'lines') {
+      for (let x = m; x < w - m; x += 9) {
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x, h);
+        g.stroke();
+      }
+    } else if (S.pattern === 'sunburst') {
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 24) {
+        g.beginPath();
+        g.moveTo(w / 2, h / 2);
+        g.lineTo(w / 2 + Math.cos(a) * h, h / 2 + Math.sin(a) * h);
+        g.stroke();
+      }
+    } else if (S.pattern === 'paws') {
+      g.font = `28px ${FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.globalAlpha = 0.35;
+      for (let y = 40; y < h; y += 56) for (let x = 40 + ((y / 56) % 2) * 28; x < w; x += 56) g.fillText('🐾', x, y);
+      g.globalAlpha = 1;
+    }
+    g.restore();
+    g.strokeStyle = skin === 'gold' || skin === 'premium' ? 'rgba(240,200,100,0.95)' : 'rgba(255,240,230,0.85)';
+    g.lineWidth = skin === 'minimal' ? 1 : 2;
+    roundRect(g, m + 7, m + 7, w - m * 2 - 14, h - m * 2 - 14, 6);
+    g.stroke();
+    if (S.mark) {
+      g.fillStyle = S.back;
+      g.beginPath();
+      g.ellipse(w / 2, h / 2, 46, 58, 0, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = skin === 'gold' || skin === 'premium' ? '#f0cf72' : 'rgba(255,240,230,0.9)';
+      g.font = `600 ${S.mark.length > 2 ? 30 : 46}px ${S.mark.length > 2 ? SERIF : FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(S.mark, w / 2, h / 2 + 2);
+    }
   });
 }
 

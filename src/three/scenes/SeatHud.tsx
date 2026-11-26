@@ -30,6 +30,7 @@ const clampFor = (preset: TablePreset) => (el: THREE.Object3D, camera: THREE.Cam
 };
 const clampedPosition = clampFor('holdem');
 export const clampedPositionBlackjack = clampFor('blackjack');
+export const clampedPositionBaccarat = clampFor('baccarat');
 
 /** 头顶的情绪表情：弹出 → 漂浮 → 淡出 */
 export function MoodBadge({ playerId }: { playerId: string }) {

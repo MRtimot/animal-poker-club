@@ -4,6 +4,7 @@ import { HandCategory } from '../core/poker/handEvaluator';
 import type { Species } from '../core/player/profile';
 import { ACHIEVEMENTS, MAX_LEVEL, type Stats, levelFromXp } from './progression';
 import type { BjRoundFacts } from '../core/blackjack/types';
+import type { BacRoundFacts } from '../core/baccarat/types';
 
 /** 一手牌结束时服务器从牌桌状态中提取的事实（不是客户端上报的数据） */
 export interface HandFacts {
@@ -47,6 +48,10 @@ export const REWARD = {
     blackjackRound: 10,
     blackjackWin: 20,
     blackjackNatural: 30,
+    /** 百家乐一局更快：经验更少；押中和局额外奖励 */
+    baccaratRound: 8,
+    baccaratWin: 12,
+    baccaratTieWin: 40,
   },
   chips: {
     gameFinished: 50,
@@ -64,7 +69,7 @@ export function effectiveBet(totalBet: number, events: readonly { type: string; 
 }
 
 export function cloneStats(s: Stats): Stats {
-  return { ...s, speciesWins: { ...s.speciesWins }, blackjack: { ...s.blackjack } };
+  return { ...s, speciesWins: { ...s.speciesWins }, blackjack: { ...s.blackjack }, baccarat: { ...s.baccarat } };
 }
 
 /** 一手牌：更新统计并计算经验（不只靠赢牌：完成每一手都有经验） */
@@ -153,6 +158,49 @@ export function applyBlackjackRound(before: Stats, f: BjRoundFacts): { stats: St
   } else if (f.profit < 0) {
     b.losses++;
     b.lossStreak++;
+    b.winStreak = 0;
+  } else b.pushes++;
+  return { stats: s, xp };
+}
+
+/** 百家乐一局：统计与经验（服务器与游客共用，结算键保证每局只调用一次） */
+export function applyBaccaratRound(before: Stats, f: BacRoundFacts): { stats: Stats; xp: number } {
+  const s = cloneStats(before);
+  const b = s.baccarat;
+  let xp = REWARD.xp.baccaratRound;
+  b.rounds++;
+  b.totalBet += f.bet;
+  b.totalPayout += f.payout;
+  b.largestBet = Math.max(b.largestBet, f.bet);
+  b.largestWin = Math.max(b.largestWin, f.profit);
+  if (f.natural) b.naturals++;
+  if (f.winner === 'player') b.playerResults++;
+  else if (f.winner === 'banker') b.bankerResults++;
+  else b.tieResults++;
+  if (f.bets.player > 0) {
+    b.playerBets++;
+    if (f.winner === 'player') b.playerBetWins++;
+    else if (f.winner === 'tie') b.playerBetPushes++;
+  }
+  if (f.bets.banker > 0) {
+    b.bankerBets++;
+    if (f.winner === 'banker') b.bankerBetWins++;
+    else if (f.winner === 'tie') b.bankerBetPushes++;
+  }
+  if (f.bets.tie > 0) {
+    b.tieBets++;
+    if (f.winner === 'tie') {
+      b.tieBetWins++;
+      xp += REWARD.xp.baccaratTieWin;
+    }
+  }
+  if (f.profit > 0) {
+    b.wins++;
+    b.winStreak++;
+    b.bestWinStreak = Math.max(b.bestWinStreak, b.winStreak);
+    xp += REWARD.xp.baccaratWin;
+  } else if (f.profit < 0) {
+    b.losses++;
     b.winStreak = 0;
   } else b.pushes++;
   return { stats: s, xp };

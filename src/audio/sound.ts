@@ -13,7 +13,9 @@ type SfxName =
   | 'card' | 'flip' | 'chip' | 'chips' | 'button' | 'hover' | 'win' | 'lose' | 'turn' | 'allin'
   | 'check' | 'fold' | 'shuffle' | 'unlock' | 'pop' | 'tick' | 'royal'
   // 21 点：揭牌的一下、黑杰克、爆牌、平局
-  | 'bjReveal' | 'bjNatural' | 'bjBust' | 'bjPush';
+  | 'bjReveal' | 'bjNatural' | 'bjBust' | 'bjPush'
+  /** 百家乐：停止下注、第三张牌、和局 */
+  | 'bacClose' | 'bacThird' | 'bacTie';
 
 export type AudioStatus = 'uninitialized' | 'locked' | 'initializing' | 'ready' | 'suspended' | 'resuming' | 'error';
 
@@ -888,6 +890,22 @@ export class SoundEngine {
         // 平局：中性的两个相同音
         [329.6, 329.6].forEach((f, i) => this.tone(f, t + i * 0.2, 0.55, { type: 'sine', vol: 0.06, attack: 0.03 }));
         break;
+      case 'bacClose':
+        // 停止下注：一声柔和的铃（荷官“买定离手”）
+        this.tone(1318.5, t, 0.9, { type: 'sine', vol: 0.05, attack: 0.005 });
+        this.tone(659.3, t, 1.1, { type: 'sine', vol: 0.05, attack: 0.005 });
+        break;
+      case 'bacThird':
+        // 第三张牌：低沉的悬念
+        this.tone(73.4, t, 0.9, { type: 'sine', vol: 0.14, attack: 0.08, glide: 69 });
+        this.noise(t + 0.05, 0.4, { freq: 600, q: 0.7, vol: 0.03, attack: 0.2, type: 'lowpass' });
+        break;
+      case 'bacTie': {
+        // 和局：两个音交替的闪光，安静而少见
+        [523.3, 659.3, 523.3, 659.3, 784].forEach((f, i) => this.tone(f, t + i * 0.11, 0.9 - i * 0.1, { type: 'sine', vol: 0.06, attack: 0.02 }));
+        this.noise(t + 0.2, 0.9, { freq: 9000, q: 0.5, vol: 0.018, attack: 0.3, type: 'highpass' });
+        break;
+      }
       case 'unlock': {
         [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, t + i * 0.07, 0.35, { type: 'sine', vol: 0.12 }));
         break;

@@ -1,0 +1,934 @@
+/* ═════════ 百家乐 HUD ═════════
+   只使用 styles.css 的设计令牌与 gameHud.css 的顶栏 / 牌面；3D 镜头取景会避开牌条与底部面板
+   （CameraRig 的 baccaratInsets 与这里的高度一致）。手机上是重新排的布局，不是电脑版缩小。
+   闲 = 蓝、庄 = 红、和 = 金绿；每个地方同时写字，不只靠颜色。 */
+
+.bac-hud {
+  --bac-player: #6fa8ff;
+  --bac-banker: #ff7f7f;
+  --bac-tie: #8fd6a4;
+}
+
+.bac-phase {
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #1b1206;
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+}
+.bac-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+/* ───────── 闲 / 庄牌条 ───────── */
+.bac-board {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--hud-top) + var(--safe-top) + var(--sp-1));
+  transform: translateX(-50%);
+  z-index: var(--z-hud);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 520px;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-1), var(--sh-inset);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.bac-board.acting {
+  border-color: var(--c-gold-line);
+}
+.bac-hand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 56px;
+  padding: 2px 6px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  transition: border-color var(--t-ui), background var(--t-ui), opacity var(--t-ui);
+}
+.bac-hand.banker {
+  flex-direction: row-reverse;
+}
+.bac-hand.won {
+  border-color: var(--c-gold-line);
+  background: rgba(233, 207, 134, 0.08);
+}
+.bac-hand.lost {
+  opacity: 0.55;
+}
+.bac-hand-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+  min-width: 46px;
+}
+.bac-hand-label b {
+  font-size: 20px;
+}
+.bac-hand.player .bac-hand-label b {
+  color: var(--bac-player);
+}
+.bac-hand.banker .bac-hand-label b {
+  color: var(--bac-banker);
+}
+.bac-hand-label small {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--c-text-3);
+}
+.bac-hand-cards {
+  display: flex;
+  gap: 4px;
+  min-width: 76px;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+}
+.bac-hand-cards .hcard {
+  --w: 34px;
+}
+.bac-hand-score {
+  min-width: 34px;
+  text-align: center;
+  line-height: 1.05;
+}
+.bac-hand-score b {
+  display: block;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  color: var(--c-gold-strong);
+}
+.bac-hand-score small {
+  font-size: 10px;
+  color: var(--c-gold);
+}
+.bac-board-dealer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--c-text-2);
+  white-space: nowrap;
+}
+.bac-board-hint {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 12px;
+  color: var(--c-text-2);
+}
+.bac-road {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+  padding-top: 4px;
+  border-top: 1px solid var(--c-hairline);
+}
+.bac-bead {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+}
+.bac-bead.player {
+  background: #2f5fb3;
+}
+.bac-bead.banker {
+  background: #b33a3a;
+}
+.bac-bead.tie {
+  background: #2f8a55;
+}
+.bac-bead.nat {
+  box-shadow: 0 0 0 1.5px var(--c-gold);
+}
+
+/* ───────── 自己 ───────── */
+.bac-me {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-2), var(--sh-inset);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+.bac-id {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.bac-who {
+  min-width: 0;
+}
+.bac-mybets {
+  display: flex;
+  gap: var(--sp-2);
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--c-hairline);
+}
+.bac-mybet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 58px;
+  line-height: 1.15;
+}
+.bac-mybet i {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 800;
+}
+.bac-mybet.player i {
+  color: var(--bac-player);
+}
+.bac-mybet.banker i {
+  color: var(--bac-banker);
+}
+.bac-mybet.tie i {
+  color: var(--bac-tie);
+}
+.bac-mybet b {
+  font-family: var(--font-num);
+  font-size: 15px;
+}
+.bac-mybet.none b {
+  color: var(--c-text-3);
+}
+.bac-mybet em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--c-text-2);
+}
+.bac-mybet em.up,
+.bac-net.up {
+  color: var(--c-gold-strong);
+}
+.bac-mybet em.down,
+.bac-net.down {
+  color: #f0a193;
+}
+.bac-net {
+  font-family: var(--font-num);
+  font-size: 20px;
+  font-weight: 750;
+}
+
+/* ───────── 面板 ───────── */
+.bac-panel {
+  width: min(520px, 100%);
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  box-shadow: var(--sh-2), var(--sh-inset);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+.bac-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: 16px;
+  font-weight: 700;
+}
+.bac-panel-title b {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+}
+.bac-panel-title b.up {
+  color: var(--c-gold-strong);
+}
+.bac-panel-title b.down {
+  color: #f0a193;
+}
+.bac-result.player {
+  color: var(--bac-player);
+}
+.bac-result.banker {
+  color: var(--bac-banker);
+}
+.bac-result.tie {
+  color: var(--bac-tie);
+}
+.bac-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-text-2);
+}
+.bac-err {
+  font-size: 13px;
+  font-weight: 650;
+  color: #ff9d8c;
+}
+.bac-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bac-btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline-strong);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+  color: var(--c-text);
+  background: var(--c-surface-raised);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--e-out), filter var(--t-fast), opacity var(--t-ui);
+}
+.bac-btn.primary {
+  flex: 1.7;
+  color: #1b1206;
+  border-color: rgba(255, 236, 180, 0.5);
+  background: linear-gradient(180deg, var(--c-gold-strong), var(--c-gold-deep));
+}
+.bac-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.bac-btn kbd,
+.bac-spot kbd,
+.bac-chip kbd {
+  font-family: var(--font-num);
+  font-size: 9px;
+  opacity: 0.5;
+}
+.bac-btn kbd {
+  margin-left: 6px;
+}
+
+/* 下注区 */
+.bac-spots {
+  display: grid;
+  grid-template-columns: 1fr 0.86fr 1fr;
+  gap: var(--sp-2);
+}
+.bac-spot {
+  position: relative;
+  min-height: 66px;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--c-hairline-strong);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font: inherit;
+  color: var(--c-text);
+  cursor: pointer;
+  background: var(--c-surface-raised);
+  transition: border-color var(--t-ui), box-shadow var(--t-ui), background var(--t-ui);
+}
+.bac-spot.player {
+  background: linear-gradient(180deg, rgba(40, 70, 130, 0.55), rgba(20, 32, 64, 0.6));
+}
+.bac-spot.banker {
+  background: linear-gradient(180deg, rgba(130, 36, 40, 0.55), rgba(64, 18, 22, 0.6));
+}
+.bac-spot.tie {
+  background: linear-gradient(180deg, rgba(36, 100, 64, 0.5), rgba(18, 48, 32, 0.6));
+}
+.bac-spot.on {
+  border-color: var(--c-gold);
+  box-shadow: 0 0 0 1px var(--c-gold-line), 0 0 18px rgba(233, 207, 134, 0.18);
+}
+.bac-spot-zh {
+  font-size: 18px;
+  font-weight: 800;
+}
+.bac-spot-en {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--c-text-2);
+  white-space: nowrap;
+}
+.bac-spot-en em {
+  font-style: normal;
+  color: var(--c-gold);
+  letter-spacing: 0;
+}
+.bac-spot-amt {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--c-gold-strong);
+}
+.bac-spot kbd {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+}
+.bac-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.bac-chip {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 4px dashed rgba(255, 255, 255, 0.62);
+  background: radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.2), transparent 62%), var(--chip);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.4);
+  transition: transform var(--t-fast) var(--e-out), opacity var(--t-ui);
+}
+.bac-chip b {
+  font-family: var(--font-num);
+  font-size: 13px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.bac-chip kbd {
+  position: absolute;
+  right: -6px;
+  top: -8px;
+}
+.bac-chip:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+.bac-mini {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: var(--c-surface-raised);
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bac-mini:first-of-type {
+  margin-left: auto;
+}
+.bac-mini:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bac-btn:active:not(:disabled),
+.bac-spot:active,
+.bac-chip:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+}
+.bac-btn:focus-visible,
+.bac-spot:focus-visible,
+.bac-chip:focus-visible,
+.bac-mini:focus-visible,
+.bacr-skip:focus-visible {
+  outline: 2px solid var(--c-gold);
+  outline-offset: 2px;
+}
+@media (hover: none) and (pointer: coarse) {
+  .bac-btn kbd,
+  .bac-spot kbd,
+  .bac-chip kbd {
+    display: none;
+  }
+}
+
+/* 名牌上的下注与输赢 */
+.bacp .sp-status.call {
+  white-space: nowrap;
+}
+.sp-loss {
+  font-family: var(--font-num);
+  font-weight: 700;
+  color: #f0a193;
+}
+
+/* ───────── 结果演出 ───────── */
+.bacr {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-present);
+  display: grid;
+  place-items: center;
+  pointer-events: none !important;
+}
+.bacr-vig {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(120% 90% at 50% 55%, transparent 46%, rgba(4, 3, 8, 0.66));
+  animation: bacrVig 0.6s var(--e-out) forwards;
+}
+.bacr.tie .bacr-vig {
+  background: radial-gradient(120% 90% at 50% 55%, transparent 40%, rgba(4, 16, 10, 0.7));
+}
+@keyframes bacrVig {
+  to {
+    opacity: 1;
+  }
+}
+.bacr-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 44px;
+  transform: translateY(-6vh);
+  text-align: center;
+  animation: bacrIn 0.55s var(--e-out);
+}
+.bacr-card::before {
+  content: '';
+  position: absolute;
+  inset: -46px -90px;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(6, 5, 9, 0.82), rgba(6, 5, 9, 0.55) 58%, transparent);
+}
+.bacr.ph-payout .bacr-card {
+  animation: bacrOut 0.7s 0.35s var(--e-inout) forwards;
+}
+@keyframes bacrIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-6vh + 14px)) scale(0.97);
+  }
+}
+@keyframes bacrOut {
+  to {
+    opacity: 0;
+    transform: translateY(calc(-6vh - 10px));
+  }
+}
+.bacr-rule {
+  width: min(320px, 60vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--c-gold-line), transparent);
+}
+.bacr-en {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5.6vw, 66px);
+  line-height: 1.05;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  color: var(--c-text);
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.7);
+}
+.bacr.player .bacr-en {
+  color: #cfe0ff;
+}
+.bacr.banker .bacr-en {
+  color: #ffd6d0;
+}
+.bacr.tie .bacr-en {
+  color: var(--c-gold-strong);
+  text-shadow: 0 0 34px rgba(233, 207, 134, 0.35), 0 4px 30px rgba(0, 0, 0, 0.7);
+}
+.bacr-zh {
+  font-size: 16px;
+  letter-spacing: 4px;
+  color: var(--c-text-2);
+}
+.bacr-vals {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  color: var(--c-text-2);
+}
+.bacr-vals .win {
+  color: var(--c-gold-strong);
+  font-weight: 750;
+}
+.bacr-vals i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c-gold-line);
+}
+.bacr-profit {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
+  font-weight: 750;
+  color: var(--c-text);
+}
+.bacr-profit.up {
+  color: var(--c-gold-strong);
+}
+.bacr-profit.down {
+  color: #f0a193;
+}
+.bacr-skip {
+  position: absolute;
+  right: calc(var(--sp-4) + var(--safe-right));
+  top: calc(var(--hud-top) + var(--safe-top) + 76px);
+  min-width: 72px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: rgba(10, 9, 13, 0.72);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ───────── 平板 ───────── */
+@media (min-width: 761px) and (max-width: 1180px) {
+  .bac-dock {
+    gap: var(--sp-3);
+  }
+  .bac-panel {
+    width: min(460px, 52vw);
+  }
+  .bac-mybets {
+    padding-left: var(--sp-3);
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) and (orientation: portrait) {
+  .bac-dock {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bac-panel {
+    width: 100%;
+  }
+}
+
+/* ───────── 手机竖屏 ───────── */
+@media (max-width: 760px) {
+  .bac-board {
+    left: calc(var(--sp-2) + var(--safe-left));
+    right: calc(var(--sp-2) + var(--safe-right));
+    transform: none;
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 6px;
+    padding: 6px 8px;
+  }
+  .bac-board-dealer {
+    display: none;
+  }
+  .bac-hand {
+    gap: 4px;
+    min-height: 52px;
+    padding: 2px;
+  }
+  .bac-hand-label {
+    min-width: 26px;
+  }
+  .bac-hand-label b {
+    font-size: 17px;
+  }
+  .bac-hand-label small {
+    display: none;
+  }
+  .bac-hand-cards {
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+  }
+  .bac-hand-cards .hcard {
+    --w: clamp(28px, 8.6vw, 36px);
+  }
+  .bac-hand-score b {
+    font-size: 22px;
+  }
+  .bac-road {
+    justify-content: flex-start;
+    padding-top: 3px;
+  }
+  .bac-bead {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+  .bac-dock {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+    padding-top: var(--sp-3);
+  }
+  .bac-me {
+    gap: var(--sp-2);
+    padding: 8px 10px;
+    justify-content: space-between;
+  }
+  .bac-id .savatar-lg {
+    --size: 30px;
+  }
+  .bac-who .me-chips {
+    margin: 0;
+    font-size: 16px;
+  }
+  .bac-who .me-you {
+    display: none;
+  }
+  .bac-mybets {
+    padding-left: var(--sp-2);
+    gap: 4px;
+  }
+  .bac-mybet {
+    min-width: 44px;
+  }
+  .bac-mybet b {
+    font-size: 13px;
+  }
+  .bac-net {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: -14px;
+    padding: 0 8px;
+    font-size: 15px;
+    border-radius: var(--r-pill);
+    background: rgba(10, 9, 13, 0.85);
+  }
+  .bac-panel {
+    width: 100%;
+    min-height: 196px;
+    padding: 10px;
+  }
+  .bac-spot {
+    min-height: 62px;
+  }
+  .bac-chips {
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .bac-chip {
+    width: 44px;
+    height: 44px;
+  }
+  .bac-mini {
+    min-width: 44px;
+    padding: 0 8px;
+  }
+  .bac-mini:first-of-type {
+    margin-left: 0;
+  }
+  .bacr-card {
+    padding: 10px 16px;
+  }
+  .bacr-skip {
+    top: auto;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--bac-dock, 330px) + var(--sp-2));
+  }
+  .game-hud.bac-hud .chat-fab {
+    top: auto;
+    bottom: calc(var(--bac-dock, 330px) - 4px);
+    transform: scale(0.86);
+    transform-origin: right bottom;
+  }
+}
+@media (max-width: 760px) and (max-height: 700px) {
+  .bac-hand-cards .hcard {
+    --w: 26px;
+  }
+  .bac-hand {
+    min-height: 42px;
+  }
+  .bac-road {
+    display: none;
+  }
+  .bac-panel {
+    min-height: 176px;
+    padding: 8px;
+    gap: 6px;
+  }
+  .bac-spot {
+    min-height: 54px;
+  }
+  .bac-btn {
+    min-height: 44px;
+  }
+}
+/* 手机：外观按钮收起（扑克大厅的百家乐设置里可以选外观）；窄屏再隐藏局数 */
+@media (max-width: 760px) {
+  .bac-tools > .gbar-btn {
+    display: none;
+  }
+}
+@media (max-width: 430px) {
+  .bac-hud .gbar-round {
+    display: none;
+  }
+}
+
+/* ───────── 手机横屏：高度很小，左右排开并压缩 ───────── */
+@media (max-height: 520px) and (min-width: 600px) {
+  .bac-board {
+    top: calc(var(--safe-top) + 3px);
+    left: calc(var(--safe-left) + 152px);
+    transform: none;
+    min-width: 0;
+    grid-template-columns: auto auto;
+    padding: 2px 8px;
+    gap: 10px;
+    z-index: calc(var(--z-hud) + 1);
+  }
+  .bac-board-hint,
+  .bac-tools > .gbar-btn {
+    display: none;
+  }
+  .bac-hand-label,
+  .bac-hand-score {
+    min-width: 20px;
+  }
+  .bac-hand-cards .hcard + .hcard {
+    margin-left: -4px;
+  }
+  .bac-hud .gbar {
+    grid-template-columns: auto 1fr auto;
+  }
+  .bac-hud .gbar-center {
+    justify-self: start;
+    padding: 3px;
+  }
+  .bac-hud .gbar-brand,
+  .bac-hud .gbar-meta,
+  .bac-board-dealer,
+  .bac-road,
+  .bac-hand-label small {
+    display: none;
+  }
+  .bac-hand {
+    min-height: 38px;
+    padding: 0 2px;
+  }
+  .bac-hand-cards {
+    min-height: 34px;
+    min-width: 0;
+  }
+  .bac-hand-cards .hcard {
+    --w: 22px;
+  }
+  .bac-hand-score b {
+    font-size: 18px;
+  }
+  .bac-me {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .bac-id .savatar-lg {
+    --size: 28px;
+  }
+  .bac-who .me-you {
+    display: none;
+  }
+  .bac-mybets {
+    padding-left: 8px;
+  }
+  .bac-mybet {
+    min-width: 40px;
+  }
+  .bac-panel {
+    width: min(430px, 52vw);
+    min-height: 0;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  .bac-spot {
+    min-height: 46px;
+    padding: 2px;
+  }
+  .bac-spot-zh {
+    font-size: 15px;
+  }
+  .bac-spot-en {
+    display: none;
+  }
+  .bac-chip {
+    width: 44px;
+    height: 44px;
+  }
+  .bac-btn {
+    min-height: 44px;
+    padding: 4px 10px;
+    font-size: 14px;
+  }
+  .bacr-en {
+    font-size: 36px;
+  }
+  .bacr-card {
+    transform: translateY(-4vh);
+    gap: 2px;
+  }
+}
+
+/* 4K：整体放大 */
+@media (min-width: 2800px) and (min-height: 1500px) and (hover: hover) and (pointer: fine) {
+  .bac-board,
+  .bac-me,
+  .bac-panel {
+    zoom: 1.45;
+  }
+  .bac-board {
+    top: calc((var(--hud-top) + var(--sp-2)) / 1.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bacr-vig,
+  .bacr-card,
+  .bacr.ph-payout .bacr-card {
+    animation: none;
+  }
+  .bacr-vig {
+    opacity: 1;
+  }
+  .bac-btn,
+  .bac-spot,
+  .bac-chip,
+  .bac-hand {
+    transition: none;
+  }
+}

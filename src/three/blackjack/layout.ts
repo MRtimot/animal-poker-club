@@ -2,7 +2,7 @@
 import type { BlackjackView } from '../../core/blackjack/types';
 import { DEALER_ID } from '../../core/blackjack/types';
 import { BJ_TIMING } from '../../core/blackjack/controller';
-import { BOARD_SCALE, TABLE_Y, seatLayoutAt, type SeatLayout, type V3 } from '../layout';
+import { BOARD_SCALE, TABLE_Y, seatAngles, seatLayoutAt, type SeatLayout, type V3 } from '../layout';
 
 export const SHOE_POS: V3 = [1.72, TABLE_Y + 0.2, -1.7];
 export const DISCARD_POS: V3 = [-1.78, TABLE_Y + 0.07, -1.7];
@@ -10,15 +10,7 @@ export const DISCARD_POS: V3 = [-1.78, TABLE_Y + 0.07, -1.7];
 export const TRAY_POS: V3 = [0, TABLE_Y + 0.01, -2.5];
 export const DEALER_Z = -1.28;
 
-/** 自己在 0，其余玩家左右依次排开；正对面留给庄家 */
-export function seatAngles(count: number, viewerIndex: number): number[] {
-  // 人少时离镜头远一些（坐在侧面），人多时均匀排开；最外侧不超过 1.75 弧度，正对面留给庄家
-  const step = Math.min(1, 1.75 / Math.max(1, Math.floor(count / 2)));
-  return Array.from({ length: count }, (_, i) => {
-    const k = (((i - viewerIndex) % count) + count) % count;
-    return (k <= count / 2 ? k : k - count) * step;
-  });
-}
+export { seatAngles };
 
 export function computeBlackjackLayout(view: Pick<BlackjackView, 'players' | 'viewerId'>): Map<string, SeatLayout> {
   return layoutSeats(

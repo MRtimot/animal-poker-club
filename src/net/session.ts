@@ -6,8 +6,10 @@ import { useAccount } from '../store/accountStore';
 import { voice } from '../audio/voice';
 import { sound } from '../audio/sound';
 import type { BjCommand } from '../core/blackjack/types';
+import type { BacCommand } from '../core/baccarat/types';
 import { localAction, localChat, restartLocalGame } from './localHost';
 import { blackjackChat, blackjackCommand } from './localBlackjack';
+import { baccaratChat, baccaratCommand } from './localBaccarat';
 import { stopLocalTable } from './localTable';
 import { net } from './netClient';
 
@@ -38,17 +40,29 @@ export const session = {
       if (err) g.toast(err, 'error');
     } else if (g.mode === 'online') net.blackjack(cmd, ref);
   },
+  /** 百家乐命令（确认下注、不下注、下一局、补给） */
+  baccarat(cmd: BacCommand) {
+    const g = useGame.getState();
+    if (!g.bac) return;
+    const ref = { round: g.bac.round };
+    if (g.mode === 'local') {
+      const err = baccaratCommand(cmd, ref);
+      if (err) g.toast(err, 'error');
+    } else if (g.mode === 'online') net.baccarat(cmd, ref);
+  },
   chat(text: string) {
     const t = text.trim().slice(0, 100);
     if (!t) return;
     const g = useGame.getState();
     if (g.mode === 'local' && g.bj) blackjackChat(t, 'chat');
+    else if (g.mode === 'local' && g.bac) baccaratChat(t, 'chat');
     else if (g.mode === 'local') localChat(t, 'chat');
     else net.chat(t);
   },
   emote(e: string) {
     const g = useGame.getState();
     if (g.mode === 'local' && g.bj) blackjackChat(e, 'emote');
+    else if (g.mode === 'local' && g.bac) baccaratChat(e, 'emote');
     else if (g.mode === 'local') localChat(e, 'emote');
     else net.emote(e);
   },
@@ -65,7 +79,7 @@ export const session = {
     // 游客回首页 / 大厅时断开连接（首页不保持多人连接）；回到“在线”页面要继续创建 / 加入房间，保持连接
     if (g.mode === 'online' || g.room) net.leaveRoom({ disconnect: useAccount.getState().status !== 'signedIn' && to !== 'online' });
     clearTableFx();
-    g.set({ mode: null, view: null, bj: null, room: null, chat: [], pendingAction: null, modal: null, cameraMode: 'overview' });
+    g.set({ mode: null, view: null, bj: null, bac: null, room: null, chat: [], pendingAction: null, modal: null, cameraMode: 'overview' });
     g.setScreen(to);
   },
 

@@ -536,7 +536,7 @@ export function onServerProgress(event: ProgressEvent, state: AccountState) {
     if (event.newAchievements.length || event.levelAfter > event.levelBefore || event.newAnimals.length) sound.play('unlock', 0.6);
   };
   // 21 点：等结果演出之后再提示，不提前剧透
-  if (useGame.getState().bj) setTimeout(announce, 2600);
+  if (useGame.getState().bj || useGame.getState().bac) setTimeout(announce, 2600);
   else announce();
 }
 

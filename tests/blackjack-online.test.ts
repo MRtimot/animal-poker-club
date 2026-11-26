@@ -555,7 +555,8 @@ describe('账号：单人桌使用虚拟筹码', () => {
     const { userId } = acc.loginWithIdentity({ provider: 'dev', subject: 'old' });
     db.exec("UPDATE player_statistics SET blackjack = 'not json', hands_played = 7");
     expect(acc.getState(userId).stats).toMatchObject({ handsPlayed: 7, blackjack: { rounds: 0, wins: 0 } });
-    expect((db.prepare('SELECT version FROM schema_meta').get() as any).version).toBe(2);
+    // 21 点统计列在第 2 版加入；之后的版本（第 3 版：百家乐统计）由 BACO-16 检查
+    expect((db.prepare('SELECT version FROM schema_meta').get() as any).version).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -628,8 +629,8 @@ describe('统计、成就、存档', () => {
     } else stopLocalBlackjack();
     const chips = useProfile.getState().chips;
     const st = useProfile.getState();
-    expect(st.settleBlackjack('dup', 10, st.stats, 50)).not.toBeNull();
-    expect(st.settleBlackjack('dup', 10, st.stats, 50)).toBeNull();
+    expect(st.settleTableRound('dup', 10, st.stats, 50)).not.toBeNull();
+    expect(st.settleTableRound('dup', 10, st.stats, 50)).toBeNull();
     expect(useProfile.getState().chips).toBe(chips + 50);
     expect(useProfile.getState().refillChips(10)).toBe(chips + 50);
     useProfile.setState({ chips: 3 });

@@ -55,6 +55,7 @@ export function categoryOf(t: string): WsCategory {
       return 'chat';
     case 'action':
     case 'bj':
+    case 'bac':
       return 'action';
     case 'hello':
       return 'hello';

@@ -1,4 +1,5 @@
 // 21 点设置（扑克大厅）：牌桌限额、庄家、同桌动物 → 入座。登录玩家在服务器上开局（押账号的虚拟筹码），游客在本机开局（押本机金币）
+import { REFILLS_PER_DAY } from '../../core/refill';
 import { useRef, useState } from 'react';
 import type { AIPersonality } from '../../core/ai/ai';
 import { PERSONALITIES } from '../../core/ai/ai';
@@ -88,7 +89,7 @@ export function BlackjackSetup() {
         <Seg options={TABLE_TIERS.map((x) => ({ value: x.id, label: `${x.name} ${x.minBet}–${formatChips(x.maxBet)}` }))} value={tier} onChange={setTier} />
         {chips < t.minBet && (
           <div className="small err-text" style={{ marginTop: 6 }}>
-            金币不够这张桌的最低下注（{t.minBet}）。入座后可以领取俱乐部补给（{REFILL_CHIPS}，免费的虚拟金币）。
+            金币不够这张桌的最低下注（{t.minBet}）。入座后可以领取俱乐部补给（{REFILL_CHIPS}，免费的虚拟金币，每天 {REFILLS_PER_DAY} 次）。
           </div>
         )}
       </div>

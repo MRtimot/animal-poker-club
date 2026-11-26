@@ -146,6 +146,19 @@ const MIGRATIONS: { version: number; sql: string }[] = [
     version: 2,
     sql: `ALTER TABLE player_statistics ADD COLUMN blackjack TEXT NOT NULL DEFAULT '{}';`,
   },
+  {
+    // 百家乐统计（JSON：字段由 normalizeBaccarat 校验）
+    version: 3,
+    sql: `ALTER TABLE player_statistics ADD COLUMN baccarat TEXT NOT NULL DEFAULT '{}';`,
+  },
+  {
+    // 俱乐部补给次数：哪一天（UTC+8）、当天已经领了几次（每天 3 次，见 src/core/refill.ts）
+    version: 4,
+    sql: `
+      ALTER TABLE player_progress ADD COLUMN refill_day TEXT NOT NULL DEFAULT '';
+      ALTER TABLE player_progress ADD COLUMN refill_used INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export function openDatabase(file: string): DB {

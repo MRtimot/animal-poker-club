@@ -22,6 +22,8 @@ import { formatChips } from '../../utils/format';
 import { sound } from '../../audio/sound';
 import { BlackjackStatsGrid } from '../blackjack/BlackjackStats';
 import { normalizeBlackjack } from '../../progress/blackjackStats';
+import { BaccaratStatsGrid } from '../baccarat/BaccaratStats';
+import { normalizeBaccarat } from '../../progress/baccaratStats';
 
 // ───────────── Google 登录按钮（Google Identity Services，标准 OpenID Connect） ─────────────
 
@@ -658,6 +660,7 @@ export function ProfileScreen() {
 
         {/* 离线缓存可能是旧版本保存的，没有 21 点统计 */}
         <BlackjackStatsGrid s={normalizeBlackjack(s.blackjack)} />
+        <BaccaratStatsGrid s={normalizeBaccarat(s.baccarat)} />
 
         <div className="row wrap" style={{ gap: 10 }}>
           <Btn kind="ghost" onClick={() => setScreen('collection')}>

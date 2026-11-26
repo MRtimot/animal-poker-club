@@ -178,6 +178,8 @@ export interface BlackjackView {
   phase: BlackjackPhase;
   rules: BlackjackRules;
   economy: BjEconomy;
+  /** 看这份视图的玩家还能补充几次筹码（null = 不限 / 不适用） */
+  refillsLeft: number | null;
   solo: boolean;
   shoe: { remaining: number; size: number };
   dealer: BjDealerView;

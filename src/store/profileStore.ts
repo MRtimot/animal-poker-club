@@ -5,6 +5,7 @@ import { randomId } from '../core/utils/random';
 import { ACHIEVEMENTS, EMPTY_STATS, RecentGame, Stats, levelFromXp, normalizeStats } from '../progress/progression';
 import { STARTING_CHIPS, type AccountState } from '../core/account/types';
 import { REFILL_CHIPS } from '../core/blackjack/rules';
+import { REFILL_USED_UP, cleanRefillUse, refillsLeft, takeRefill, type RefillUse } from '../core/refill';
 import { safeStorage } from '../utils/format';
 
 /**
@@ -44,6 +45,8 @@ export interface ProfileState {
   createdCharacter: boolean;
   /** 虚拟金币（与账号的虚拟筹码是同一种货币；登录后显示服务器上的数额） */
   chips: number;
+  /** 游客今天已经领了几次俱乐部补给（每天 3 次，UTC+8 换日；登录后由服务器计算） */
+  refills: RefillUse | null;
 
   setName: (n: string) => void;
   setAnimal: (a: AnimalConfig) => void;
@@ -56,14 +59,19 @@ export interface ProfileState {
    * 游客在本机结算一局 21 点：经验、统计、成就与金币；同一局（roundId）只结算一次，重复调用返回 null。
    * chipsDelta = 0：在线房间的桌上筹码，不影响持久金币
    */
-  settleBlackjack: (roundId: string, xpGain: number, stats: Stats, chipsDelta: number) => { newAchievements: string[]; levelUp: number | null } | null;
-  /** 金币不够最低下注时补给到固定数额（虚拟金币，没有任何购买）；还够时不变。返回现在的数额 */
-  refillChips: (below: number) => number;
+  settleTableRound: (roundId: string, xpGain: number, stats: Stats, chipsDelta: number) => { newAchievements: string[]; levelUp: number | null } | null;
+  /**
+   * 金币不够最低下注时补给到固定数额（虚拟金币，没有任何购买）；还够时不变。返回现在的数额。
+   * 每天最多 3 次（21 点、百家乐共用）：今天用完时返回原因文字，金币不变。
+   */
+  refillChips: (below: number) => number | string;
+  /** 今天还能领几次补给 */
+  refillsLeft: () => number;
   addRecent: (g: RecentGame) => void;
   resetAll: () => void;
 }
 
-/** 已经结算过的 21 点局号（同一局的结果再次到达时不会重复发放） */
+/** 已经结算过的牌局局号（21 点、百家乐；同一局的结果再次到达时不会重复发放） */
 const settledRounds = new Set<string>();
 
 const initialName = NAME_IDEAS[Math.floor(Math.random() * 6)];
@@ -80,6 +88,7 @@ export const useProfile = create<ProfileState>()(
       recent: [],
       createdCharacter: false,
       chips: STARTING_CHIPS,
+      refills: null,
 
       setName: (n) => set({ name: n.slice(0, 12) }),
       setAnimal: (a) => set({ animal: a }),
@@ -115,7 +124,7 @@ export const useProfile = create<ProfileState>()(
         set({ stats, xp, achievements });
         return { newAchievements, levelUp: newLevel > prevLevel ? newLevel : null };
       },
-      settleBlackjack: (roundId, xpGain, stats, chipsDelta) => {
+      settleTableRound: (roundId, xpGain, stats, chipsDelta) => {
         if (settledRounds.has(roundId)) return null;
         settledRounds.add(roundId);
         if (settledRounds.size > 200) settledRounds.delete(settledRounds.values().next().value!);
@@ -124,12 +133,16 @@ export const useProfile = create<ProfileState>()(
         return res;
       },
       refillChips: (below) => {
-        if (!accountMode && get().chips < below) set({ chips: REFILL_CHIPS });
+        if (accountMode || get().chips >= below) return get().chips;
+        const next = takeRefill(get().refills);
+        if (!next) return REFILL_USED_UP;
+        set({ chips: REFILL_CHIPS, refills: next });
         return get().chips;
       },
+      refillsLeft: () => refillsLeft(get().refills),
       addRecent: (g) => set({ recent: [g, ...get().recent].slice(0, 12) }),
       resetAll: () =>
-        set({ xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], characters: [], animal: DEFAULT_ANIMAL, name: initialName, createdCharacter: false, chips: STARTING_CHIPS }),
+        set({ xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], characters: [], animal: DEFAULT_ANIMAL, name: initialName, createdCharacter: false, chips: STARTING_CHIPS, refills: null }),
     }),
     {
       name: GUEST_KEY,
@@ -189,6 +202,7 @@ export function cleanGuestSave(raw: unknown, cur: ProfileState): Partial<Profile
     createdCharacter: !!p.createdCharacter,
     // 旧存档没有金币：按新玩家的起始数额
     chips: typeof p.chips === 'number' && Number.isFinite(p.chips) && p.chips >= 0 ? Math.min(1_000_000_000, Math.floor(p.chips)) : STARTING_CHIPS,
+    refills: cleanRefillUse(p.refills),
   };
 }
 
@@ -211,7 +225,7 @@ export function showAccount(a: AccountState) {
 /** 退出登录：恢复本机的游客存档 */
 export async function showGuest() {
   accountMode = false;
-  useProfile.setState({ name: initialName, animal: DEFAULT_ANIMAL, characters: [], xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], createdCharacter: false, chips: STARTING_CHIPS });
+  useProfile.setState({ name: initialName, animal: DEFAULT_ANIMAL, characters: [], xp: 0, stats: EMPTY_STATS, achievements: {}, recent: [], createdCharacter: false, chips: STARTING_CHIPS, refills: null });
   await useProfile.persist.rehydrate();
 }
 

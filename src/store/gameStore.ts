@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { TableView } from '../core/game/view';
 import type { ChatMessage, RoomInfo } from '../core/protocol';
 import type { BlackjackView } from '../core/blackjack/types';
+import type { BaccaratView } from '../core/baccarat/types';
 import { DEFAULT_GAME_MODE, type GameMode } from '../core/gameMode';
 
 export type Screen = 'home' | 'login' | 'onboarding' | 'profile' | 'creator' | 'quick' | 'online' | 'room' | 'game' | 'collection' | 'settings';
@@ -21,6 +22,8 @@ export interface GameState {
   view: TableView | null;
   /** 21 点牌桌 */
   bj: BlackjackView | null;
+  /** 百家乐牌桌（与 view / bj 同一时间只会有一个） */
+  bac: BaccaratView | null;
   /** 扑克大厅里选中的游戏模式 */
   hubMode: GameMode;
   room: RoomInfo | null;
@@ -44,6 +47,7 @@ export interface GameState {
   setScreen: (s: Screen) => void;
   setView: (v: TableView | null) => void;
   setBj: (v: BlackjackView | null) => void;
+  setBac: (v: BaccaratView | null) => void;
   setRoom: (r: RoomInfo | null) => void;
   addChat: (m: ChatMessage) => void;
   setChat: (m: ChatMessage[]) => void;
@@ -59,6 +63,7 @@ export const useGame = create<GameState>()((set, get) => ({
   mode: null,
   view: null,
   bj: null,
+  bac: null,
   hubMode: DEFAULT_GAME_MODE,
   room: null,
   chat: [],
@@ -76,12 +81,16 @@ export const useGame = create<GameState>()((set, get) => ({
 
   setScreen: (screen) => set({ screen }),
   setView: (view) => {
-    if (view) set({ view, bj: null, clockOffset: view.serverTime - Date.now() });
+    if (view) set({ view, bj: null, bac: null, clockOffset: view.serverTime - Date.now() });
     else set({ view: null });
   },
   setBj: (bj) => {
-    if (bj) set({ bj, view: null, clockOffset: bj.serverTime - Date.now() });
+    if (bj) set({ bj, view: null, bac: null, clockOffset: bj.serverTime - Date.now() });
     else set({ bj: null });
+  },
+  setBac: (bac) => {
+    if (bac) set({ bac, view: null, bj: null, clockOffset: bac.serverTime - Date.now() });
+    else set({ bac: null });
   },
   setRoom: (room) => set({ room }),
   addChat: (m) => set({ chat: [...get().chat, m].slice(-80) }),

@@ -1,4 +1,5 @@
 // 下注面板：点筹码加注、加减、清空、重复上一局、最大、确认；余额不够时补给。真正的校验由引擎 / 服务器完成
+import { refillCopy } from '../common/refill';
 import { useEffect, useRef, useState } from 'react';
 import type { BlackjackView } from '../../core/blackjack/types';
 import { betError } from '../../core/blackjack/rules';
@@ -96,13 +97,16 @@ export function BetPanel({ view }: { view: BlackjackView }) {
   });
 
   if (!me) return null;
+  const refill = refillCopy(view);
   if (broke)
     return (
       <section className="bj-panel bj-bet" aria-label="补充筹码">
         <div className="bj-panel-title">{view.economy === 'profile' ? '金币不足最低下注' : '筹码用完了'}</div>
-        <p className="bj-hint">最低下注 {formatChips(rules.minBet)}，你有 {formatChips(balance)}。俱乐部可以免费补给虚拟筹码（不是真钱）。</p>
-        <button type="button" className="bj-btn primary" disabled={sent || !!pending} onClick={() => once('rebuy')}>
-          领取俱乐部补给
+        <p className="bj-hint">
+          最低下注 {formatChips(rules.minBet)}，你有 {formatChips(balance)}。俱乐部可以免费补给虚拟筹码（不是真钱）。{refill.note}
+        </p>
+        <button type="button" className="bj-btn primary" disabled={!refill.canRefill || sent || !!pending} onClick={() => once('rebuy')}>
+          {refill.button}
         </button>
       </section>
     );

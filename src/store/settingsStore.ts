@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { onConsentChange, preferencesAllowed } from '../privacy/consent';
+import { isCardSkin, isChipSkin, isTableTheme, type CardSkinId, type ChipSkinId, type TableThemeId } from '../three/skins';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
 
@@ -49,6 +50,10 @@ export interface SettingsState {
   haptics: boolean;
   /** 已经完整看过一次失败演出：之后允许跳过（只跳过画面，牌局结果不变） */
   defeatSeen: boolean;
+  /** 百家乐外观（纯视觉，只保存在这台设备；不影响牌、概率或赔付） */
+  bacTable: TableThemeId;
+  bacCards: CardSkinId;
+  bacChips: ChipSkinId;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -120,6 +125,9 @@ export const useSettings = create<SettingsState>()(
       fullscreenPreference: 'auto',
       haptics: true,
       defeatSeen: false,
+      bacTable: 'royal',
+      bacCards: 'premium',
+      bacChips: 'classic',
       set: (patch) => set(patch),
     }),
     {
@@ -156,6 +164,9 @@ export const useSettings = create<SettingsState>()(
           fullscreenPreference: (['auto', 'on', 'off'] as const).includes(p.fullscreenPreference) ? p.fullscreenPreference : current.fullscreenPreference,
           haptics: bool(p.haptics, current.haptics),
           defeatSeen: bool(p.defeatSeen, current.defeatSeen),
+          bacTable: isTableTheme(p.bacTable) ? p.bacTable : current.bacTable,
+          bacCards: isCardSkin(p.bacCards) ? p.bacCards : current.bacCards,
+          bacChips: isChipSkin(p.bacChips) ? p.bacChips : current.bacChips,
         };
       },
     },

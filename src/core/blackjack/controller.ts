@@ -66,7 +66,14 @@ export interface BlackjackHooks {
   /** 持久金币（每局开始前校正手里的筹码） */
   balanceOf?: (playerId: string) => number | null;
   /** 金币不够最低下注时补充；返回补充后的数额，不允许时返回 null */
-  refill?: (playerId: string) => number | null;
+  /**
+   * 金币 / 筹码不够最低下注时补充（tableChips：桌上筹码模式补到的数额）。
+   * 返回补充后的数额；返回文字 = 不允许的原因（例如今天的次数用完）；null = 暂时不能补充。
+   * 没有提供时：持久金币不能补充，桌上筹码不限次数。
+   */
+  refill?: (playerId: string, tableChips: number) => number | string | null;
+  /** 这名玩家还能补充几次（null = 不限 / 不适用），只用于显示（本地牌桌使用；服务器发送视图时另外计算） */
+  refillsLeft?: (playerId: string) => number | null;
   /** 一局结算（每局恰好一次） */
   onRound?: (results: { playerId: string; facts: BjRoundFacts }[], roundId: string) => void;
   onChat?: (playerId: string, text: string, dialogue: DialogueRef) => void;
@@ -442,7 +449,8 @@ export class BlackjackController {
         case 'rebuy': {
           if (e.phase !== 'betting' && e.phase !== 'round-end') return '现在不能执行这个操作';
           if (e.canBet(p)) return '筹码还够，不需要补充';
-          const next = this.opts.economy === 'profile' ? (this.hooks.refill?.(playerId) ?? null) : this.opts.startingChips;
+          const next = this.hooks.refill ? this.hooks.refill(playerId, this.opts.startingChips) : this.opts.economy === 'profile' ? null : this.opts.startingChips;
+          if (typeof next === 'string') return next;
           if (next === null) return '暂时无法补充筹码';
           e.setBalance(playerId, next);
           p.skipped = false;
@@ -662,6 +670,7 @@ export class BlackjackController {
       phase: e.phase,
       rules: e.rules,
       economy: this.opts.economy,
+      refillsLeft: this.hooks.refillsLeft?.(viewerId) ?? null,
       solo: this.opts.solo,
       shoe: e.shoeInfo,
       dealer: { profile: this.dealer.profile, trait: this.dealer.trait, cards, revealed: e.holeRevealed, value: d.value, soft: d.soft, blackjack: e.holeRevealed && d.blackjack, bust: d.bust },

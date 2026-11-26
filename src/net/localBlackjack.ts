@@ -59,6 +59,7 @@ export function startLocalBlackjack(settings: LocalBlackjackSettings) {
   c.hooks = {
     balanceOf: (id) => (economy === 'profile' && id === LOCAL_PLAYER_ID ? useProfile.getState().chips : null),
     refill: (id) => (economy === 'profile' && id === LOCAL_PLAYER_ID ? useProfile.getState().refillChips(tier.minBet) : PRACTICE_CHIPS),
+    refillsLeft: (id) => (economy === 'profile' && id === LOCAL_PLAYER_ID ? useProfile.getState().refillsLeft() : null),
     onRound: (results) => {
       const mine = results.find((r) => r.playerId === LOCAL_PLAYER_ID);
       if (mine) settleGuestRound(mine.facts, economy);
@@ -69,7 +70,7 @@ export function startLocalBlackjack(settings: LocalBlackjackSettings) {
     },
   };
   const g = useGame.getState();
-  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null, bj: null });
+  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null, bj: null, bac: null });
   chat('system', '系统', `欢迎来到 21 点牌桌！${tier.name} ${tier.minBet}–${tier.maxBet}，庄家 ${c.dealer.profile.name}${economy === 'table' ? '（练习桌：不影响账号筹码）' : ''}`, 'system');
   unsub = c.subscribe(() => {
     if (controller === c) useGame.getState().setBj(c.getView(LOCAL_PLAYER_ID));

@@ -10,6 +10,8 @@ export interface HomeActions {
   aiMode: () => void;
   /** 21 点：直接打开扑克大厅的 21 点 */
   blackjack: () => void;
+  /** 百家乐：直接打开扑克大厅的百家乐 */
+  baccarat: () => void;
   creator: () => void;
   collection: () => void;
   settings: () => void;

@@ -7,6 +7,7 @@ import type { AccountState, ProgressEvent } from './account/types';
 import type { DialogueRef } from './character/dialogue';
 import type { GameMode } from './gameMode';
 import type { BjCommand, BlackjackView } from './blackjack/types';
+import type { BacCommand, BaccaratView } from './baccarat/types';
 import type { DealerChoice } from './blackjack/dealers';
 
 export interface RoomSettings {
@@ -63,6 +64,8 @@ export interface SoloSettings {
   bigBlind: number;
   /** 单人 21 点：对局在服务器上运行，下注使用账号的虚拟筹码 */
   blackjack?: { dealer: DealerChoice; tier: string };
+  /** 单人百家乐：对局在服务器上运行，下注使用账号的虚拟筹码；opponents 是同桌的 AI 动物（0 ~ 3 位） */
+  baccarat?: { dealer: DealerChoice; tier: string };
 }
 
 export interface ChatMessage {
@@ -95,6 +98,8 @@ export type ClientMessage =
   | { t: 'setMode'; gameMode: GameMode }
   /** 21 点：actionId 防重复执行；round / token 用来拒绝过期的操作 */
   | { t: 'bj'; cmd: BjCommand; actionId?: string; round?: number; token?: number }
+  /** 百家乐：round 必须是当前局（上一局 / 伪造的局号一律拒绝） */
+  | { t: 'bac'; cmd: BacCommand; actionId?: string; round?: number }
   /** actionId：同一个动作重复发送只执行一次；hand：动作针对的手数，过期的动作会被拒绝 */
   | { t: 'action'; action: PlayerAction; actionId?: string; hand?: number }
   | { t: 'chat'; text: string }
@@ -112,7 +117,7 @@ export type ClientMessage =
  * 实时协议版本：消息格式有不兼容的变化时加 1。
  * 网站更新后，一直开着、没有刷新的旧页面仍在运行旧代码：版本不一致时提示玩家刷新，而不是悄悄出错。
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export type ServerMessage =
   /** resumed：是否恢复了之前的会话（服务器重启后旧会话不存在，为 false） */
@@ -124,6 +129,7 @@ export type ServerMessage =
   | { t: 'room'; room: RoomInfo | null }
   | { t: 'state'; view: TableView }
   | { t: 'bjState'; view: BlackjackView }
+  | { t: 'bacState'; view: BaccaratView }
   | { t: 'chat'; message: ChatMessage }
   | { t: 'chatHistory'; messages: ChatMessage[] }
   | { t: 'error'; message: string }

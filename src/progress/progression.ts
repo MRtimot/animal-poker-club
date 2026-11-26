@@ -2,6 +2,7 @@
 import { HandCategory } from '../core/poker/handEvaluator';
 import { SPECIES, Species } from '../core/player/profile';
 import { EMPTY_BLACKJACK, normalizeBlackjack, type BlackjackStats } from './blackjackStats';
+import { EMPTY_BACCARAT, normalizeBaccarat, type BaccaratStats } from './baccaratStats';
 
 export const XP_RULES = {
   handPlayed: 30,
@@ -54,6 +55,8 @@ export interface Stats {
   speciesWins: Partial<Record<Species, number>>;
   /** 21 点 */
   blackjack: BlackjackStats;
+  /** 百家乐 */
+  baccarat: BaccaratStats;
 }
 
 export const EMPTY_STATS: Stats = {
@@ -75,14 +78,15 @@ export const EMPTY_STATS: Stats = {
   totalWinnings: 0,
   speciesWins: {},
   blackjack: EMPTY_BLACKJACK,
+  baccarat: EMPTY_BACCARAT,
 };
 
 /** 旧存档缺少的统计字段补 0（数据版本升级时不丢失存档） */
 export function normalizeStats(s: any): Stats {
-  const out: any = { ...EMPTY_STATS, speciesWins: {}, blackjack: normalizeBlackjack(s?.blackjack) };
+  const out: any = { ...EMPTY_STATS, speciesWins: {}, blackjack: normalizeBlackjack(s?.blackjack), baccarat: normalizeBaccarat(s?.baccarat) };
   if (s && typeof s === 'object') {
     for (const k of Object.keys(EMPTY_STATS) as (keyof Stats)[]) {
-      if (k === 'speciesWins' || k === 'blackjack') continue;
+      if (k === 'speciesWins' || k === 'blackjack' || k === 'baccarat') continue;
       const v = Number(s[k]);
       if (Number.isFinite(v)) out[k] = Math.floor(v);
     }
@@ -125,6 +129,15 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'bj_double', name: '加倍成功', desc: '21 点：加倍之后赢下这一手', icon: '⏫', check: (s) => s.blackjack.doubleWins >= 1 },
   { id: 'bj_exact', name: '刚好 21', desc: '21 点：用三张以上的 21 点赢下一手', icon: '🎯', check: (s) => s.blackjack.wins21 >= 1 },
   { id: 'bj_comeback', name: '绝地反击', desc: '21 点：连输 3 局之后赢回一局', icon: '🌅', check: (s) => s.blackjack.comebacks >= 1 },
+  { id: 'bac_first', name: '初入百家乐', desc: '百家乐：完成第一局', icon: '♦️', check: (s) => s.baccarat.rounds >= 1 },
+  { id: 'bac_player', name: '站在闲家', desc: '百家乐：押闲赢一次', icon: '🟦', check: (s) => s.baccarat.playerBetWins >= 1 },
+  { id: 'bac_banker', name: '跟着庄家', desc: '百家乐：押庄赢一次', icon: '🟥', check: (s) => s.baccarat.bankerBetWins >= 1 },
+  { id: 'bac_tie', name: '难得一和', desc: '百家乐：押和命中一次', icon: '🟩', check: (s) => s.baccarat.tieBetWins >= 1 },
+  { id: 'bac_10', name: '百家乐常客', desc: '百家乐：完成 10 局', icon: '🃏', check: (s) => s.baccarat.rounds >= 10 },
+  { id: 'bac_100', name: '百家乐老手', desc: '百家乐：完成 100 局', icon: '🎴', check: (s) => s.baccarat.rounds >= 100 },
+  { id: 'bac_1000', name: '百家乐大师', desc: '百家乐：完成 1000 局', icon: '👑', check: (s) => s.baccarat.rounds >= 1000 },
+  { id: 'bac_bigwin', name: '一局大赢', desc: '百家乐：一局净赢 1,000 以上', icon: '💰', check: (s) => s.baccarat.largestWin >= 1000 },
+  { id: 'bac_streak5', name: '五连胜', desc: '百家乐：连续 5 局净赢', icon: '🔥', check: (s) => s.baccarat.bestWinStreak >= 5 },
 ];
 
 export function isSpeciesUnlocked(id: Species, level: number, achievements: Record<string, number>): boolean {

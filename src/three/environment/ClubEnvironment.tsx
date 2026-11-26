@@ -395,17 +395,18 @@ export function ClubEnvironment({ quality }: { quality: Quality }) {
 }
 
 /** 专业扑克桌：绒布台面、木质下注圈、皮质包边、黄铜嵌线、杯架、漆面木桌裙 */
-export function PokerTableMesh() {
+/** felt / rail：百家乐的牌桌主题（纯外观）；不传时与原来完全一样 */
+export function PokerTableMesh({ felt: feltColor, rail }: { felt?: string; rail?: string } = {}) {
   const theme = useSettings((s) => s.room);
   const T = THEME[theme];
-  const felt = useMemo(() => feltMaps(), []);
+  const felt = useMemo(() => feltMaps(feltColor), [feltColor]);
   const feltMat = useMemo(
     () => new THREE.MeshStandardMaterial({ map: felt.map, normalMap: felt.normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughness: 0.93, metalness: 0 }),
     [felt],
   );
-  const feltSide = useMemo(() => new THREE.MeshStandardMaterial({ color: '#174a31', roughness: 0.95 }), []);
+  const feltSide = useMemo(() => new THREE.MeshStandardMaterial({ color: feltColor ?? '#174a31', roughness: 0.95 }), [feltColor]);
   // 桌边皮革与黄铜嵌线：独立的副本（沙发等不受影响），失败演出时泛出克制的暗红
-  const railMat = useMemo(() => leather(T.leather).clone(), [T.leather]);
+  const railMat = useMemo(() => leather(rail ?? T.leather).clone(), [rail, T.leather]);
   const inlayMat = useMemo(() => brass().clone(), []);
   useEffect(
     () => () => {
@@ -413,6 +414,14 @@ export function PokerTableMesh() {
       inlayMat.dispose();
     },
     [railMat, inlayMat],
+  );
+  // 换牌桌主题时释放旧的桌布材质（贴图本身有缓存，不释放）
+  useEffect(
+    () => () => {
+      feltMat.dispose();
+      feltSide.dispose();
+    },
+    [feltMat, feltSide],
   );
   useFrame(() => {
     const r = defeatAccent.red;

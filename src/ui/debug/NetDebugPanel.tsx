@@ -10,6 +10,9 @@ import type { ForcedOutcome } from '../../core/blackjack/debug';
 import { debugForce } from '../../net/localBlackjack';
 import { useProfile } from '../../store/profileStore';
 import { fairnessRows } from './bjFairness';
+import { bacFairnessRows, bacRows } from './bacDebug';
+import { useBacCine } from '../../animation/baccarat/cineStore';
+import { debugForceBac } from '../../net/localBaccarat';
 
 /** 强制结果（只在开发模式、本地 21 点的下注阶段）：正式构建里整段会被移除 */
 const FORCE: readonly (readonly [ForcedOutcome, string])[] = import.meta.env.DEV
@@ -39,6 +42,9 @@ export function NetDebugPanel() {
   const view = useGame((s) => s.view);
   const bj = useGame((s) => s.bj);
   const bjStats = useProfile((s) => s.stats.blackjack);
+  const bac = useGame((s) => s.bac);
+  const bacStats = useProfile((s) => s.stats.baccarat);
+  const mode = useGame((s) => s.mode);
   const st = useSettings();
   // 音频状态不在 React 状态里：调试面板打开时每秒刷新一次
   const [, tick] = useState(0);
@@ -89,6 +95,11 @@ export function NetDebugPanel() {
     );
     if (import.meta.env.DEV) rows.push(...fairnessRows(bj, bjStats));
   }
+  if (bac) {
+    const c = useBacCine.getState();
+    rows.push(...bacRows(bac, mode === 'online', c.cine ? `${c.cine.winner} · ${c.cine.phase}` : c.paidRound === bac.roundId ? 'paid' : 'idle'));
+    if (import.meta.env.DEV) rows.push(...bacFairnessRows(bac, bacStats));
+  }
   return (
     <div className="net-debug" aria-hidden>
       {rows.map(([k, v]) => (
@@ -96,6 +107,15 @@ export function NetDebugPanel() {
           <b>{k}:</b> {v}
         </div>
       ))}
+      {import.meta.env.DEV && bac?.phase === 'betting' && !room && (
+        <div className="net-debug-force">
+          {(['player', 'banker', 'tie', 'natural', 'third'] as const).map((kind) => (
+            <button key={kind} type="button" tabIndex={-1} onClick={() => void debugForceBac(kind).then((m) => useGame.getState().toast(m, 'info'))}>
+              Force {kind}
+            </button>
+          ))}
+        </div>
+      )}
       {import.meta.env.DEV && bj?.phase === 'betting' && !room && (
         <div className="net-debug-force">
           {FORCE.map(([kind, label]) => (

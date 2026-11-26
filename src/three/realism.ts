@@ -89,11 +89,12 @@ export interface PBRMaps {
 // ───────────── 桌布 ─────────────
 
 /** 专业扑克桌绒布：细纤维法线、大尺度颜色变化、玩家位置轻微磨损、印刷的下注线 */
-export function feltMaps(): PBRMaps {
-  return memo('felt', () => {
+/** 桌布：默认是原来的绿色（德州 / 21 点不变）；百家乐的牌桌主题可以换颜色（只是外观） */
+export function feltMaps(color = '#1d5e3d'): PBRMaps {
+  return memo(color === '#1d5e3d' ? 'felt' : 'felt-' + color, () => {
     const S = 1024;
     const { c, g } = canvas(S, S);
-    g.fillStyle = '#1d5e3d';
+    g.fillStyle = color;
     g.fillRect(0, 0, S, S);
     // 大尺度颜色变化
     const { c: n, g: ng } = canvas(S, S);

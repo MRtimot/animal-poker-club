@@ -87,6 +87,11 @@ export function HomeScreen() {
         set({ hubMode: 'blackjack-21' });
         setScreen(created ? 'quick' : 'creator');
       },
+      baccarat: () => {
+        enterOnEntryGesture();
+        set({ hubMode: 'baccarat' });
+        setScreen(created ? 'quick' : 'creator');
+      },
       createRoom: () => {
         enterOnEntryGesture();
         set({ onlineTab: 'create' });

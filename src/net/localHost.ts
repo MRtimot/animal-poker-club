@@ -56,7 +56,7 @@ export function startLocalGame(settings: LocalGameSettings) {
     if (m) chat(playerId, m.profile.name, text, kind, dialogue);
   };
   const g = useGame.getState();
-  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null, bj: null });
+  g.set({ mode: 'local', room: null, chat: [], playerId: LOCAL_PLAYER_ID, view: null, bj: null, bac: null });
   chat('system', '系统', `欢迎来到动物扑克俱乐部！本局盲注 ${settings.smallBlind}/${settings.bigBlind}，祝你好运 🍀`, 'system');
   unsub = c.subscribe(() => {
     if (controller === c) useGame.getState().setView(c.getView(LOCAL_PLAYER_ID));

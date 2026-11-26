@@ -17,7 +17,7 @@ export function settleGuestRound(f: BjRoundFacts, economy: BjEconomy) {
   const st = useProfile.getState();
   const before = { level: levelFromXp(st.xp), ach: st.achievements };
   const { stats, xp } = applyBlackjackRound(st.stats, f);
-  const res = st.settleBlackjack(f.roundId, xp, stats, economy === 'profile' ? f.profit : 0);
+  const res = st.settleTableRound(f.roundId, xp, stats, economy === 'profile' ? f.profit : 0);
   if (!res || (!res.newAchievements.length && !res.levelUp)) return;
   setTimeout(() => {
     const toast = useGame.getState().toast;
@@ -50,7 +50,7 @@ export class BlackjackGate {
     this.last = null;
     this.seen = false;
   }
-  due(v: Pick<BlackjackView, 'roundId' | 'phase'>): boolean {
+  due(v: { roundId: string; phase: string }): boolean {
     const first = !this.seen;
     this.seen = true;
     if (v.phase !== 'round-end' || v.roundId === this.last) return false;

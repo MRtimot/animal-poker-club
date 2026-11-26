@@ -15,7 +15,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build:api": "node scripts/build-api.mjs",
-    "sim:blackjack": "tsx scripts/blackjack-sim.ts"
+    "sim:blackjack": "tsx scripts/blackjack-sim.ts",
+    "sim:baccarat": "tsx scripts/baccarat-sim.ts"
   },
   "dependencies": {
     "@react-three/drei": "9.122.0",

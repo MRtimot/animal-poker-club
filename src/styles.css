@@ -4579,7 +4579,7 @@ html::backdrop {
 /* ═════════ 游戏模式选择（扑克大厅）与 21 点设置 ═════════ */
 .mode-select {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-top: 16px;
 }
@@ -4603,6 +4603,75 @@ html::backdrop {
 }
 .mode-pick.blackjack-21 {
   background: linear-gradient(160deg, rgba(14, 46, 34, 0.92), rgba(10, 12, 14, 0.95));
+}
+.mode-pick.baccarat {
+  background: linear-gradient(160deg, rgba(20, 30, 70, 0.92), rgba(12, 10, 18, 0.95));
+}
+/* 百家乐设置：赔率与外观 */
+.bac-suit {
+  color: #9cb8ff;
+}
+.bac-odds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 4px 0 10px;
+  font-size: 13px;
+  color: var(--c-text-2);
+}
+.bac-odds b {
+  color: var(--c-gold);
+  margin-right: 2px;
+}
+.bac-cos .field {
+  margin-bottom: 10px;
+}
+.bac-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bac-swatches button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-hairline-strong);
+  background: var(--c-surface-raised);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bac-swatches button.on {
+  border-color: var(--c-gold);
+  box-shadow: 0 0 0 1px var(--c-gold-line);
+}
+.bac-swatches i {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+.bac-swatches i.bac-cardchip {
+  width: 20px;
+  height: 28px;
+  border-radius: 4px;
+}
+.home-modes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+.home-modes .home-bj {
+  margin-top: 0;
+}
+.home-bac {
+  background: linear-gradient(160deg, rgba(20, 30, 70, 0.85), rgba(10, 12, 18, 0.9));
 }
 .mode-pick.on {
   border-color: var(--c-gold);
@@ -4792,9 +4861,19 @@ html::backdrop {
   white-space: nowrap;
 }
 @media (max-width: 560px) {
+  .mode-select {
+    gap: 8px;
+  }
   .mode-pick {
-    min-height: 92px;
-    padding: 12px;
+    min-height: 76px;
+    padding: 10px;
+  }
+  .mp-lines {
+    display: none;
+  }
+  .home-modes {
+    gap: 8px;
+    margin-top: 14px;
   }
   .mp-en {
     font-size: 14px;

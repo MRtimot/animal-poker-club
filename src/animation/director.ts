@@ -16,6 +16,8 @@ import { EMOTE_ANIM } from './animalAnimations';
 import type { ChatMessage } from '../core/protocol';
 import { DEALER_ID, type BlackjackView } from '../core/blackjack/types';
 import { computeBlackjackLayout } from '../three/blackjack/layout';
+import type { BaccaratView } from '../core/baccarat/types';
+import { computeBaccaratLayout } from '../three/baccarat/layout';
 import { defeatVerdict } from './defeat/defeatRules';
 import { defeatActive } from './defeat/defeatStore';
 
@@ -380,7 +382,7 @@ export function useTableDirector(view: TableView | null) {
 }
 
 /** 聊天 / 表情 → 气泡与动物动作 */
-export function useChatReactions(view: TableView | null, bj: BlackjackView | null = null) {
+export function useChatReactions(view: TableView | null, bj: BlackjackView | null = null, bac: BaccaratView | null = null) {
   const seen = useRef<string | null>(null);
   const chat = useGame((s) => s.chat);
   useEffect(() => {
@@ -404,8 +406,9 @@ export function useChatReactions(view: TableView | null, bj: BlackjackView | nul
         // 重连 / 收到历史记录时不重播旧台词
         const age = Date.now() + (g.mode === 'online' ? g.clockOffset : 0) - m.time;
         if (age > 6000 || !dialogueAllowed(m.dialogue)) continue;
-        // 21 点的庄家不在座位列表里
-        const animal = m.from === DEALER_ID ? bj?.dealer.profile.animal : (view ?? bj)?.players.find((p) => p.id === m.from)?.profile.animal;
+        // 21 点 / 百家乐的庄家不在座位列表里（两种牌桌的庄家编号相同）
+        const dealer = bj?.dealer.profile.animal ?? bac?.dealer.profile.animal;
+        const animal = m.from === DEALER_ID ? dealer : (view ?? bj ?? bac)?.players.find((p) => p.id === m.from)?.profile.animal;
         if (!animal) continue;
         void playDialogue(m.from, m.text, m.dialogue, animal, { name: m.name });
         continue;
@@ -416,8 +419,8 @@ export function useChatReactions(view: TableView | null, bj: BlackjackView | nul
         const a = EMOTE_ANIM[m.text];
         if (a) fx.play(m.from, a);
         if (m.text === '😎') fx.setCool(m.from, 3600);
-        if (view || bj) {
-          const l = (bj ? computeBlackjackLayout(bj) : computeLayout(view!)).get(m.from);
+        if (view || bj || bac) {
+          const l = (bj ? computeBlackjackLayout(bj) : bac ? computeBaccaratLayout(bac) : computeLayout(view!)).get(m.from);
           if (l && m.text === '❤️') fx.burst(l.head, 'hearts');
           if (l && m.text === '🔥') fx.burst(l.head, 'fire');
           if (l && (m.text === '👏' || m.text === '😂' || m.text === '🤣')) fx.burst(l.head, 'sparkle');
@@ -426,5 +429,5 @@ export function useChatReactions(view: TableView | null, bj: BlackjackView | nul
         fx.play(m.from, 'talk');
       }
     }
-  }, [chat, view, bj]);
+  }, [chat, view, bj, bac]);
 }

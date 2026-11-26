@@ -8,7 +8,7 @@ import { ChatPanel } from '../game/ChatPanel';
 import { formatChips } from '../../utils/format';
 import { useIsPC } from '../../utils/pc';
 import { enterOnEntryGesture } from '../../display/fullscreen';
-import { GAME_MODES, gameModeOf, type GameMode } from '../../core/gameMode';
+import { GAME_MODES, MODE_SUIT, gameModeOf, isHouseGame, type GameMode } from '../../core/gameMode';
 import { VirtualTag } from '../notice/GameNotice';
 
 export function RoomLobby() {
@@ -31,7 +31,7 @@ export function RoomLobby() {
   const full = room.members.length >= room.settings.maxPlayers;
   const notReady = room.members.filter((m) => !m.isAI && !m.ready);
   const mode = gameModeOf(room.settings);
-  const bj = mode === 'blackjack-21';
+  const bj = isHouseGame(mode);
   const minPlayers = GAME_MODES[mode].minPlayers;
   const canStart = isHost && room.members.length >= minPlayers && notReady.length === 0;
   const humans = room.members.filter((m) => !m.isAI).length;
@@ -125,10 +125,10 @@ export function RoomLobby() {
         <div className="field lobby-mode">
           <label>游戏模式{isHost ? '' : '（由房主选择）'}</label>
           {isHost ? (
-            <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${m === 'blackjack-21' ? '♠' : '♥'} ${GAME_MODES[m].name}` }))} value={mode} onChange={(m) => m !== mode && net.setMode(m)} />
+            <Seg options={(Object.keys(GAME_MODES) as GameMode[]).map((m) => ({ value: m, label: `${MODE_SUIT[m]} ${GAME_MODES[m].name}` }))} value={mode} onChange={(m) => m !== mode && net.setMode(m)} />
           ) : (
             <div className="tag">
-              {bj ? '♠' : '♥'} {GAME_MODES[mode].name} · {GAME_MODES[mode].en}
+              {MODE_SUIT[mode]} {GAME_MODES[mode].name} · {GAME_MODES[mode].en}
             </div>
           )}
         </div>

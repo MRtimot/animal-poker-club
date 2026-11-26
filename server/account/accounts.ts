@@ -1,5 +1,6 @@
 // 玩家账号服务：玩家档案、进度、收藏、成就、统计、设置。
 // 服务器是唯一可信来源：经验、等级、筹码、成就、解锁内容只在这里计算和写入。
+import { REFILL_USED_UP, refillsLeft, takeRefill, type RefillUse } from '../../src/core/refill';
 import { tx, type DB } from '../db/database';
 import { randomId } from '../../src/core/utils/random';
 import {
@@ -14,8 +15,10 @@ import {
 } from '../../src/core/account/types';
 import { DEFAULT_ANIMAL, NAME_IDEAS, SPECIES, sanitizeAnimal, sanitizeName, type AnimalConfig, type PlayerProfile, type Species } from '../../src/core/player/profile';
 import { EMPTY_STATS, isSpeciesUnlocked, normalizeStats, xpForLevel, type RecentGame, type Stats } from '../../src/progress/progression';
-import { REWARD, applyBlackjackRound, applyGame, applyHand, clampLevel, newAchievements, type GameFacts, type HandFacts } from '../../src/progress/rewards';
+import { REWARD, applyBaccaratRound, applyBlackjackRound, applyGame, applyHand, clampLevel, newAchievements, type GameFacts, type HandFacts } from '../../src/progress/rewards';
 import { mergeGuestBlackjack } from '../../src/progress/blackjackStats';
+import { mergeGuestBaccarat } from '../../src/progress/baccaratStats';
+import type { BacRoundFacts } from '../../src/core/baccarat/types';
 import type { BjRoundFacts } from '../../src/core/blackjack/types';
 
 export class AccountError extends Error {
@@ -180,14 +183,15 @@ export class AccountService {
     for (const [k, col] of STAT_COLS) s[k] = Number(r[col]);
     s.speciesWins = safeJson(r.species_wins, {});
     s.blackjack = safeJson(r.blackjack, {});
+    s.baccarat = safeJson(r.baccarat, {});
     return normalizeStats(s);
   }
 
   private writeStats(userId: string, s: Stats) {
     const sets = STAT_COLS.map(([, c]) => `${c} = ?`).join(', ');
     this.db
-      .prepare(`UPDATE player_statistics SET ${sets}, species_wins = ?, blackjack = ?, updated_at = ? WHERE user_id = ?`)
-      .run(...STAT_COLS.map(([k]) => Math.floor(Number(s[k]) || 0)), JSON.stringify(s.speciesWins), JSON.stringify(s.blackjack), Date.now(), userId);
+      .prepare(`UPDATE player_statistics SET ${sets}, species_wins = ?, blackjack = ?, baccarat = ?, updated_at = ? WHERE user_id = ?`)
+      .run(...STAT_COLS.map(([k]) => Math.floor(Number(s[k]) || 0)), JSON.stringify(s.speciesWins), JSON.stringify(s.blackjack), JSON.stringify(s.baccarat), Date.now(), userId);
   }
 
   private readAchievements(userId: string): Record<string, number> {
@@ -389,6 +393,7 @@ export class AccountService {
       for (const k of ['biggestPot', 'biggestProfit', 'bestHand', 'bestStreak'] as const) merged[k] = Math.max(cur[k], gs[k]);
       for (const [sp, v] of Object.entries(gs.speciesWins)) merged.speciesWins[sp as Species] = (merged.speciesWins[sp as Species] ?? 0) + (v ?? 0);
       merged.blackjack = mergeGuestBlackjack(cur.blackjack, gs.blackjack, { rounds: GUEST_LIMITS.maxHands, chips: GUEST_LIMITS.maxPot });
+      merged.baccarat = mergeGuestBaccarat(cur.baccarat, gs.baccarat, { rounds: GUEST_LIMITS.maxHands, chips: GUEST_LIMITS.maxPot });
       this.writeStats(userId, merged);
       this.applyRewards(userId, guestXp, 0, merged);
 
@@ -487,17 +492,47 @@ export class AccountService {
     });
   }
 
+  /** 百家乐一局。eventKey 唯一，重复调用不会重复发奖；useWallet：单人桌的输赢计入账号筹码 */
+  recordBaccarat(userId: string, eventKey: string, f: BacRoundFacts, useWallet: boolean): ProgressEvent | null {
+    return tx(this.db, () => {
+      if (!this.exists(userId)) return null;
+      const ins = this.db.prepare('INSERT OR IGNORE INTO processed_events (user_id, event_key, created_at) VALUES (?, ?, ?)').run(userId, eventKey, Date.now());
+      if (Number(ins.changes) === 0) return null;
+      const { stats, xp } = applyBaccaratRound(this.readStats(userId), f);
+      return this.applyRewards(userId, xp, 0, stats, useWallet ? f.profit : 0);
+    });
+  }
+
   /** 虚拟筹码余额 */
   chipsOf(userId: string): number {
     return this.readProgress(userId).chips;
   }
 
-  /** 虚拟筹码低于 below 时补给到 amount；还够时不变。返回现在的数额 */
-  refillChips(userId: string, below: number, amount: number): number {
+  /** 今天的补给记录（UTC+8 换日） */
+  private refillUse(userId: string): RefillUse {
+    const r = this.db.prepare('SELECT refill_day, refill_used FROM player_progress WHERE user_id = ?').get(userId) as any;
+    if (!r) throw new AccountError(404, '玩家不存在');
+    return { day: String(r.refill_day), used: Number(r.refill_used) };
+  }
+
+  /** 今天还能领几次俱乐部补给 */
+  refillsLeft(userId: string, now = Date.now()): number {
+    return refillsLeft(this.refillUse(userId), now);
+  }
+
+  /**
+   * 虚拟筹码低于 below 时补给到 amount；还够时不变。返回现在的数额。
+   * 每天最多 3 次（21 点、百家乐共用）：今天用完时返回原因文字，筹码不变。检查与记录在同一个事务里，连点也不会多领。
+   */
+  refillChips(userId: string, below: number, amount: number, now = Date.now()): number | string {
     return tx(this.db, () => {
       const { chips } = this.readProgress(userId);
       if (chips >= below) return chips;
-      this.db.prepare('UPDATE player_progress SET virtual_chips = ?, version = version + 1, updated_at = ? WHERE user_id = ?').run(amount, Date.now(), userId);
+      const next = takeRefill(this.refillUse(userId), now);
+      if (!next) return REFILL_USED_UP;
+      this.db
+        .prepare('UPDATE player_progress SET virtual_chips = ?, refill_day = ?, refill_used = ?, version = version + 1, updated_at = ? WHERE user_id = ?')
+        .run(amount, next.day, next.used, now, userId);
       return amount;
     });
   }

@@ -72,10 +72,12 @@ function GameNoticeDialog() {
               <span className="gnx-en">Animal Poker Club is a virtual entertainment game.</span>
             </p>
 
-            <div className="gnx-modes" aria-label="游戏模式：德州扑克、21 点">
+            <div className="gnx-modes" aria-label="游戏模式：德州扑克、21 点、百家乐">
               <span>德州扑克 Texas Hold&rsquo;em</span>
               <i aria-hidden>•</i>
               <span>21 点 Blackjack 21</span>
+              <i aria-hidden>•</i>
+              <span>百家乐 Baccarat</span>
             </div>
 
             <p className="gnx-body">

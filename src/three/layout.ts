@@ -70,3 +70,16 @@ export function computeLayout(view: Pick<TableView, 'players' | 'viewerId'>): Ma
 export function boardPos(i: number): V3 {
   return [(i - 2) * BOARD_GAP, TABLE_Y + 0.012, 0.18];
 }
+
+// ───────── 玩家对庄家的牌桌（21 点、百家乐共用） ─────────
+
+/** 庄家在正对面：自己在 0，其余玩家左右依次排开；正对面留给庄家 */
+export function seatAngles(count: number, viewerIndex: number): number[] {
+  // 人少时离镜头远一些（坐在侧面），人多时均匀排开；最外侧不超过 1.75 弧度，正对面留给庄家
+  const step = Math.min(1, 1.75 / Math.max(1, Math.floor(count / 2)));
+  return Array.from({ length: count }, (_, i) => {
+    const k = (((i - viewerIndex) % count) + count) % count;
+    return (k <= count / 2 ? k : k - count) * step;
+  });
+}
+
