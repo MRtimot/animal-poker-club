@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { createServer } from '../server/index';
-import { DEFAULT_ANIMAL } from '../src/core/player/profile';
+import { DEFAULT_ANIMAL, SPECIES } from '../src/core/player/profile';
 import type { ServerMessage } from '../src/core/protocol';
 import type { AccountState } from '../src/core/account/types';
 import { GUEST_LIMITS } from '../server/account/accounts';
@@ -197,8 +197,12 @@ describe('Google 登录与玩家档案', () => {
     await b.googleLogin();
     const fox = { ...DEFAULT_ANIMAL, species: 'fox', furColor: 'gold', hat: 'crown', glasses: 'shades', outfit: 'suit' };
     expect((await b.req('PATCH', '/api/player/profile', { animal: fox })).status).toBe(200);
-    const dragon = await b.req('PATCH', '/api/player/profile', { animal: { ...DEFAULT_ANIMAL, species: 'dragon' } });
-    expect(dragon.status).toBe(403);
+    // 选一只这个账号确实还没解锁的动物（前面的测试打过真正随机的牌局，偶尔会解锁龙等稀有动物）
+    const me = (await b.req('GET', '/api/player/me')).body.state as AccountState;
+    const locked = SPECIES.map((x) => x.id).find((id) => !me.unlockedAnimals.includes(id));
+    expect(locked).toBeTruthy();
+    const denied = await b.req('PATCH', '/api/player/profile', { animal: { ...DEFAULT_ANIMAL, species: locked } });
+    expect(denied.status).toBe(403);
     const other = new Browser(srv.port);
     const s = (await other.googleLogin()).body.state as AccountState;
     expect(s.animal.species).toBe('fox');

@@ -994,8 +994,10 @@ export class RoomServer {
           const seen = me.recentActions?.find(([id]) => id === actionId);
           if (actionId && seen) return reply(seen[1], true);
           const cmd = msg.cmd;
+          // 每个操作都必须带局号；要牌 / 停牌 / 加倍 / 分牌还必须带行动令牌（重放、过期、重复的操作一律拒绝）
+          const acting = !!cmd && typeof cmd === 'object' && ['hit', 'stand', 'double', 'split'].includes(cmd.type);
           const result =
-            !cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string'
+            !cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string' || !Number.isSafeInteger(msg.round) || (acting && !Number.isSafeInteger(msg.token))
               ? '无效操作'
               : c.handle(me.id, cmd.type === 'bet' ? { type: 'bet', amount: cmd.amount } : { type: cmd.type }, {
                   round: typeof msg.round === 'number' ? msg.round : undefined,

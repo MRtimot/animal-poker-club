@@ -1,6 +1,6 @@
 // 21 点引擎：权威规则与状态机（纯逻辑，不含计时器 / 网络 / 界面）。
 // 庄家按固定规则行动，没有任何随机决定；动物性格只影响表现层，永远碰不到牌靴。
-import { randomId, secureRandom, type RNG } from '../utils/random';
+import { cryptoRandom, randomId, type RNG } from '../utils/random';
 import { evaluateBlackjack, isAce, isTenValue } from './hand';
 import { betError, cleanRules, payoutFor, type BlackjackRules, type HandResult } from './rules';
 import { Shoe, type BjCard, type ShoeState } from './shoe';
@@ -42,9 +42,9 @@ export class BlackjackEngine {
   private seq = 0;
   private shoe: Shoe;
 
-  constructor(rules?: Partial<BlackjackRules>, rng: RNG = secureRandom) {
+  constructor(rules?: Partial<BlackjackRules>, rng: RNG = cryptoRandom) {
     this.rules = cleanRules(rules);
-    this.shoe = new Shoe(this.rules.decks, rng);
+    this.shoe = new Shoe(rng);
   }
 
   // ───────────── 保存 / 恢复 ─────────────
@@ -67,7 +67,7 @@ export class BlackjackEngine {
     };
   }
 
-  static fromState(s: BlackjackEngineState, rng: RNG = secureRandom): BlackjackEngine {
+  static fromState(s: BlackjackEngineState, rng: RNG = cryptoRandom): BlackjackEngine {
     const e = new BlackjackEngine(s.rules, rng);
     e.phase = s.phase;
     e.round = s.round;
@@ -169,7 +169,9 @@ export class BlackjackEngine {
       p.hands = [];
       p.activeHand = 0;
     }
-    if (this.shoe.beginRound(this.rules.penetration)) this.emit({ type: 'shuffle' });
+    // 每一局一副新牌：上一局的牌整副丢弃
+    this.shoe.newRound();
+    this.emit({ type: 'shuffle' });
     this.emit({ type: 'roundStart', round: this.round, roundId });
   }
 
@@ -479,6 +481,7 @@ export class BlackjackEngine {
       payout,
       profit: payout - bet,
       hands: p.hands.map((h) => ({ result: h.result!, value: evaluateBlackjack(h.cards, h.fromSplit).value, cards: h.cards.length, doubled: h.doubled, fromSplit: h.fromSplit })),
+      dealerBust: evaluateBlackjack(this.dealer).bust,
     };
   }
 

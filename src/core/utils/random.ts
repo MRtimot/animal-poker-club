@@ -13,6 +13,18 @@ export const secureRandom: RNG = () => {
   return Math.random();
 };
 
+/**
+ * 牌局专用的随机数：只用加密安全随机数（浏览器的 crypto.getRandomValues；Node 的 globalThis.crypto 就是 node:crypto 的 webcrypto）。
+ * 环境不支持时直接报错，绝不退回 Math.random。
+ */
+export const cryptoRandom: RNG = () => {
+  const c: Crypto | undefined = globalThis.crypto;
+  if (!c || typeof c.getRandomValues !== 'function') throw new Error('当前环境没有安全随机数，无法发牌');
+  const buf = new Uint32Array(2);
+  c.getRandomValues(buf);
+  return (buf[0] * 2 ** 21 + (buf[1] >>> 11)) / 2 ** 53;
+};
+
 /** 可复现的伪随机数（测试 & AI 模拟用） */
 export function seededRandom(seed: number): RNG {
   let s = seed >>> 0 || 1;

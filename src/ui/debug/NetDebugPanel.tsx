@@ -8,6 +8,8 @@ import { useSettings } from '../../store/settingsStore';
 import { useBjCine } from '../../animation/blackjack/cineStore';
 import type { ForcedOutcome } from '../../core/blackjack/debug';
 import { debugForce } from '../../net/localBlackjack';
+import { useProfile } from '../../store/profileStore';
+import { fairnessRows } from './bjFairness';
 
 /** 强制结果（只在开发模式、本地 21 点的下注阶段）：正式构建里整段会被移除 */
 const FORCE: readonly (readonly [ForcedOutcome, string])[] = import.meta.env.DEV
@@ -36,6 +38,7 @@ export function NetDebugPanel() {
   const latency = useGame((s) => s.latency);
   const view = useGame((s) => s.view);
   const bj = useGame((s) => s.bj);
+  const bjStats = useProfile((s) => s.stats.blackjack);
   const st = useSettings();
   // 音频状态不在 React 状态里：调试面板打开时每秒刷新一次
   const [, tick] = useState(0);
@@ -84,6 +87,7 @@ export function NetDebugPanel() {
       ['Shoe', `${bj.shoe.remaining}/${bj.shoe.size}`],
       ['Cinematic', cine.cine ? `${cine.cine.outcome} · ${cine.cine.phase}` : cine.paidRound === bj.roundId ? 'paid' : 'idle'],
     );
+    if (import.meta.env.DEV) rows.push(...fairnessRows(bj, bjStats));
   }
   return (
     <div className="net-debug" aria-hidden>

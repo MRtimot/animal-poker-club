@@ -188,8 +188,8 @@ describe('同步与裁决', () => {
   for (const n of [2, 3, 4, 5, 6])
     it(`BJO-04 ${n} 名玩家：下注 → 发牌 → 依次行动 → 庄家 → 结果，所有人看到的完全一致`, async () => {
       const { ps, code } = await table(n);
-      // 每人 10 + 8，庄家 10 + 7：全部赢 1
-      const eight = ['8s', '8h', '8d', '8c', '8s', '8h'];
+      // 每人 10 + 8（第 5、6 位 10 + 9），庄家 10 + 7：全部赢 1
+      const eight = ['8s', '8h', '8d', '8c', '9s', '9h'];
       const ten = ['Ts', 'Th', 'Td', 'Tc', 'Js', 'Jh'];
       await rig(code, ['Kd', ...ten.slice(0, n), '7c', ...eight.slice(0, n)]);
       ps.forEach((p, i) => p.cmd({ type: 'bet', amount: 20 + i * 10 }));
@@ -275,6 +275,27 @@ describe('同步与裁决', () => {
     a.send({ t: 'bj', cmd: { type: 'stand' }, actionId: 'stale', round: round - 1, token: a.bj!.token });
     await until(() => a.acks('stale').length === 1);
     expect(a.acks('stale')[0].message).toBe('这一局已经结束');
+    closeAll(ps);
+  });
+
+  it('BJO-25 不带局号 / 行动令牌、或者是 NaN、字符串、小数的操作：服务器一律拒绝，牌不变', async () => {
+    const { ps, code } = await table(1);
+    await rig(code, ['9d', '2s', '7c', '3h', '2h']);
+    const [a] = ps;
+    a.cmd({ type: 'bet', amount: 20 });
+    await until(() => a.bj!.phase === 'player-turn');
+    const { round } = a.bj!;
+    const bad = [{}, { round }, { round, token: 'x' }, { round: 1.5, token: a.bj!.token }, { round: 'r', token: a.bj!.token }, { round: null, token: null }];
+    for (const [i, x] of bad.entries()) {
+      a.send({ t: 'bj', cmd: { type: 'hit' }, actionId: 'nr' + i, ...x });
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    await until(() => bad.every((_, i) => a.acks('nr' + i).length === 1));
+    expect(bad.map((_, i) => a.acks('nr' + i)[0].message)).toEqual(bad.map(() => '无效操作'));
+    // 这一局收到的每一份状态里，自己的手牌都没有超过两张（一张也没有多发）
+    const mine = a.msgs.flatMap((m) => (m.t === 'bjState' && m.view.round === round ? m.view.players.filter((p) => p.id === a.playerId).flatMap((p) => p.hands.map((h) => h.cards.length)) : []));
+    expect(mine.length).toBeGreaterThan(0);
+    expect(Math.max(...mine)).toBe(2);
     closeAll(ps);
   });
 

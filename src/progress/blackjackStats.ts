@@ -6,6 +6,8 @@ export interface BlackjackStats {
   pushes: number;
   blackjacks: number;
   busts: number;
+  /** 庄家爆牌的局数 */
+  dealerBusts: number;
   doubleDowns: number;
   splits: number;
   /** 加倍后赢下的手数 */
@@ -30,6 +32,7 @@ export const EMPTY_BLACKJACK: BlackjackStats = {
   pushes: 0,
   blackjacks: 0,
   busts: 0,
+  dealerBusts: 0,
   doubleDowns: 0,
   splits: 0,
   doubleWins: 0,
@@ -57,7 +60,7 @@ export function normalizeBlackjack(x: unknown): BlackjackStats {
   return out;
 }
 
-const SUM: readonly (keyof BlackjackStats)[] = ['rounds', 'wins', 'losses', 'pushes', 'blackjacks', 'busts', 'doubleDowns', 'splits', 'doubleWins', 'wins21', 'comebacks', 'totalBet', 'totalPayout'];
+const SUM: readonly (keyof BlackjackStats)[] = ['rounds', 'wins', 'losses', 'pushes', 'blackjacks', 'busts', 'dealerBusts', 'doubleDowns', 'splits', 'doubleWins', 'wins21', 'comebacks', 'totalBet', 'totalPayout'];
 const BEST: readonly (keyof BlackjackStats)[] = ['largestWin', 'largestBet', 'bestWinStreak'];
 
 /** 游客存档合并进账号：计数相加、最佳值取较大者。游客数据无法验证，所以先按上限与一致性收紧 */
@@ -70,6 +73,7 @@ export function mergeGuestBlackjack(cur: BlackjackStats, guest: BlackjackStats, 
   g.pushes = cap(g.pushes, g.rounds - g.wins - g.losses);
   // 一局最多拆成 4 手
   for (const k of ['blackjacks', 'busts', 'doubleDowns', 'splits', 'doubleWins', 'wins21'] as const) g[k] = cap(g[k], g.rounds * 4);
+  g.dealerBusts = cap(g.dealerBusts, g.rounds);
   g.comebacks = cap(g.comebacks, g.wins);
   g.bestWinStreak = cap(g.bestWinStreak, g.wins);
   for (const k of ['largestWin', 'largestBet'] as const) g[k] = cap(g[k], limits.chips);
@@ -80,7 +84,22 @@ export function mergeGuestBlackjack(cur: BlackjackStats, guest: BlackjackStats, 
   return out;
 }
 
-/** 胜率（按局：净赢 / 全部局数） */
+const pct = (n: number, d: number) => (d > 0 ? `${((n / d) * 100).toFixed(1)}%` : '—');
+
+/** 胜率 = 赢 ÷（赢 + 输）；平局不算赢也不算输。按局计算（分牌按整局净输赢） */
 export function blackjackWinRate(s: BlackjackStats): string {
-  return s.rounds ? `${((s.wins / s.rounds) * 100).toFixed(1)}%` : '—';
+  return pct(s.wins, s.wins + s.losses);
+}
+
+/** 其余比例（全部来自真实结果；只用于显示，从不影响发牌） */
+export function blackjackRates(s: BlackjackStats) {
+  return {
+    winRate: blackjackWinRate(s),
+    pushRate: pct(s.pushes, s.rounds),
+    blackjackRate: pct(s.blackjacks, s.rounds),
+    bustRate: pct(s.busts, s.rounds),
+    dealerBustRate: pct(s.dealerBusts, s.rounds),
+    /** 净输赢：与胜率是两回事（加倍、分牌、黑杰克会让输赢金额不同） */
+    profit: s.totalPayout - s.totalBet,
+  };
 }

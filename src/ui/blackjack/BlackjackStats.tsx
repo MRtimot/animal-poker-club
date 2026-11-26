@@ -1,16 +1,20 @@
 // 21 点统计（收藏页与玩家档案共用）
-import { blackjackWinRate, type BlackjackStats as Stats } from '../../progress/blackjackStats';
+import { blackjackRates, type BlackjackStats as Stats } from '../../progress/blackjackStats';
 import { formatChips } from '../../utils/format';
 
 export function BlackjackStatsGrid({ s }: { s: Stats }) {
+  const r = blackjackRates(s);
   const grid: [string, string | number][] = [
     ['局数', s.rounds],
     ['赢', s.wins],
     ['输', s.losses],
     ['平局', s.pushes],
-    ['胜率', blackjackWinRate(s)],
-    ['黑杰克', s.blackjacks],
-    ['爆牌', s.busts],
+    ['胜率（不含平局）', r.winRate],
+    ['平局率', r.pushRate],
+    ['黑杰克', `${s.blackjacks}（${r.blackjackRate}）`],
+    ['爆牌', `${s.busts}（${r.bustRate}）`],
+    ['庄家爆牌', `${s.dealerBusts}（${r.dealerBustRate}）`],
+    ['净输赢', `${r.profit > 0 ? '+' : r.profit < 0 ? '−' : ''}${formatChips(Math.abs(r.profit))}`],
     ['加倍', s.doubleDowns],
     ['分牌', s.splits],
     ['最高连胜', s.bestWinStreak],

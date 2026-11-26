@@ -127,6 +127,7 @@ export function applyBlackjackRound(before: Stats, f: BjRoundFacts): { stats: St
   b.totalPayout += f.payout;
   b.largestBet = Math.max(b.largestBet, f.bet);
   b.largestWin = Math.max(b.largestWin, f.profit);
+  if (f.dealerBust) b.dealerBusts++;
   if (f.hands.some((h) => h.fromSplit)) b.splits += f.hands.length - 1;
   for (const h of f.hands) {
     if (h.doubled) b.doubleDowns++;

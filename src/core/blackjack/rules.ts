@@ -1,7 +1,7 @@
 // 21 点规则配置、下注校验、赔付（纯函数；服务器与本地共用同一份）
 
 export interface BlackjackRules {
-  /** 牌靴里有几副牌 */
+  /** 每局使用几副牌（V1 锁定：每局一副新的 52 张） */
   decks: number;
   /** 黑杰克赔率（默认 3:2） */
   blackjackPayout: readonly [number, number];
@@ -9,23 +9,21 @@ export interface BlackjackRules {
   maxBet: number;
   /** 一名玩家最多几手牌（分牌上限） */
   maxHands: number;
-  /** 用掉这个比例的牌后，下一局开始前重新洗牌 */
-  penetration: number;
 }
 
 /**
  * V1 锁定的规则（本地、服务器、AI 同一份；任何配置或旧的牌局状态都不能改变）：
+ * 每局一副新的 52 张牌，加密安全随机数 + Fisher–Yates 洗牌；
  * 庄家不足 17 要牌、17 及以上（含软 17）停牌；黑杰克 3:2；只有最初两张牌可以加倍；
  * 最初两张牌面相同才能分牌，只分一次（两手）；分 A 每手只补一张；没有保险、投降、边注。
  */
 /** 保险（Insurance）没有实现，因此规则与界面里都没有它 */
 export const DEFAULT_RULES: BlackjackRules = {
-  decks: 6,
+  decks: 1,
   blackjackPayout: [3, 2],
   minBet: 10,
   maxBet: 500,
   maxHands: 2,
-  penetration: 0.75,
 };
 
 /** 下注筹码面额：与牌桌上已有的实体筹码一致（不引入新的面额） */
@@ -93,9 +91,8 @@ export function cleanRules(x: Partial<BlackjackRules> | null | undefined): Black
   return {
     blackjackPayout: DEFAULT_RULES.blackjackPayout,
     maxHands: DEFAULT_RULES.maxHands,
-    decks: int(r.decks, 1, 8, DEFAULT_RULES.decks),
+    decks: DEFAULT_RULES.decks,
     minBet,
     maxBet: Math.max(minBet, int(r.maxBet, 1, 10_000_000, DEFAULT_RULES.maxBet)),
-    penetration: typeof r.penetration === 'number' && r.penetration > 0.3 && r.penetration < 0.95 ? r.penetration : DEFAULT_RULES.penetration,
   };
 }

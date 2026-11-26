@@ -14,7 +14,8 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build:api": "node scripts/build-api.mjs"
+    "build:api": "node scripts/build-api.mjs",
+    "sim:blackjack": "tsx scripts/blackjack-sim.ts"
   },
   "dependencies": {
     "@react-three/drei": "9.122.0",

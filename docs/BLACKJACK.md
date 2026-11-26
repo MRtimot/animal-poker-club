@@ -7,7 +7,7 @@
 
 | 规则 | 设定 |
 | --- | --- |
-| 牌靴 | 6 副牌；用掉 75% 后在下一局开始前重新洗牌（`crypto.getRandomValues`，Fisher–Yates） |
+| 牌组 | 每一局一副新的标准 52 张，Fisher–Yates 洗牌，随机数只用 `crypto.getRandomValues`（没有就报错，不退回 `Math.random`）；一局结束整副丢弃。极少数一局把 52 张发完时，再拆一副新牌（不同的实体牌）接上 |
 | 庄家 | 17 点及以上一律停牌（含软 17）；明牌是 A / 10 点时先看暗牌（peek），黑杰克立即结束 |
 | 黑杰克 | 起手两张 A + 10 点，3:2，盈利向下取整（筹码始终是整数）；分牌后的 21 点不算黑杰克 |
 | 赔付 | 赢 1:1，平局退回本金，输 / 爆牌 0；玩家与庄家都是黑杰克 = 平局 |
@@ -69,6 +69,7 @@
 
 - 每局有唯一 `roundId`；服务器结算键 `房间:局:bj:roundId`，本地用 `BlackjackGate`，重复处理不会重复发奖。
 - 奖励规则在 `src/progress/rewards.ts`（`applyBlackjackRound`），服务器与游客共用。
+- 胜率 = 赢 ÷（赢 + 输），平局单独统计；净输赢与胜率分开显示（加倍、分牌、黑杰克会让金额不同）。
 - 统计在 `Stats.blackjack`；数据库迁移 v2 增加 `blackjack` 列（旧存档自动补零）。
 - 成就：`bj_first`、`bj_ten`、`bj_win10`、`bj_double`、`bj_exact`、`bj_comeback`。
 
@@ -88,12 +89,24 @@
 
 网址加 `?debug=1`：调试面板显示模式、局号、阶段、点数、token、牌靴、演出状态。`npm run dev` 时，本地牌桌的下注阶段还有
 `Force Blackjack / Bust / Push / Dealer Blackjack / Win / Loss / Split` 按钮（只交换牌靴里牌的顺序，不改规则）。
-正式构建不包含这些代码。
+正式构建不包含这些代码。开发模式的调试面板还有公平性核对：本局有没有重复 / 无效的牌，翻牌后的赔付与庄家动作是否符合规则，
+以及本机统计（胜率、平局率、黑杰克率、爆牌率、平均下注 / 返还）。
 
-## 10. 测试
+## 10. 公平性（永久规则）
+
+- 发牌只由随机数决定。牌组模块只依赖“牌”和“随机数”两个模块，读不到玩家、下注、余额、等级、动物、皮肤、连胜连败或庄家性格（FAIR-02 锁定）。
+- 同一个随机数序列下，不同的玩家、余额、下注和打法得到一模一样的牌序（FAIR-01）。
+- 没有任何胜率控制、连败补偿、连胜惩罚、按下注或身份调整的赔率；统计只记录结果，从不回头影响发牌。
+- 同桌 AI 的打法、庄家与动物的外观、聊天表情用普通随机数，它们碰不到牌组。
+- 模拟：`npm run sim:blackjack -- 100000 [玩家数]`，用真正的引擎与加密随机数逐局独立核对（牌、结果、赔付、庄家与玩家动作、派彩次数、余额），
+  并对初始发牌做卡方检验。注意：全部发出的牌里小牌会略少，因为玩家拿到小牌才继续要牌、单副牌又少了这些小牌，这是数学上应有的，不是洗牌偏差。
+
+## 11. 测试
 
 ```bash
 npx vitest run tests/blackjack.test.ts          # 规则、引擎、控制器、AI、模糊测试
 npx vitest run tests/blackjack-online.test.ts   # 房间、权威、重连、重复 / 过期操作、账号结算
+npx vitest run tests/blackjack-rules-lock.test.ts tests/blackjack-fairness.test.ts   # 规则锁定、公平性
+npm run sim:blackjack -- 1000000                # 100 万局模拟（约 45 秒）
 npm test && npm run typecheck && npm run build
 ```

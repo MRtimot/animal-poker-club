@@ -118,6 +118,8 @@ export interface BjRoundFacts {
   payout: number;
   profit: number;
   hands: { result: HandResult; value: number; cards: number; doubled: boolean; fromSplit: boolean }[];
+  /** 庄家爆牌（统计用；旧数据没有） */
+  dealerBust?: boolean;
 }
 
 export interface BjHandView {

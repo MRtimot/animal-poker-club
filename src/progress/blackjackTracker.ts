@@ -39,7 +39,7 @@ export function factsFromView(v: BlackjackView): BjRoundFacts | null {
   if (v.phase !== 'round-end' || !me?.hands.length || me.hands.some((h) => !h.result)) return null;
   const bet = me.hands.reduce((s, h) => s + h.bet, 0);
   const payout = me.hands.reduce((s, h) => s + h.payout, 0);
-  return { roundId: v.roundId, bet, payout, profit: payout - bet, hands: me.hands.map((h) => ({ result: h.result!, value: h.value, cards: h.cards.length, doubled: h.doubled, fromSplit: h.fromSplit })) };
+  return { roundId: v.roundId, bet, payout, profit: payout - bet, hands: me.hands.map((h) => ({ result: h.result!, value: h.value, cards: h.cards.length, doubled: h.doubled, fromSplit: h.fromSplit })), dealerBust: v.dealer.bust };
 }
 
 /** 决定这一局要不要结算：第一次看到就已经结束的（刷新 / 重连）不再发；同一局只发一次 */

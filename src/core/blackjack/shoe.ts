@@ -1,7 +1,7 @@
-// 牌靴：多副牌。每张实体牌有唯一编号（uid），同一张实体牌不可能同时出现两次。
-// 内部只存编号（0 ~ 52×副数-1），保存到共享存储时很小；只在服务器 / 本地主机里，从不发给客户端。
+// 牌组：每局一副新的 52 张。每张实体牌有唯一编号（uid），同一张实体牌不可能同时出现两次。
+// 内部只存编号，保存到共享存储时很小；只在服务器 / 本地主机里，从不发给客户端。
 import { RANKS, SUITS, makeCard, type Card } from '../cards/card';
-import { secureRandom, type RNG } from '../utils/random';
+import { cryptoRandom, type RNG } from '../utils/random';
 
 export interface BjCard extends Card {
   /** 实体牌编号，例如 “As-3”（第 3 副牌里的黑桃 A） */
@@ -11,8 +11,8 @@ export interface BjCard extends Card {
 export interface ShoeState {
   order: number[];
   next: number;
-  roundStart: number;
-  decks: number;
+  /** 这一局拆开了几副牌（正常 1 副） */
+  opened: number;
 }
 
 export function cardFromCode(code: number): BjCard {
@@ -22,17 +22,20 @@ export function cardFromCode(code: number): BjCard {
   return { ...c, uid: `${c.id}-${deck}` };
 }
 
+const fresh = (deck: number) => Array.from({ length: 52 }, (_, i) => deck * 52 + i);
+
+/**
+ * 每一局一副新的标准 52 张牌：生成 → Fisher–Yates 洗牌（加密安全随机数）→ 从顶上依次发 → 一局结束整副丢弃。
+ * 洗牌只用随机数，不读取任何玩家、下注、余额、连胜连败或庄家性格。
+ * 极少数情况（多人、多手、很多小牌）一局把 52 张发完：再拆一副新牌洗好接上（新牌是另外的实体牌，编号不同，不会重复）。
+ */
 export class Shoe {
   private order: number[] = [];
   private next = 0;
-  /** 这一局从哪里开始发（之前的是弃牌） */
-  private roundStart = 0;
+  private opened = 0;
 
-  constructor(
-    readonly decks: number,
-    private rng: RNG = secureRandom,
-  ) {
-    this.shuffleAll();
+  constructor(private rng: RNG = cryptoRandom) {
+    this.newRound();
   }
 
   get size() {
@@ -42,6 +45,7 @@ export class Shoe {
     return this.order.length - this.next;
   }
 
+  /** Fisher–Yates：从最后一张起，与前面（含自己）随机一张交换 */
   private mix(a: number[]) {
     for (let i = a.length - 1; i > 0; i--) {
       const j = Math.floor(this.rng() * (i + 1));
@@ -50,43 +54,29 @@ export class Shoe {
     return a;
   }
 
-  /** 全部收回重新洗牌（只能在两局之间调用：桌上没有牌） */
-  shuffleAll() {
-    this.order = this.mix(Array.from({ length: this.decks * 52 }, (_, i) => i));
+  /** 新的一局：丢掉上一局的整副牌，换一副新的 52 张并洗好 */
+  newRound() {
+    this.opened = 1;
+    this.order = this.mix(fresh(0));
     this.next = 0;
-    this.roundStart = 0;
   }
 
-  /** 新的一局：之前发出的都算弃牌；用掉的比例超过 penetration 就重新洗牌。返回是否洗牌 */
-  beginRound(penetration: number): boolean {
-    this.roundStart = this.next;
-    if (this.next < this.order.length * penetration) return false;
-    this.shuffleAll();
-    return true;
-  }
-
-  /** 发一张牌。牌靴用完时只把弃牌重新洗好接上，桌上正在用的牌不会被重复发出 */
+  /** 从顶上发一张（发出的牌不会再回到牌堆） */
   draw(): BjCard {
-    if (this.next >= this.order.length) {
-      const inPlay = this.order.slice(this.roundStart);
-      const discards = this.mix(this.order.slice(0, this.roundStart));
-      if (!discards.length) throw new Error('牌靴已空');
-      this.order = [...inPlay, ...discards];
-      this.roundStart = 0;
-      this.next = inPlay.length;
-    }
+    if (this.next >= this.order.length) this.order.push(...this.mix(fresh(this.opened++)));
     return cardFromCode(this.order[this.next++]);
   }
 
   toState(): ShoeState {
-    return { order: [...this.order], next: this.next, roundStart: this.roundStart, decks: this.decks };
+    return { order: [...this.order], next: this.next, opened: this.opened };
   }
 
-  static fromState(s: ShoeState, rng: RNG = secureRandom): Shoe {
-    const shoe = new Shoe(s.decks, rng);
+  /** 旧版本保存的多副牌靴也能读：这一局照常发完，下一局换成新的一副 */
+  static fromState(s: ShoeState, rng: RNG = cryptoRandom): Shoe {
+    const shoe = new Shoe(rng);
     shoe.order = [...s.order];
     shoe.next = s.next;
-    shoe.roundStart = s.roundStart;
+    shoe.opened = Number.isInteger(s.opened) && s.opened > 0 ? s.opened : Math.max(1, Math.ceil(s.order.length / 52));
     return shoe;
   }
 }

@@ -26,7 +26,7 @@ export function BlackjackRulesModal({ rules = DEFAULT_RULES, onClose }: { rules?
           庄家没有选择：不足 17 必须要牌，17 点及以上（含软 17）一律停牌。庄家明牌是 A 或 10 点时会先看暗牌，已经是黑杰克就直接翻开。
         </p>
         <p>
-          赔付：赢 1:1，黑杰克 {rules.blackjackPayout[0]}:{rules.blackjackPayout[1]}，平局退回下注。每张桌用 {rules.decks} 副牌，用掉约 {Math.round(rules.penetration * 100)}% 后重新洗牌。本桌限额 {rules.minBet}–{rules.maxBet}。
+          赔付：赢 1:1，黑杰克 {rules.blackjackPayout[0]}:{rules.blackjackPayout[1]}，平局退回下注。每一局都换一副新的 52 张牌，用加密安全随机数洗牌。本桌限额 {rules.minBet}–{rules.maxBet}。
         </p>
         <p className="muted">没有保险（Insurance）。庄家的性格只影响台词和动作，不影响牌。只使用虚拟筹码，没有任何真钱交易。</p>
       </div>

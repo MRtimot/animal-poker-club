@@ -68,43 +68,54 @@ describe('点数计算', () => {
   });
 });
 
-describe('牌靴', () => {
-  it('BJ-14 六副牌 312 张，每张实体牌编号唯一；发完不重复', () => {
-    const shoe = new Shoe(6, seededRandom(3));
+describe('牌组', () => {
+  it('BJ-14 一副标准 52 张：13 种点数 × 4 种花色，每张实体牌唯一，发完不重复', () => {
+    const shoe = new Shoe(seededRandom(3));
+    const cards = Array.from({ length: 52 }, () => shoe.draw());
+    expect(new Set(cards.map((c) => c.uid)).size).toBe(52);
+    expect(new Set(cards.map((c) => c.id)).size).toBe(52);
+    for (let r = 2; r <= 14; r++) expect(cards.filter((c) => c.rank === r).length).toBe(4);
+    for (const suit of new Set(cards.map((c) => c.suit))) expect(cards.filter((c) => c.suit === suit).length).toBe(13);
+  });
+  it('BJ-15 一局把 52 张发完（极少见）：再拆一副新的实体牌，不会重复发出已经发过的牌', () => {
+    const shoe = new Shoe(seededRandom(4));
     const seen = new Set<string>();
-    for (let i = 0; i < 312; i++) seen.add(shoe.draw().uid);
-    expect(seen.size).toBe(312);
-  });
-  it('BJ-15 一局中途牌靴用完：只把弃牌洗回来，桌上的牌不会重复出现', () => {
-    const shoe = new Shoe(1, seededRandom(4));
-    for (let i = 0; i < 40; i++) shoe.draw();
-    expect(shoe.beginRound(0.95)).toBe(false);
-    const inPlay = new Set<string>();
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 80; i++) {
       const c = shoe.draw();
-      expect(inPlay.has(c.uid)).toBe(false);
-      inPlay.add(c.uid);
+      expect(seen.has(c.uid)).toBe(false);
+      seen.add(c.uid);
     }
-    expect(shoe.size).toBe(52);
+    expect(shoe.toState().opened).toBe(2);
   });
-  it('BJ-16 用掉 75% 后下一局开始前重新洗牌；洗牌结果不同', () => {
-    const shoe = new Shoe(1, seededRandom(4));
+  it('BJ-16 每一局都换一副新的 52 张并重新洗牌（上一局的牌不会带进下一局）', () => {
+    const shoe = new Shoe(seededRandom(4));
     const first = JSON.stringify(shoe.toState().order);
-    for (let i = 0; i < 39; i++) shoe.draw();
-    expect(shoe.beginRound(0.75)).toBe(true);
-    expect(shoe.remaining).toBe(52);
+    for (let i = 0; i < 9; i++) shoe.draw();
+    shoe.newRound();
+    expect([shoe.remaining, shoe.size, shoe.toState().opened]).toEqual([52, 52, 1]);
+    expect([...shoe.toState().order].sort((a, b) => a - b)).toEqual(Array.from({ length: 52 }, (_, i) => i));
     expect(JSON.stringify(shoe.toState().order)).not.toBe(first);
   });
   it('BJ-17 洗牌均匀：每张牌出现在第一张的概率接近 1/52', () => {
     const r = seededRandom(11);
     const n = new Array(52).fill(0);
-    for (let i = 0; i < 26000; i++) n[new Shoe(1, r).toState().order[0]]++;
+    for (let i = 0; i < 26000; i++) n[new Shoe(r).toState().order[0]]++;
     for (const x of n) expect(Math.abs(x - 500)).toBeLessThan(130);
   });
-  it('BJ-18 空牌靴明确报错，而不是发出不存在的牌', () => {
-    const shoe = new Shoe(1, seededRandom(4));
-    for (let i = 0; i < 52; i++) shoe.draw();
-    expect(() => shoe.draw()).toThrow('牌靴已空');
+  it('BJ-18 默认使用加密安全随机数；环境没有时明确报错，不会退回 Math.random', () => {
+    const real = globalThis.crypto;
+    const spy = Math.random;
+    let used = 0;
+    Math.random = () => (used++, 0.5);
+    try {
+      expect(new Shoe().toState().order.length).toBe(52);
+      Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true });
+      expect(() => new Shoe()).toThrow('安全随机数');
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', { value: real, configurable: true });
+      Math.random = spy;
+    }
+    expect(used).toBe(0);
   });
 });
 
@@ -134,7 +145,7 @@ describe('下注与赔付', () => {
     expect(() => e.placeBet('a', 10)).toThrow('已经下注');
   });
   it('BJ-22 规则参数缺失 / 非法时回到安全值', () => {
-    expect(cleanRules({ decks: 99, minBet: -1, maxBet: 0, maxHands: 50, penetration: 5 })).toMatchObject({ decks: 8, minBet: 1, maxBet: 1, maxHands: 2, penetration: 0.75 });
+    expect(cleanRules({ decks: 99, minBet: -1, maxBet: 0, maxHands: 50, penetration: 5 } as object)).toMatchObject({ decks: 1, minBet: 1, maxBet: 1, maxHands: 2 });
     expect(cleanRules(null)).toEqual(DEFAULT_RULES);
   });
 });
@@ -364,7 +375,7 @@ describe('状态机与非法操作', () => {
     let rounds = 0;
     for (let t = 0; t < 300; t++) {
       const n = 1 + Math.floor(r() * 6);
-      const e = new BlackjackEngine({ decks: 1 + Math.floor(r() * 6), minBet: 10, maxBet: 500 }, r);
+      const e = new BlackjackEngine({ minBet: 10, maxBet: 500 }, r);
       for (let i = 0; i < n; i++) e.addPlayer('p' + i, 'P' + i, 10 + Math.floor(r() * 2000));
       for (let k = 0; k < 10 && e.players.some((p) => e.canBet(p)); k++) {
         e.openBetting();

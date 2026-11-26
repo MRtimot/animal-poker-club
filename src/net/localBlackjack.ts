@@ -123,6 +123,6 @@ export async function debugForce(kind: import('../core/blackjack/debug').ForcedO
   // 自己坐第一个位置；同桌 AI 已经下注，所以按“下注人数”计算发牌位置
   const players = s.players.filter((p) => p.bet > 0 || p.id === LOCAL_PLAYER_ID).length;
   // 先换一副新牌靴：要用的牌一定都在
-  c.engine = BlackjackEngine.fromState({ ...s, shoe: forceOutcome(new Shoe(s.rules.decks).toState(), kind, 0, players) });
+  c.engine = BlackjackEngine.fromState({ ...s, shoe: forceOutcome(new Shoe().toState(), kind, 0, players) });
   return `下一手：${kind}`;
 }

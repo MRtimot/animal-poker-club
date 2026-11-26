@@ -139,7 +139,7 @@ describe('21 点 V1 规则锁定', () => {
     expect([...BJ_ACTIONS].sort()).toEqual(['double', 'hit', 'split', 'stand']);
     const e = table('Ad Ts 6c 9h');
     for (const x of ['insurance', 'surrender', 'sidebet', 'perfectPairs', '21+3']) expect(() => e.act('p0', x as BjAction)).toThrow('未知操作');
-    expect(Object.keys(DEFAULT_RULES).sort()).toEqual(['blackjackPayout', 'decks', 'maxBet', 'maxHands', 'minBet', 'penetration']);
+    expect(Object.keys(DEFAULT_RULES).sort()).toEqual(['blackjackPayout', 'decks', 'maxBet', 'maxHands', 'minBet']);
   });
   it('LOCK-13 外部配置 / 旧牌局状态不能改变规则', () => {
     const old = { splitBy: 'value', maxHands: 4, doubleAfterSplit: true, dealerHitsSoft17: true, blackjackPayout: [6, 5], minBet: 20, maxBet: 400 };
