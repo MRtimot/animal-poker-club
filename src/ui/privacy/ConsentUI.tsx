@@ -5,6 +5,7 @@ import { saveConsent, useConsent } from '../../privacy/consent';
 import { useGame } from '../../store/gameStore';
 import { useIsPC } from '../../utils/pc';
 import { Btn, Modal } from '../common/ui';
+import { useGameNoticeOpen } from '../notice/GameNotice';
 
 const ESSENTIAL: [string, string][] = [
   ['登录会话（Cookie：apc_sid、apc_nonce）', '只在使用账号登录时设置；HttpOnly，网页脚本读不到。用于保持登录。'],
@@ -12,6 +13,7 @@ const ESSENTIAL: [string, string][] = [
   ['游戏存档（apc-profile）', '游客的等级、经验、动物、角色与成就，只保存在这台电脑上。'],
   ['账号离线缓存（apc-account-cache、apc-account-outbox）', '登录玩家在网络断开时查看资料、恢复网络后补发修改。'],
   ['你的选择（apc-consent、apc-guest-ok）', '记住这里的设置，以及你选择以游客身份游玩。'],
+  ['游戏说明（apc-game-notice）', '记住你已经看过“虚拟娱乐游戏”说明，之后不再重复显示。'],
 ];
 
 function ConsentBanner() {
@@ -105,10 +107,12 @@ export function ConsentLayer() {
   const consent = useConsent((s) => s.consent);
   const settingsOpen = useConsent((s) => s.settingsOpen);
   const screen = useGame((s) => s.screen);
+  // 游戏说明显示时先不出现说明条（不叠在一起），点“继续”后再出现
+  const noticeOpen = useGameNoticeOpen();
   return (
     <>
       {/* 设置面板打开时说明条留在下面（被遮罩盖住），关闭后焦点能回到“管理偏好”按钮 */}
-      {pc && !consent && screen !== 'game' && <ConsentBanner />}
+      {pc && !consent && screen !== 'game' && !noticeOpen && <ConsentBanner />}
       {settingsOpen && <ConsentSettings />}
     </>
   );

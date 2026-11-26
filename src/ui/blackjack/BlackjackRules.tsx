@@ -28,7 +28,7 @@ export function BlackjackRulesModal({ rules = DEFAULT_RULES, onClose }: { rules?
         <p>
           赔付：赢 1:1，黑杰克 {rules.blackjackPayout[0]}:{rules.blackjackPayout[1]}，平局退回下注。每一局都换一副新的 52 张牌，用加密安全随机数洗牌。本桌限额 {rules.minBet}–{rules.maxBet}。
         </p>
-        <p className="muted">没有保险（Insurance）。庄家的性格只影响台词和动作，不影响牌。只使用虚拟筹码，没有任何真钱交易。</p>
+        <p className="muted">没有保险（Insurance）。庄家的性格只影响台词和动作，不影响牌。这是虚拟娱乐游戏：只使用虚拟筹码，没有任何真钱下注、提现或现实货币奖励。</p>
       </div>
       <table className="rules-table">
         <tbody>

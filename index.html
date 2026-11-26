@@ -136,6 +136,17 @@
       }
       .apl-credits b { font-weight: 600; color: rgba(233, 207, 134, 0.55); }
       .apl-credits span { margin: 0 14px; opacity: 0.5; }
+      /* 虚拟游戏提示：底部居中、小而清楚，不遮挡标志与进度 */
+      .apl-notice {
+        position: absolute; left: 24px; right: 24px; bottom: 62px;
+        display: grid; gap: 5px; justify-items: center; text-align: center;
+        font-size: 11px; letter-spacing: 0.16em; line-height: 1.4;
+        color: rgba(245, 239, 228, 0.62);
+        animation: aplFade 1200ms ease calc(var(--apl-t, 0ms) + 900ms) both;
+      }
+      .apl-notice span:first-child { font-size: 10.5px; font-weight: 600; letter-spacing: 0.3em; color: rgba(233, 207, 134, 0.78); }
+      .apl.exiting .apl-notice { opacity: 0; transition: opacity 420ms ease; }
+      @media (max-height: 620px) { .apl-notice { bottom: 56px; } .apl-notice span:first-child { display: none; } }
       .apl-error { display: grid; justify-items: center; gap: 18px; margin-top: 4px; }
       .apl-error p { margin: 0; max-width: 440px; font-size: 14px; line-height: 1.7; color: rgba(245, 239, 228, 0.72); }
       .apl-actions { display: flex; gap: 12px; }
@@ -161,8 +172,8 @@
       @keyframes aplSweep { from { transform: translateX(-28%); } to { transform: translateX(28%); } }
       @keyframes aplDust { from { transform: translateY(0); opacity: 1; } 50% { opacity: 0.6; } to { transform: translateY(-48px); opacity: 1; } }
       /* 大屏（2K / 4K，100% 缩放）：内容整体等比放大，不会变成屏幕中央一小块 */
-      @media (min-width: 2200px) and (min-height: 1250px) { .apl-center, .apl-credits { zoom: 1.25; } }
-      @media (min-width: 2800px) and (min-height: 1500px) { .apl-center, .apl-credits { zoom: 1.6; } }
+      @media (min-width: 2200px) and (min-height: 1250px) { .apl-center, .apl-credits, .apl-notice { zoom: 1.25; } }
+      @media (min-width: 2800px) and (min-height: 1500px) { .apl-center, .apl-credits, .apl-notice { zoom: 1.6; } }
       /* 减少动态效果：没有入场、背景移动、扫光与进度动画；退场只保留很短的淡出（不移动、不模糊） */
       @media (prefers-reduced-motion: reduce) {
         .apl, .apl * { animation: none !important; transition: none !important; }
@@ -260,6 +271,17 @@
         animation: aplFade 900ms ease calc(var(--apl-t, 0ms) + 800ms) both;
       }
       .apm-credits b { font-weight: 600; color: rgba(233, 207, 134, 0.55); margin-right: 6px; }
+      /* 虚拟游戏提示：在致谢上方，小而清楚（底部留出 Home 横条的安全区，由 .apm 的 padding 负责） */
+      .apm-notice {
+        flex: none; position: relative; margin-top: 20px; max-width: 340px;
+        display: grid; gap: 4px; justify-items: center; text-align: center;
+        font-size: 11px; letter-spacing: 0.12em; line-height: 1.45;
+        color: rgba(245, 239, 228, 0.6);
+        animation: aplFade 900ms ease calc(var(--apl-t, 0ms) + 800ms) both;
+      }
+      .apm-notice span:first-child { font-size: 9.5px; font-weight: 600; letter-spacing: 0.26em; color: rgba(233, 207, 134, 0.76); }
+      .apm-notice + .apm-credits { margin-top: 12px; }
+      .apm.exiting .apm-notice { opacity: 0; transition: opacity 420ms ease; }
       /* 卡住：简短说明 + 适合手指点按的大按钮（不依赖悬停） */
       /* 卡住时进度区稍微放宽，放下说明与按钮（不超出进度区，进度线保持居中） */
       .apm-meter.wide { width: min(84vw, 320px); }
@@ -293,6 +315,9 @@
         .apm-tagline { margin-top: 6px; font-size: 12px; }
         .apm-meter { margin-top: clamp(16px, 5vh, 28px); width: min(40vw, 300px); gap: 8px; }
         .apm-credits { margin-top: 8px; display: block; }
+        .apm-notice { margin-top: 8px; max-width: none; display: block; font-size: 10.5px; }
+        .apm-notice span:first-child { display: none; }
+        .apm-notice + .apm-credits { margin-top: 4px; }
         .apm-credits span + span::before { content: '·'; margin: 0 10px; opacity: 0.6; }
         .apm-meter.wide { width: min(64vw, 400px); }
         .apm-error p { margin-bottom: 6px; }
@@ -329,6 +354,7 @@
             <div class="apl-status" aria-live="polite">正在打开俱乐部</div>
           </div>
         </div>
+        <div class="apm-notice" role="note" aria-label="虚拟游戏，仅供娱乐，不涉及真钱赌博"><span aria-hidden="true">VIRTUAL GAME • FOR ENTERTAINMENT ONLY</span><span aria-hidden="true">虚拟游戏 · 仅供娱乐 · 不涉及真钱赌博</span></div>
         <div class="apm-credits" aria-hidden="true"><span><b>创始人</b>Timothy Ong · Founder of APEX</span><span><b>游戏测试员</b>熊</span></div>
       </div>
       <div class="apl apl-boot" aria-busy="true">
@@ -347,6 +373,7 @@
             <div class="apl-status" aria-live="polite">正在打开俱乐部</div>
           </div>
         </div>
+        <div class="apl-notice" role="note" aria-label="虚拟游戏，仅供娱乐，不涉及真钱赌博"><span aria-hidden="true">VIRTUAL GAME • FOR ENTERTAINMENT ONLY</span><span aria-hidden="true">虚拟游戏 · 仅供娱乐 · 不涉及真钱赌博 · NO REAL-MONEY GAMBLING</span></div>
         <div class="apl-credits" aria-hidden="true"><b>创始人</b> Timothy Ong · Founder of APEX<span>·</span><b>游戏测试员</b> 熊</div>
       </div>
     </div>

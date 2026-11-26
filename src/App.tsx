@@ -20,6 +20,7 @@ import { guestChosen, initAccount, useAccount } from './store/accountStore';
 import { NetDebugPanel } from './ui/debug/NetDebugPanel';
 import { AudioResumeHint } from './ui/common/AudioResumeHint';
 import { ConsentLayer } from './ui/privacy/ConsentUI';
+import { GameNoticeLayer } from './ui/notice/GameNotice';
 import type { AnimName } from './store/fxStore';
 import { useBrowserBack } from './ui/useBrowserBack';
 import { session } from './net/session';
@@ -546,6 +547,8 @@ function AppContent() {
       <Toasts />
       <FullscreenNotice />
       <ConsentLayer />
+      {/* 游戏说明：加载页退场后、第一次在首页 / 模式选择时出现一次 */}
+      <GameNoticeLayer />
       {pcBoot ? <PremiumLoader onReady={() => setReady(true)} /> : <MobileLoader onReady={() => setReady(true)} />}
     </>
   );

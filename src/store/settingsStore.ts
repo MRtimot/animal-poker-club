@@ -8,7 +8,7 @@ export const QUALITY_NAME: Record<Quality, string> = { low: '低', medium: '中'
 
 /** 扑克房间环境 */
 export type RoomTheme = 'casino' | 'penthouse' | 'cabin';
-export const ROOM_NAME: Record<RoomTheme, string> = { casino: '豪华赌场', penthouse: '夜景高层', cabin: '森林小屋' };
+export const ROOM_NAME: Record<RoomTheme, string> = { casino: '豪华会所', penthouse: '夜景高层', cabin: '森林小屋' };
 
 /** 手机 / 平板全屏：自动（第一次点“开始 / 创建 / 加入”时进入，自己退出后本次不再自动进入）/ 开（每次进入游戏时进入）/ 关 */
 export type FullscreenPreference = 'auto' | 'on' | 'off';

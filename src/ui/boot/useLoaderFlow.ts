@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type AnimationEvent, type TransitionEvent } from 'react';
 import { STALL_MS, bootLabel, bootProgress, bootReady, markBootStalled, retryBoot, useBoot } from '../../boot/boot';
 import { homeTimeline } from '../home/homeTimeline';
+import { markLoaderGone } from '../../privacy/gameNotice';
 
 type Phase = 'loading' | 'finishing' | 'exiting' | 'gone';
 
@@ -86,8 +87,19 @@ export function useLoaderFlow(onReady: () => void, titleInEndMs: number) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  // 加载页完全退场后才允许出现“游戏说明”（说明从不参与、也不阻塞加载）
+  useEffect(() => {
+    if (phase === 'gone') markLoaderGone();
+  }, [phase]);
+
   // 卸载时（例如出错页面接管）也要让首页开场正常开始
-  useEffect(() => () => releaseHomeIntro(), []);
+  useEffect(
+    () => () => {
+      releaseHomeIntro();
+      markLoaderGone();
+    },
+    [],
+  );
 
   // 就绪的同一帧就走向 100%（并使用更短的过渡），不先慢慢走再加速
   const finishing = phase !== 'loading' || ready || skipped;

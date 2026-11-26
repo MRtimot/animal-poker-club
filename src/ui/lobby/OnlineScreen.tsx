@@ -9,6 +9,7 @@ import { BackButton, Btn, Seg, useBusy } from '../common/ui';
 import { formatChips } from '../../utils/format';
 import { enterOnEntryGesture } from '../../display/fullscreen';
 import { GAME_MODES, type GameMode } from '../../core/gameMode';
+import { OnlineVirtualNote } from '../notice/GameNotice';
 
 function ConnStatus() {
   const conn = useGame((s) => s.conn);
@@ -92,6 +93,7 @@ export function OnlineScreen() {
           <h2 className="grow">🌏 在线房间</h2>
         </div>
         <ConnStatus />
+        <OnlineVirtualNote />
         <div className="field">
           <Seg
             options={[
