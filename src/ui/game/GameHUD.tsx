@@ -225,7 +225,7 @@ export function GameHUD({ view }: { view: TableView }) {
       <NextHandCountdown view={view} />
       <GameOver view={view} />
       {/* 失败演出的画面层（遮幅、闪光、黑屏、“出局”画面） */}
-      <DefeatOverlay view={view} />
+      <DefeatOverlay gameOver={!!view.gameOver} />
       <Tutorial />
       {rules && <RulesModal onClose={() => setRules(false)} />}
       {settings && (

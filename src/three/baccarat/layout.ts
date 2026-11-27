@@ -5,7 +5,8 @@ import { BAC_DEALER_ID } from '../../core/baccarat/types';
 import type { BacSpot } from '../../core/baccarat/rules';
 import { BOARD_SCALE, TABLE_Y, seatAngles, seatLayoutAt, type SeatLayout, type V3 } from '../layout';
 
-export { SHOE_POS, DISCARD_POS, TRAY_POS, DEALER_Z } from '../blackjack/layout';
+export { SHOE_POS, DISCARD_POS, TRAY_POS, DEALER_Z, DEALER_STAND, DEALER_SCALE } from '../blackjack/layout';
+import { dealerLayout } from '../blackjack/layout';
 
 const CARD_Y = TABLE_Y + 0.024;
 /** 闲 / 庄两手牌的中心 */
@@ -28,7 +29,7 @@ export function layoutBacSeats(ids: readonly string[], viewerId: string): Map<st
   const angles = seatAngles(ids.length, Math.max(0, ids.indexOf(viewerId)));
   const m = new Map<string, SeatLayout>();
   ids.forEach((id, i) => m.set(id, { ...seatLayoutAt(id, angles[i], id === viewerId), bet: around(angles[i], 2.05, 0) }));
-  m.set(BAC_DEALER_ID, seatLayoutAt(BAC_DEALER_ID, Math.PI, false));
+  m.set(BAC_DEALER_ID, dealerLayout(BAC_DEALER_ID));
   return m;
 }
 

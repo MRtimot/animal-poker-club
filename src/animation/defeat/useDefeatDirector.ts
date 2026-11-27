@@ -4,11 +4,15 @@
 // · 只控制画面、声音与动画：不修改、不同步任何牌局 / 房间 / 玩家状态（在线时每个客户端只演自己的失败）
 // · 任何打断（离开牌桌、断线、简短版遇到下一手开始、页面卸载）都会立刻清理：计时器、声音、动画、镜头、灯光
 import { useEffect, useRef } from 'react';
-import type { SeatView, TableView } from '../../core/game/view';
+import type { TableView } from '../../core/game/view';
+import type { BlackjackView } from '../../core/blackjack/types';
+import type { BaccaratView } from '../../core/baccarat/types';
 import { resolveVoiceProfile } from '../../core/character/voice';
 import { TimerBag } from '../timerBag';
 import { useFx, type AnimName } from '../../store/fxStore';
 import { useGame } from '../../store/gameStore';
+import { useBjCine } from '../blackjack/cineStore';
+import { useBacCine } from '../baccarat/cineStore';
 import { useSettings } from '../../store/settingsStore';
 import { sound } from '../../audio/sound';
 import { voice } from '../../audio/voice';
@@ -31,9 +35,11 @@ import {
   defeatTemperament,
   defeatVerdict,
   lookOrder,
+  verdictOf,
   winnerStyle,
   type DefeatPhase,
 } from './defeatRules';
+import { HOUSE_WINNER_ID, baccaratOutcome, baccaratStage, blackjackOutcome, blackjackStage, type CastMember, type DefeatStage } from './houseResult';
 import { CHAIR_LAND_S, beginDefeat, endDefeat, setDefeatPhase, useDefeat, type DefeatSequence } from './defeatStore';
 
 /** 椅子反应更大的“重”动物（与入场动画的分类一致） */
@@ -43,7 +49,7 @@ const HEAVY_SPECIES = new Set(['panda', 'bear', 'koala', 'lion']);
  * 出局处决前，输家最后一句很短的话（按动物性格）：字幕由画面层显示；声音使用现有的角色语音
  * （带优先级的队列，同一时间只有一个角色说话），遵守玩家的语音设置。只在本机播放，不发送任何消息。
  */
-function lastWords(me: SeatView) {
+function lastWords(me: CastMember) {
   const line = LAST_WORDS[me.profile.animal.species];
   const s = useSettings.getState();
   if (!line || /^[…\s.]*$/.test(line.text) || !s.voiceEnabled || s.voiceVolume <= 0) return;
@@ -76,9 +82,30 @@ export function finishDefeat() {
   controller?.finish();
 }
 
-export function useDefeatDirector(view: TableView | null) {
+/** 德州：一手牌的“舞台”（在场的动物、座位布局） */
+function holdemStage(v: TableView): DefeatStage {
+  return { mode: 'texas-holdem', round: v.handNumber, viewerId: v.viewerId, layout: computeLayout(v), cast: v.players };
+}
+
+/** 赢得最多的人（德州可能有多个赢家）：赢家特写、处决者 */
+function topWinner(winners: { playerId: string; amount: number }[]): string | null {
+  let winnerId: string | null = null;
+  let best = -1;
+  for (const w of winners) if (w.amount > best) ((best = w.amount), (winnerId = w.playerId));
+  return winnerId;
+}
+
+/**
+ * 全局失败演出导演：德州、21 点、百家乐（以及以后的模式）共用同一套演出。
+ * 每个模式只提供“这一局的真实结果”（全局结果 RoundOutcome）与“舞台”；判断标准、时间表、镜头、灯光、声音、角色反应全部共用。
+ */
+export function useDefeatDirector(view: TableView | null, bj: BlackjackView | null = null, bac: BaccaratView | null = null) {
   const viewRef = useRef(view);
   viewRef.current = view;
+  const bjRef = useRef(bj);
+  bjRef.current = bj;
+  const bacRef = useRef(bac);
+  bacRef.current = bac;
   const timers = useRef(new TimerBag()).current;
   const drone = useRef<{ stop: (fade?: number) => void } | null>(null);
 
@@ -128,17 +155,19 @@ export function useDefeatDirector(view: TableView | null) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 离开牌桌：立刻结束
+  // 离开牌桌（任何模式）：立刻结束
+  const atTable = !!(view || bj || bac);
   useEffect(() => {
-    if (!view) cleanup();
-  }, [!!view]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!atTable) cleanup();
+  }, [atTable]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 简短版：下一手已经开始 → 立刻结束（演出不能拖住牌局）
-  const hand = view?.handNumber;
+  // 简短版：下一手 / 下一局已经开始（或换了游戏模式）→ 立刻结束（演出不能拖住牌局）
+  const curMode = view ? 'texas-holdem' : bj ? 'blackjack-21' : bac ? 'baccarat' : null;
+  const hand = view ? view.handNumber : bj ? bj.round : bac ? bac.round : undefined;
   useEffect(() => {
     const s = useDefeat.getState().seq;
-    if (s && s.cut === 'short' && hand !== undefined && hand !== s.hand) cleanup();
-  }, [hand]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (s && s.cut === 'short' && hand !== undefined && (hand !== s.hand || curMode !== s.mode)) cleanup();
+  }, [hand, curMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 在线断线：立刻结束演出，让重连提示正常显示
   useEffect(
@@ -177,7 +206,7 @@ export function useDefeatDirector(view: TableView | null) {
           if (!tl) return;
           const merged = new Map<string, number>();
           for (const w of v.summary!.winners) merged.set(w.playerId, (merged.get(w.playerId) ?? 0) + w.amount);
-          start(vv, key, verdict, [...merged].map(([playerId, amount]) => ({ playerId, amount })), tl, performance.now());
+          start(holdemStage(vv), key, verdict, topWinner([...merged].map(([playerId, amount]) => ({ playerId, amount }))), tl, performance.now());
         }, Math.max(0, cue.start + reveal - performance.now()));
       }),
     [], // eslint-disable-line react-hooks/exhaustive-deps
@@ -202,38 +231,71 @@ export function useDefeatDirector(view: TableView | null) {
         const remaining = v.nextHandAt ? v.nextHandAt - (Date.now() + g.clockOffset) - 350 : null;
         const tl = buildTimeline(verdict.cut, remaining);
         if (!tl) return;
-        start(v, key, verdict, p.winners, tl, p.start);
+        start(holdemStage(v), key, verdict, topWinner(p.winners), tl, p.start);
+      }),
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // 21 点 / 百家乐：结果演出进入“揭晓”（verdict）的那一刻 = 结果揭晓。
+  // 结果来自引擎 / 服务器（视图里已经结算好的下注、返还与余额）；输家是自己，赢家是动物庄家。
+  const houseVerdict = (stage: DefeatStage, key: string, outcome: ReturnType<typeof verdictOf>, nextAt: number | null) => {
+    if (!outcome || useDefeat.getState().seq || useDefeat.getState().played.includes(key)) return;
+    const g = useGame.getState();
+    // 简短版必须在下一局开始前演完（在线房间按服务器给出的下一局时间；单人桌等玩家按“下一局”）
+    const remaining = nextAt ? nextAt - (Date.now() + g.clockOffset) - 350 : null;
+    const tl = buildTimeline(outcome.cut, remaining);
+    if (tl) start(stage, key, outcome, HOUSE_WINNER_ID, tl, performance.now());
+  };
+  useEffect(
+    () =>
+      useBacCine.subscribe((s, prev) => {
+        const c = s.cine;
+        if (!c || c.phase !== 'verdict' || prev.cine?.phase === 'verdict') return;
+        const v = bacRef.current;
+        if (!v || v.roundId !== c.roundId) return;
+        const o = baccaratOutcome(v);
+        houseVerdict(baccaratStage(v), `bac:${v.roundId}`, o && verdictOf(o), v.nextRoundAt);
+      }),
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(
+    () =>
+      useBjCine.subscribe((s, prev) => {
+        const c = s.cine;
+        if (!c || c.phase !== 'verdict' || prev.cine?.phase === 'verdict') return;
+        const v = bjRef.current;
+        if (!v || v.roundId !== c.roundId) return;
+        const o = blackjackOutcome(v);
+        houseVerdict(blackjackStage(v), `bj:${v.roundId}`, o && verdictOf(o), v.nextRoundAt);
       }),
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   function start(
-    v: TableView,
+    stage: DefeatStage,
     key: string,
     verdict: NonNullable<ReturnType<typeof defeatVerdict>>,
-    winners: { playerId: string; amount: number }[],
+    winnerId: string | null,
     tl: NonNullable<ReturnType<typeof buildTimeline>>,
     t0: number,
   ) {
-    const loserId = v.viewerId;
-    let winnerId: string | null = null;
-    let best = -1;
-    for (const w of winners) if (w.amount > best) ((best = w.amount), (winnerId = w.playerId));
-    const layout = computeLayout(v);
+    const loserId = stage.viewerId;
+    const layout = stage.layout;
     const L = layout.get(loserId);
     const reduced = prefersReducedMotion();
     const profile = defeatProfile({ mobile: !isPC(), quality: useSettings.getState().quality, reduced });
     const at: Partial<Record<DefeatPhase, number>> = {};
     for (const ph of PHASE_ORDER) if (tl.times[ph] !== undefined) at[ph] = t0 + tl.times[ph]!;
     const lookers: Record<string, number> = {};
-    const order = lookOrder(v.players, loserId, winnerId, Math.random, tl.scale);
-    const loserSpecies = v.players.find((p) => p.id === loserId)?.profile.animal.species;
+    const order = lookOrder(stage.cast, loserId, winnerId, Math.random, tl.scale);
+    const loserSpecies = stage.cast.find((p) => p.id === loserId)?.profile.animal.species;
     for (const o of order) lookers[o.id] = (at.reaction ?? t0) + o.delay;
     // 完整版：赢家在自己的特写里就已经看向输家
     if (winnerId && at.winner !== undefined && lookers[winnerId] !== undefined) lookers[winnerId] = at.winner + 350;
     const seq: DefeatSequence = {
       key,
-      hand: v.handNumber,
+      mode: stage.mode,
+      hand: stage.round,
       cut: verdict.cut,
       loserId,
       winnerId,
@@ -250,7 +312,7 @@ export function useDefeatDirector(view: TableView | null) {
     if (!beginDefeat(seq)) return;
 
     const fx = useFx.getState();
-    const seat = (id: string) => v.players.find((p) => p.id === id);
+    const seat = (id: string) => stage.cast.find((p) => p.id === id);
     const species = (id: string) => seat(id)?.profile.animal.species;
     const full = verdict.cut === 'full';
     const when = (absMs: number, fn: () => void) => timers.later(() => {

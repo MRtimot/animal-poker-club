@@ -3,10 +3,14 @@
 // 阶段由 useDefeatDirector 按时间表推进；镜头、灯光、粒子在每一帧里按时间计算，不需要频繁更新这里。
 import { create } from 'zustand';
 import type { DefeatCut, DefeatPhase, DefeatProfile } from './defeatRules';
+import type { GameMode } from '../../core/gameMode';
 
 export interface DefeatSequence {
-  /** 去重用：`${handNumber}:${win 事件序号}` */
+  /** 去重用：德州 `${handNumber}:${win 事件序号}`；21 点 / 百家乐 `bj:${roundId}` / `bac:${roundId}` */
   key: string;
+  /** 哪个游戏模式（画面文字用“这一手 / 这一局”） */
+  mode: GameMode;
+  /** 局号（德州：第几手）；简短版遇到下一局立即结束 */
   hand: number;
   cut: DefeatCut;
   loserId: string;

@@ -1,5 +1,6 @@
 // 百家乐事件导演：引擎 / 服务器的事件 → 筹码飞行、动物动作、镜头、灯光、音效、结果演出。
 // 只负责表现：结果早已确定，演出可以随时跳过或打断，余额与胜负不变；按事件序号去重，同一事件不会播放两次。
+import { defeatActive } from '../defeat/defeatStore';
 import { useEffect, useRef } from 'react';
 import { BAC_DEALER_ID, type BacEvent, type BaccaratView } from '../../core/baccarat/types';
 import { BAC_SPOTS, betTotal } from '../../core/baccarat/rules';
@@ -54,7 +55,8 @@ const pickReaction = (k: keyof typeof REACTIONS, s: Species) => REACTIONS[k][s] 
 /** 演出结束 / 跳过 / 打断：声音、灯光、镜头恢复；筹码立即就位 */
 function endCine(cineTimers: TimerBag, roundId: string | null) {
   cineTimers.cancelAll();
-  sound.resetMix(0.6);
+  // 失败演出正在进行：混音由失败演出控制（结束时它自己恢复），这里不能把音乐提前放回来
+  if (!defeatActive()) sound.resetMix(0.6);
   const fx = useFx.getState();
   fx.setTension(0);
   if (fx.cue?.type === 'focus') fx.setCue(null);

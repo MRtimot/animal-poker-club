@@ -2,13 +2,23 @@
 import type { BlackjackView } from '../../core/blackjack/types';
 import { DEALER_ID } from '../../core/blackjack/types';
 import { BJ_TIMING } from '../../core/blackjack/controller';
-import { BOARD_SCALE, TABLE_Y, seatAngles, seatLayoutAt, type SeatLayout, type V3 } from '../layout';
+import { BOARD_SCALE, SEAT_R, TABLE_Y, seatAngles, seatLayoutAt, type SeatLayout, type V3 } from '../layout';
 
 export const SHOE_POS: V3 = [1.72, TABLE_Y + 0.2, -1.7];
 export const DISCARD_POS: V3 = [-1.78, TABLE_Y + 0.07, -1.7];
 /** 庄家的筹码盘 */
 export const TRAY_POS: V3 = [0, TABLE_Y + 0.01, -2.5];
 export const DEALER_Z = -1.28;
+
+/** 动物庄家（21 点、百家乐）：站在桌子对面，比坐着的动物放大一些 */
+export const DEALER_STAND: V3 = [0, 0.1, -(SEAT_R - 0.2)];
+export const DEALER_SCALE = 1.16;
+/** 站着的动物头部中心离脚底的高度（实测：未放大时约 1.80） */
+const STAND_FACE_Y = 1.8;
+/** 庄家脸的位置（失败演出的赢家特写等电影镜头使用） */
+export const DEALER_FACE: V3 = [0, DEALER_STAND[1] + STAND_FACE_Y * DEALER_SCALE, DEALER_STAND[2] + 0.02];
+/** 庄家的座位布局（加上真实的脸部位置与体型） */
+export const dealerLayout = (id: string): SeatLayout => ({ ...seatLayoutAt(id, Math.PI, false), face: DEALER_FACE, faceScale: DEALER_SCALE });
 
 export { seatAngles };
 
@@ -23,7 +33,7 @@ export function layoutSeats(ids: readonly string[], viewerId: string): Map<strin
   const angles = seatAngles(ids.length, Math.max(0, ids.indexOf(viewerId)));
   const m = new Map<string, SeatLayout>();
   ids.forEach((id, i) => m.set(id, { ...seatLayoutAt(id, angles[i], id === viewerId), bet: around(angles[i], 2.62, 0) }));
-  m.set(DEALER_ID, seatLayoutAt(DEALER_ID, Math.PI, false));
+  m.set(DEALER_ID, dealerLayout(DEALER_ID));
   return m;
 }
 

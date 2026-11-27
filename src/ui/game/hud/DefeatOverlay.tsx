@@ -2,7 +2,6 @@
 // 出局处决（完整版）：最后一句话的字幕、处决瞬间横过画面的一道刀光与“白 → 暗红”的闪光。
 // 状态全部来自失败演出（animation/defeat）；这里不计时、不判断结果。
 import { useEffect } from 'react';
-import type { TableView } from '../../../core/game/view';
 import { useDefeat } from '../../../animation/defeat/defeatStore';
 import { finishDefeat, skipDefeat } from '../../../animation/defeat/useDefeatDirector';
 import type { DefeatPhase } from '../../../animation/defeat/defeatRules';
@@ -15,7 +14,11 @@ const BARS: DefeatPhase[] = ['realize', 'winner', 'reaction', 'tension', 'lastwo
 const TENSE: DefeatPhase[] = ['tension', 'lastword', 'prep', 'ecu', 'insert', 'silence'];
 const SKIPPABLE: DefeatPhase[] = ['result', 'realize', 'winner', 'reaction', 'tension', 'lastword', 'prep', 'ecu', 'insert', 'silence', 'impact', 'headfall', 'collapse', 'aftermath', 'blackout'];
 
-export function DefeatOverlay({ view }: { view: TableView }) {
+/**
+ * 所有游戏模式共用的失败演出画面层。gameOver：德州整场比赛已经结束（只有德州有“整场”）。
+ * 21 点 / 百家乐输光后回到牌桌就可以领取俱乐部补给（或在线房间的补充筹码）。
+ */
+export function DefeatOverlay({ gameOver = false }: { gameOver?: boolean }) {
   const seq = useDefeat((s) => s.seq);
   const phase = useDefeat((s) => s.phase);
   const skipped = useDefeat((s) => s.skipped);
@@ -40,7 +43,8 @@ export function DefeatOverlay({ view }: { view: TableView }) {
   const tense = TENSE.includes(phase);
   const dark = full && (phase === 'blackout' || phase === 'defeated');
   const canSkip = seen && SKIPPABLE.includes(phase) && !(skipped && full);
-  const gameOver = !!view.gameOver;
+  const house = seq.mode !== 'texas-holdem';
+  const unit = house ? '局' : '手';
 
   return (
     <div className={`dcine ${full ? 'full' : 'short'} ph-${phase}${seq.reduced ? ' reduced' : ''}`} aria-live="polite">
@@ -67,7 +71,7 @@ export function DefeatOverlay({ view }: { view: TableView }) {
             你出局了
           </h2>
           <div className="dcine-rule" aria-hidden />
-          <p className="dcine-sub">{gameOver ? '牌桌会记住这一手。' : '这一手，你输掉了全部筹码。'}</p>
+          <p className="dcine-sub">{gameOver ? '牌桌会记住这一手。' : `这一${unit}，你输掉了全部筹码。`}</p>
           <div className="dcine-actions">
             {gameOver ? (
               <>
@@ -81,7 +85,7 @@ export function DefeatOverlay({ view }: { view: TableView }) {
             ) : (
               <>
                 <button type="button" className="dcine-btn primary" onClick={finishDefeat} autoFocus>
-                  继续观战
+                  {house ? '回到牌桌' : '继续观战'}
                 </button>
                 <button type="button" className="dcine-btn" onClick={() => session.leave(mode === 'online' ? 'online' : 'home')}>
                   {mode === 'online' ? '离开房间' : '返回俱乐部'}
@@ -95,7 +99,7 @@ export function DefeatOverlay({ view }: { view: TableView }) {
       {!full && (phase === 'defeated' || phase === 'recover') && (
         <div className={`dcine-caption${phase === 'recover' ? ' out' : ''}`} role="status">
           <div className="dcine-eyebrow">DEFEATED</div>
-          <div className="dcine-caption-title">这一手，你输了</div>
+          <div className="dcine-caption-title">这一{unit}，你输了</div>
           <div className="dcine-caption-sub">
             输掉 {formatChips(seq.lost)} 筹码 · {Math.round(seq.ratio * 100)}%
           </div>

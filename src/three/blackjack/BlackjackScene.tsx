@@ -16,18 +16,22 @@ import { ChipFlights, ChipPile } from '../chips/Chips';
 import { Bursts } from '../effects/Bursts';
 import { Chair, ClubEnvironment, PokerTableMesh } from '../environment/ClubEnvironment';
 import { TurnGlow } from '../environment/TableMarkings';
-import { SEAT_R, type SeatLayout, type V3 } from '../layout';
+import type { SeatLayout, V3 } from '../layout';
 import { SceneLights } from '../scenes/SceneLights';
 import { SeatEntrance, yawToward } from '../scenes/SeatEntrance';
+import { DefeatIsolationLight, useDefeatLook } from '../scenes/defeatStage';
+import { DefeatFX, DefeatWarmup } from '../effects/DefeatFX';
 import { BlackjackMarkings, ShoeAndDiscard } from './Markings';
 import { BjSeatPlate, BubbleAnchor } from './SeatPlates';
-import { DISCARD_POS, SHOE_POS, TRAY_POS, computeBlackjackLayout, dealDelay, dealerCardTarget, handBetPos, handCardTarget, layoutSeats } from './layout';
+import { DEALER_SCALE, DEALER_STAND, DISCARD_POS, SHOE_POS, TRAY_POS, computeBlackjackLayout, dealDelay, dealerCardTarget, handBetPos, handCardTarget, layoutSeats } from './layout';
 
 /** 庄家筹码盘里的筹码（装饰，不参与任何计算） */
 const TRAY_CHIPS = 36575;
 
 function Seat({ p, view, layout, all, index, paid }: { p: BjSeatView; view: BlackjackView; layout: SeatLayout; all: Map<string, SeatLayout>; index: number; paid: boolean }) {
   const rotY = layout.angle + Math.PI;
+  // 失败演出：其他动物转头看向输家；输家看向庄家（赢家）
+  const defeatLook = useDefeatLook(p.id, layout, all);
   const thinking = view.currentPlayerId === p.id;
   // 看向正在行动的人；庄家行动时看庄家
   const target = view.currentPlayerId && view.currentPlayerId !== p.id ? view.currentPlayerId : view.phase === 'dealer-turn' || view.phase === 'round-end' ? DEALER_ID : null;
@@ -40,7 +44,7 @@ function Seat({ p, view, layout, all, index, paid }: { p: BjSeatView; view: Blac
     <group>
       <SeatEntrance layout={layout} species={p.profile.animal.species} playerId={p.id} order={index} chair={<Chair position={[layout.seat[0], 0, layout.seat[2]]} rotY={rotY} />}>
         <group position={layout.seat} rotation={[0, rotY, 0]}>
-          {!p.left && <AnimalModel config={p.profile.animal} animKey={p.id} seated thinking={thinking} seed={index} lookYaw={lookYaw} />}
+          {!p.left && <AnimalModel config={p.profile.animal} animKey={p.id} seated thinking={thinking} seed={index} lookYaw={lookYaw} defeatLook={defeatLook} />}
         </group>
       </SeatEntrance>
       {p.id === view.viewerId ? <BubbleAnchor id={p.id} layout={layout} /> : <BjSeatPlate p={p} view={view} layout={layout} paid={paid} />}
@@ -91,6 +95,7 @@ export function BlackjackScene({ view }: { view: BlackjackView }) {
   const ids = view.players.map((p) => p.id).join('\n');
   const layout = useMemo(() => layoutSeats(ids.split('\n'), view.viewerId), [ids, view.viewerId]);
   const dealerSeat = layout.get(DEALER_ID)!;
+  const dealerLook = useDefeatLook(DEALER_ID, dealerSeat, layout);
 
   // 离开牌桌：清掉动画、气泡、粒子与镜头提示
   useEffect(
@@ -150,8 +155,8 @@ export function BlackjackScene({ view }: { view: BlackjackView }) {
       <ChipPile amount={TRAY_CHIPS} position={TRAY_POS} layout="neat" />
 
       {/* 庄家：站在桌子对面 */}
-      <group position={[0, 0.1, -(SEAT_R - 0.2)]} scale={1.16}>
-        <AnimalModel config={view.dealer.profile.animal} animKey={DEALER_ID} seed={17} thinking={view.phase === 'dealer-turn' && !view.dealer.revealed} lookYaw={0} />
+      <group position={DEALER_STAND} scale={DEALER_SCALE}>
+        <AnimalModel config={view.dealer.profile.animal} animKey={DEALER_ID} seed={17} thinking={view.phase === 'dealer-turn' && !view.dealer.revealed} lookYaw={0} defeatLook={dealerLook} />
       </group>
       <BubbleAnchor id={DEALER_ID} layout={dealerSeat} dy={0.35} />
 
@@ -171,6 +176,10 @@ export function BlackjackScene({ view }: { view: BlackjackView }) {
 
       <ChipFlights />
       <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />
+      {/* 失败演出（与德州共用）：输家头顶的冷光、冲击的烟雾与粒子、处决时的头部 */}
+      <DefeatIsolationLight layout={layout} />
+      <DefeatFX layout={layout} />
+      <DefeatWarmup />
       <CameraRig mode={cameraMode} layout={layout} preset="blackjack" />
     </>
   );

@@ -16,20 +16,24 @@ import { Card3D } from '../cards/Card3D';
 import { ChipFlights, ChipPile } from '../chips/Chips';
 import { Bursts } from '../effects/Bursts';
 import { Chair, ClubEnvironment, PokerTableMesh } from '../environment/ClubEnvironment';
-import { SEAT_R, TABLE_Y, type SeatLayout, type V3 } from '../layout';
+import { TABLE_Y, type SeatLayout, type V3 } from '../layout';
 import { SceneLights } from '../scenes/SceneLights';
 import { SeatEntrance, yawToward } from '../scenes/SeatEntrance';
+import { DefeatIsolationLight, useDefeatLook } from '../scenes/defeatStage';
+import { DefeatFX, DefeatWarmup } from '../effects/DefeatFX';
 import { ShoeAndDiscard } from '../blackjack/Markings';
 import { BubbleAnchor } from '../blackjack/SeatPlates';
 import { CARD_SKINS, CardSkinContext, ChipSkinContext, TABLE_THEMES } from '../skins';
 import { BaccaratMarkings } from './Markings';
 import { BacSeatPlate } from './SeatPlates';
-import { DISCARD_POS, SHOE_POS, TRAY_POS, bacCardTarget, bacSpotPos, layoutBacSeats } from './layout';
+import { DEALER_SCALE, DEALER_STAND, DISCARD_POS, SHOE_POS, TRAY_POS, bacCardTarget, bacSpotPos, layoutBacSeats } from './layout';
 
 const TRAY_CHIPS = 48250;
 
 function Seat({ p, view, layout, all, index, paid }: { p: BacSeatView; view: BaccaratView; layout: SeatLayout; all: Map<string, SeatLayout>; index: number; paid: boolean }) {
   const rotY = layout.angle + Math.PI;
+  // 失败演出：其他动物转头看向输家；输家看向庄家（赢家）
+  const defeatLook = useDefeatLook(p.id, layout, all);
   // 开牌时所有人都看向牌
   const lookYaw = useMemo(() => {
     const t = all.get(BAC_DEALER_ID);
@@ -41,7 +45,7 @@ function Seat({ p, view, layout, all, index, paid }: { p: BacSeatView; view: Bac
     <group>
       <SeatEntrance layout={layout} species={p.profile.animal.species} playerId={p.id} order={index} chair={<Chair position={[layout.seat[0], 0, layout.seat[2]]} rotY={rotY} />}>
         <group position={layout.seat} rotation={[0, rotY, 0]}>
-          {!p.left && <AnimalModel config={p.profile.animal} animKey={p.id} seated thinking={view.phase === 'betting' && !p.placed && !p.skipped} seed={index} lookYaw={view.phase === 'dealing' ? lookYaw : null} />}
+          {!p.left && <AnimalModel config={p.profile.animal} animKey={p.id} seated thinking={view.phase === 'betting' && !p.placed && !p.skipped} seed={index} lookYaw={view.phase === 'dealing' ? lookYaw : null} defeatLook={defeatLook} />}
         </group>
       </SeatEntrance>
       {p.id === view.viewerId ? <BubbleAnchor id={p.id} layout={layout} /> : <BacSeatPlate p={p} view={view} layout={layout} paid={paid} />}
@@ -72,6 +76,7 @@ export function BaccaratScene({ view }: { view: BaccaratView }) {
   const ids = view.players.map((p) => p.id).join('\n');
   const layout = useMemo(() => layoutBacSeats(ids.split('\n'), view.viewerId), [ids, view.viewerId]);
   const dealerSeat = layout.get(BAC_DEALER_ID)!;
+  const dealerLook = useDefeatLook(BAC_DEALER_ID, dealerSeat, layout);
 
   useEffect(
     () => () => {
@@ -127,8 +132,8 @@ export function BaccaratScene({ view }: { view: BaccaratView }) {
         <ShoeAndDiscard used={used} />
         <ChipPile amount={TRAY_CHIPS} position={TRAY_POS} layout="neat" />
 
-        <group position={[0, 0.1, -(SEAT_R - 0.2)]} scale={1.16}>
-          <AnimalModel config={view.dealer.profile.animal} animKey={BAC_DEALER_ID} seed={23} thinking={view.phase === 'dealing'} lookYaw={0} />
+        <group position={DEALER_STAND} scale={DEALER_SCALE}>
+          <AnimalModel config={view.dealer.profile.animal} animKey={BAC_DEALER_ID} seed={23} thinking={view.phase === 'dealing'} lookYaw={0} defeatLook={dealerLook} />
         </group>
         <BubbleAnchor id={BAC_DEALER_ID} layout={dealerSeat} dy={0.35} />
 
@@ -164,7 +169,11 @@ export function BaccaratScene({ view }: { view: BaccaratView }) {
 
         <ChipFlights />
         <Bursts density={quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1} />
-        <CameraRig mode={cameraMode} layout={layout} preset="baccarat" />
+        {/* 失败演出（与德州共用）：输家头顶的冷光、冲击的烟雾与粒子、处决时的头部 */}
+      <DefeatIsolationLight layout={layout} />
+      <DefeatFX layout={layout} />
+      <DefeatWarmup />
+      <CameraRig mode={cameraMode} layout={layout} preset="baccarat" />
         {/* 牌背外观改变时，牌靴里露出的那张也一起变（只是外观） */}
         <group userData={{ cardSkin: CARD_SKINS[cardSkin].name }} />
       </ChipSkinContext.Provider>

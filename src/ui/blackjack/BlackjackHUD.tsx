@@ -1,5 +1,6 @@
 // 21 点界面：顶栏、庄家、自己的手牌、下注 / 行动 / 结果面板、结果演出。
 // 所有数字来自视图（引擎 / 服务器）；这里不做任何 21 点判断。
+import { DefeatOverlay } from '../game/hud/DefeatOverlay';
 import { useEffect, useRef, useState } from 'react';
 import { BJ_PHASE_NAME, type BlackjackView } from '../../core/blackjack/types';
 import { OUTCOME_TITLE, buildCine, useBjCine } from '../../animation/blackjack/cineStore';
@@ -228,6 +229,8 @@ export function BlackjackHUD({ view }: { view: BlackjackView }) {
         {view.phase === 'betting' ? <BetPanel key={view.roundId} view={view} /> : view.phase === 'round-end' && !cineOn ? <RoundEnd view={view} /> : view.legal ? <ActionBar view={view} ready={ready} /> : <Waiting view={view} />}
       </div>
       <ResultOverlay view={view} />
+      {/* 失败演出（与德州共用）：输光 = 完整处决；一局输掉一半以上 = 简短版 */}
+      <DefeatOverlay />
       {rules && <BlackjackRulesModal rules={view.rules} onClose={() => setRules(false)} />}
       {settings && (
         <Modal title="⚙️ 设置" onClose={() => setSettings(false)} actions={<Btn onClick={() => setSettings(false)}>完成</Btn>}>

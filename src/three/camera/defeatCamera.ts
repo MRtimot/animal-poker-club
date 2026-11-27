@@ -104,10 +104,12 @@ export function defeatShot(seq: DefeatSequence, phase: DefeatPhase, now: number,
     }
     case 'winnerCU': {
       const W = seq.winnerId ? layout.get(seq.winnerId) : undefined;
-      const wh = W ? new THREE.Vector3(...W.head).add(up(-FACE_DROP)) : head;
+      // 站着的动物庄家：用真实的脸部位置，并按体型拉开距离（否则镜头会贴到脸上）
+      const wh = W?.face ? new THREE.Vector3(...W.face) : W ? new THREE.Vector3(...W.head).add(up(-FACE_DROP)) : head;
+      const ws = W?.faceScale ?? 1;
       // 赢家看着输家：镜头放在赢家脸朝向的方向
       const wf = W ? facing(W, L, 0.7) : dir.clone().negate();
-      pos = wh.clone().add(wf.multiplyScalar((2.6 - p * 0.35) * k)).add(up(0.3));
+      pos = wh.clone().add(wf.multiplyScalar((2.6 - p * 0.35) * k * ws)).add(up(0.3 * ws));
       look = wh.clone().add(up(-0.05));
       focus = wh.clone();
       fov = cu;

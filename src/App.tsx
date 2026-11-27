@@ -374,8 +374,8 @@ function Directors() {
   const activeBj = screen === 'game' ? bj : null;
   const activeBac = screen === 'game' ? bac : null;
   useTableDirector(active);
-  // 失败演出：自己输掉关键一手（出局 / 一手输掉一半以上筹码）时的电影化演出（只是画面表现）
-  useDefeatDirector(active);
+  // 失败演出（所有模式共用）：自己输掉关键一局（输光出局 / 一局输掉一半以上筹码）时的电影化演出（只是画面表现）
+  useDefeatDirector(active, activeBj, activeBac);
   useBlackjackDirector(activeBj);
   useBaccaratDirector(activeBac);
   useChatReactions(active, activeBj, activeBac);

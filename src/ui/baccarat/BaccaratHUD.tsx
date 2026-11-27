@@ -1,5 +1,6 @@
 // 百家乐界面：顶栏、闲 / 庄牌条与最近结果、自己的座位、下注 / 开牌 / 结果面板、结果演出、规则与外观。
 // 所有数字来自视图（引擎 / 服务器）；这里不做任何百家乐判断。
+import { DefeatOverlay } from '../game/hud/DefeatOverlay';
 import { useEffect, useRef, useState } from 'react';
 import { BAC_PHASE_NAME, type BaccaratView } from '../../core/baccarat/types';
 import { SPOT_NAME, betTotal } from '../../core/baccarat/rules';
@@ -268,6 +269,8 @@ export function BaccaratHUD({ view }: { view: BaccaratView }) {
         {view.phase === 'betting' ? <BacBetPanel key={view.roundId} view={view} /> : view.phase === 'round-end' && !cineOn ? <RoundEnd view={view} /> : <Dealing view={view} />}
       </div>
       <BacResultOverlay view={view} />
+      {/* 失败演出（与德州共用）：输光 = 完整处决；一局输掉一半以上 = 简短版 */}
+      <DefeatOverlay />
       {rules && <BaccaratRulesModal rules={view.rules} onClose={() => setRules(false)} />}
       {look && (
         <Modal title="🎨 牌桌外观" onClose={() => setLook(false)} actions={<Btn onClick={() => setLook(false)}>完成</Btn>}>

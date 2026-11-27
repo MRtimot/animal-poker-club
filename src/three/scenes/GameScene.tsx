@@ -22,6 +22,7 @@ import { eventShown, presentedBets } from '../../ui/game/hud/model';
 import { sound } from '../../audio/sound';
 import { useDefeat } from '../../animation/defeat/defeatStore';
 import { SeatEntrance, yawToward } from './SeatEntrance';
+import { useDefeatLook } from './defeatStage';
 import { DefeatFX, DefeatWarmup } from '../effects/DefeatFX';
 import { DEFEAT_ISOLATE } from '../effects/DefeatFX';
 import { FACE_DROP } from '../camera/defeatCamera';
@@ -70,14 +71,7 @@ function PlayerSeat({ p, view, layout, allLayout, dealOrder, showdownOrder, deal
   const thinking = view.currentPlayerId === p.id;
   // 失败演出：其他动物一个接一个转头看向输家；输家看向赢家。出局的输家在演出结束前继续显示
   const dseq = useDefeat((s) => s.seq);
-  const defeatLook = useMemo(() => {
-    if (!dseq) return null;
-    const targetId = p.id === dseq.loserId ? dseq.winnerId : dseq.loserId;
-    const from = p.id === dseq.loserId ? dseq.at.realize : dseq.lookers[p.id];
-    const t = targetId ? allLayout.get(targetId) : undefined;
-    if (!t || from === undefined) return null;
-    return { yaw: yawToward(layout, t), from };
-  }, [dseq, p.id, layout, allLayout]);
+  const defeatLook = useDefeatLook(p.id, layout, allLayout);
   const keepVisible = !!dseq && dseq.loserId === p.id;
   const showdown = view.phase === 'showdown' || view.phase === 'complete';
   // 摊牌时按顺序逐个亮牌

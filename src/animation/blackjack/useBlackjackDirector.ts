@@ -1,5 +1,6 @@
 // 21 点事件导演：引擎 / 服务器的事件 → 筹码飞行、动物动作、镜头、灯光、音效、结果演出。
 // 只负责表现：结果早已确定，演出可以随时跳过或打断，余额与胜负不变；离开牌桌 / 下一局开始时全部清理。
+import { defeatActive } from '../defeat/defeatStore';
 import { useEffect, useRef } from 'react';
 import { DEALER_ID, type BjEvent, type BlackjackView } from '../../core/blackjack/types';
 import { BJ_TIMING } from '../../core/blackjack/controller';
@@ -80,7 +81,8 @@ export function skipBjCine() {
 /** 演出结束 / 跳过 / 打断：声音、灯光、镜头恢复；筹码立即就位 */
 function endCine(cineTimers: TimerBag, roundId: string | null) {
   cineTimers.cancelAll();
-  sound.resetMix(0.6);
+  // 失败演出正在进行：混音由失败演出控制（结束时它自己恢复），这里不能把音乐提前放回来
+  if (!defeatActive()) sound.resetMix(0.6);
   const fx = useFx.getState();
   fx.setTension(0);
   if (fx.cue?.type === 'focus') fx.setCue(null);

@@ -1,4 +1,5 @@
 // 结果演出的画面层：安静 → 宣布 → 派彩。只读取已经确定的结果；可以跳过（只跳过画面）
+import { defeatActive, useDefeat } from '../../animation/defeat/defeatStore';
 import { useEffect } from 'react';
 import type { BaccaratView } from '../../core/baccarat/types';
 import { WINNER_TITLE, useBacCine } from '../../animation/baccarat/cineStore';
@@ -12,13 +13,16 @@ export function BacResultOverlay({ view }: { view: BaccaratView }) {
   useEffect(() => {
     if (!playing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || hotkeyBlocked(e)) return;
+      // 失败演出进行中：Esc 交给失败演出（跳过它自己的画面）
+      if (e.key !== 'Escape' || hotkeyBlocked(e) || defeatActive()) return;
       skipBacCine();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [playing]);
-  if (!cine || cine.roundId !== view.roundId) return null;
+  // 失败演出接管画面后（输家特写开始）不再显示，避免挡住镜头
+  const defeatTook = useDefeat((d) => !!d.phase && d.phase !== 'result');
+  if (defeatTook || !cine || cine.roundId !== view.roundId) return null;
   const t = WINNER_TITLE[cine.winner];
   const open = cine.phase !== 'hush';
   return (

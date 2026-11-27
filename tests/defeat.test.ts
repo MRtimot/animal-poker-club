@@ -130,6 +130,7 @@ describe('时间表', () => {
 describe('演出状态', () => {
   const seq = (key: string): DefeatSequence => ({
     key,
+    mode: 'texas-holdem',
     hand: 1,
     cut: 'full',
     loserId: 'me',
@@ -223,6 +224,7 @@ describe('角色与设备', () => {
   it('DEF-13 输家的椅子：冲击后滑出、翘起再落回；只影响输家；跳过 / 演出结束后归零', () => {
     const s: DefeatSequence = {
       key: 'c',
+      mode: 'texas-holdem',
       hand: 1,
       cut: 'full',
       loserId: 'me',

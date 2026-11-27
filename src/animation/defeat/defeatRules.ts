@@ -28,7 +28,34 @@ export interface DefeatVerdict {
 }
 
 /**
- * 根据一手牌的真实结果判断观看者（自己）是否需要失败演出。
+ * 全局结果（德州、21 点、百家乐以及以后的模式共用）：一局结束后，观看者（自己）这一局真实的输赢。
+ * 每个模式只负责从自己的引擎结果算出这几个数字；要不要演、演哪个版本由 verdictOf 统一决定，
+ * 所以所有模式的失败演出标准一致（输光 = 完整处决；一局输掉一半以上 = 简短版；普通输一局不演；赢 / 打平不演）。
+ */
+export interface RoundOutcome {
+  /** 这一局净输掉的筹码（赢或打平时为 0） */
+  lost: number;
+  /** 这一局开始时（下注前）的筹码 */
+  startStack: number;
+  /** 输完之后已经不能继续：德州筹码为 0；21 点 / 百家乐不够最低下注 */
+  busted: boolean;
+  /** 简短版至少要输掉多少：德州 10 个大盲；21 点 / 百家乐 10 个最低下注 */
+  heavyMin: number;
+}
+
+/** 庄家游戏（21 点、百家乐）的大额失利门槛：最低下注的这个倍数 */
+export const HOUSE_HEAVY_MIN_BETS = 10;
+
+export function verdictOf(o: RoundOutcome): DefeatVerdict | null {
+  if (!(o.lost > 0) || !(o.startStack > 0)) return null;
+  if (o.busted) return { cut: 'full', lost: o.lost, ratio: 1 };
+  const ratio = o.lost / o.startStack;
+  if (ratio >= HEAVY_LOSS_RATIO && o.lost >= o.heavyMin) return { cut: 'short', lost: o.lost, ratio };
+  return null;
+}
+
+/**
+ * 德州：根据一手牌的真实结果判断观看者（自己）是否需要失败演出。
  * 只在摊牌后才可能触发（对手弃牌让你赢 / 你自己弃牌都不算），赢得任何一个池（包括边池）也不算失败。
  */
 export function defeatVerdict(view: TableView, winnerIds: Iterable<string>, uncontested: boolean): DefeatVerdict | null {
@@ -41,12 +68,7 @@ export function defeatVerdict(view: TableView, winnerIds: Iterable<string>, unco
   let refund = 0;
   for (const e of view.events) if (e.type === 'refund' && e.playerId === me.id) refund += e.amount;
   const lost = Math.max(0, me.totalBet - refund);
-  const startStack = me.chips + lost;
-  if (lost <= 0 || startStack <= 0) return null;
-  const ratio = lost / startStack;
-  if (me.chips === 0) return { cut: 'full', lost, ratio: 1 };
-  if (ratio >= HEAVY_LOSS_RATIO && lost >= HEAVY_LOSS_MIN_BB * view.bigBlind) return { cut: 'short', lost, ratio };
-  return null;
+  return verdictOf({ lost, startStack: me.chips + lost, busted: me.chips === 0, heavyMin: HEAVY_LOSS_MIN_BB * view.bigBlind });
 }
 
 // ───────────────────────── 时间表 ─────────────────────────
@@ -145,7 +167,7 @@ export function phaseEnd(times: Partial<Record<DefeatPhase, number>>, ph: Defeat
 }
 
 /** 其他动物一个接一个转头看向输家：每个间隔 0.15~0.35 秒（赢家最先） */
-export function lookOrder(players: SeatView[], loserId: string, winnerId: string | null, rand: () => number = Math.random, scale = 1): { id: string; delay: number }[] {
+export function lookOrder(players: readonly Pick<SeatView, 'id' | 'busted' | 'sittingOut'>[], loserId: string, winnerId: string | null, rand: () => number = Math.random, scale = 1): { id: string; delay: number }[] {
   const others = players.filter((p) => p.id !== loserId && !p.busted && !p.sittingOut);
   others.sort((a, b) => (a.id === winnerId ? -1 : b.id === winnerId ? 1 : 0));
   let t = 0;
@@ -277,7 +299,7 @@ const STYLE_BY_SPECIES: Record<Species, WinnerStyle> = {
   penguin: 'calm',
 };
 
-export function winnerStyle(p: Pick<SeatView, 'aiPersonality' | 'profile'>): WinnerStyle {
+export function winnerStyle(p: { aiPersonality?: AIPersonality | null; profile: Pick<SeatView['profile'], 'animal'> }): WinnerStyle {
   if (p.aiPersonality && STYLE_BY_PERSONALITY[p.aiPersonality]) return STYLE_BY_PERSONALITY[p.aiPersonality];
   return STYLE_BY_SPECIES[p.profile.animal.species] ?? 'elegant';
 }

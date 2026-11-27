@@ -30,6 +30,12 @@ export interface SeatLayout {
   button: V3;
   muck: V3;
   isViewer: boolean;
+  /**
+   * 脸的真实位置与体型（只有站着的动物庄家需要：它比坐着的动物高、更靠前、放大了一些）。
+   * 没有时按坐着的动物计算（head 下方 FACE_DROP）。只用于电影镜头取景。
+   */
+  face?: V3;
+  faceScale?: number;
 }
 
 const at = (angle: number, r: number, y: number): V3 => [Math.sin(angle) * r, y, Math.cos(angle) * r];
