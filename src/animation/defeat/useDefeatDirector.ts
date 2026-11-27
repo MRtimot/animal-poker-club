@@ -27,6 +27,7 @@ import {
   EXECUTION_REACTION,
   HEADLESS_COLLAPSE,
   LAST_WORDS,
+  NO_TABLE_GEN,
   PHASE_ORDER,
   REALIZE_BY_TEMPERAMENT,
   WINNER_REACTION,
@@ -35,6 +36,7 @@ import {
   defeatTemperament,
   defeatVerdict,
   lookOrder,
+  trackTableGen,
   verdictOf,
   winnerStyle,
   type DefeatPhase,
@@ -106,6 +108,9 @@ export function useDefeatDirector(view: TableView | null, bj: BlackjackView | nu
   bjRef.current = bj;
   const bacRef = useRef(bac);
   bacRef.current = bac;
+  // 德州：第几场牌局（新的一场手数从头开始；去重的键带上它，新一场的出局不会被当成“已经演过”）
+  const tableGen = useRef(NO_TABLE_GEN);
+  tableGen.current = trackTableGen(tableGen.current, view);
   const timers = useRef(new TimerBag()).current;
   const drone = useRef<{ stop: (fade?: number) => void } | null>(null);
 
@@ -191,7 +196,7 @@ export function useDefeatDirector(view: TableView | null, bj: BlackjackView | nu
         const verdict = defeatVerdict(v, v.summary.winners.map((w) => w.playerId), v.summary.uncontested);
         if (!verdict || verdict.cut !== 'short') return;
         const winEv = [...v.events].reverse().find((e) => e.type === 'win');
-        const key = `${v.handNumber}:${winEv?.seq ?? 'x'}`;
+        const key = `${tableGen.current.n}:${v.handNumber}:${winEv?.seq ?? 'x'}`;
         if (pendingShort.current === key || useDefeat.getState().played.includes(key)) return;
         pendingShort.current = key;
         // 与牌桌上逐个亮牌的节奏一致（每人 650 毫秒），全部翻开后再留一点时间看清
@@ -221,11 +226,11 @@ export function useDefeatDirector(view: TableView | null, bj: BlackjackView | nu
         const v = viewRef.current;
         if (!v || p.hand !== v.handNumber || useDefeat.getState().seq) return;
         const winEv0 = [...v.events].reverse().find((e) => e.type === 'win');
-        if (pendingShort.current === `${v.handNumber}:${winEv0?.seq ?? 'x'}`) return;
+        if (pendingShort.current === `${tableGen.current.n}:${v.handNumber}:${winEv0?.seq ?? 'x'}`) return;
         const verdict = defeatVerdict(v, p.winners.map((w) => w.playerId), p.uncontested);
         if (!verdict) return;
         const winEv = [...v.events].reverse().find((e) => e.type === 'win');
-        const key = `${v.handNumber}:${winEv?.seq ?? p.id}`;
+        const key = `${tableGen.current.n}:${v.handNumber}:${winEv?.seq ?? p.id}`;
         // 简短版必须在下一手开始前演完：按服务器给出的下一手时间计算剩余时间
         const g = useGame.getState();
         const remaining = v.nextHandAt ? v.nextHandAt - (Date.now() + g.clockOffset) - 350 : null;

@@ -71,6 +71,27 @@ export function defeatVerdict(view: TableView, winnerIds: Iterable<string>, unco
   return verdictOf({ lost, startStack: me.chips + lost, busted: me.chips === 0, heavyMin: HEAVY_LOSS_MIN_BB * view.bigBlind });
 }
 
+/**
+ * 德州：这一页面里第几场牌局（演出去重的键要带上它）。
+ * 每一场新牌局的手数与事件序号都从头开始；只用“第几手 + 序号”当键时，新一场里同一手、同一个序号的出局
+ * 会被当成“已经演过”，处决演出不会出现。新一场的标志：离开牌桌后又有了牌桌、手数变小（再来一局 / 重新开始），
+ * 或上一场已经结束而这一场还没结束。同一场里的重连、重新同步不会改变它。
+ */
+export interface TableGen {
+  n: number;
+  hand: number;
+  over: boolean;
+  had: boolean;
+}
+export const NO_TABLE_GEN: TableGen = { n: 0, hand: -1, over: false, had: false };
+export function trackTableGen(g: TableGen, view: Pick<TableView, 'handNumber' | 'gameOver'> | null): TableGen {
+  if (!view) return g.had ? { ...g, had: false } : g;
+  const over = !!view.gameOver;
+  const fresh = !g.had || view.handNumber < g.hand || (g.over && !over);
+  if (!fresh && view.handNumber === g.hand && over === g.over) return g;
+  return { n: g.n + (fresh ? 1 : 0), hand: view.handNumber, over, had: true };
+}
+
 // ───────────────────────── 时间表 ─────────────────────────
 
 /** 演出阶段（与镜头分镜一一对应） */

@@ -5,7 +5,7 @@ import type { AIPersonality } from '../ai/ai';
 import { DEFAULT_DIALOGUE_RULES, DialogueDirector, type DialogueRef, type DirectorState } from '../character/dialogue';
 import { resolveVoiceProfile } from '../character/voice';
 import type { PlayerProfile } from '../player/profile';
-import { secureRandom, type RNG } from '../utils/random';
+import { cryptoRandom, type RNG } from '../utils/random';
 import { BlackjackEngine, BlackjackError, type BlackjackEngineState } from './engine';
 import { cardPoints, evaluateBlackjack } from './hand';
 import type { BlackjackRules } from './rules';
@@ -155,7 +155,8 @@ export class BlackjackController {
     this.aiRng = o.aiRng ?? Math.random;
     this.autoRun = o.autoRun ?? true;
     this.dealer = o.dealer;
-    this.engine = new BlackjackEngine(o.rules, o.rng ?? secureRandom);
+    // 与引擎的默认值一致：发牌只用加密安全随机数（以前这里传入会退回 Math.random 的 secureRandom）
+    this.engine = new BlackjackEngine(o.rules, o.rng ?? cryptoRandom);
     this.director = this.makeDirector();
     for (const s of seats) {
       this.engine.addPlayer(s.id, s.profile.name, s.chips);

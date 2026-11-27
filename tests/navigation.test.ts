@@ -330,3 +330,41 @@ describe('协议版本', () => {
     net.disconnect();
   });
 });
+
+describe('全面审计回归（2026-11，真实客户端 + 真实服务器）', () => {
+  it('AUD-01 离开房间时路上的旧 21 点 / 百家乐状态也被忽略：不会把玩家从首页拉回一张卡住的旧牌桌', async () => {
+    await createAndStart();
+    session.leave('home');
+    const handle = (m: any) => (net as any).handle(m);
+    // 以前只忽略德州（state）与 21 点（bjState），漏了百家乐（bacState）
+    handle({ t: 'bacState', view: { kind: 'baccarat', viewerId: 'x', round: 1, roundId: 'r', phase: 'betting', serverTime: Date.now(), players: [], events: [] } });
+    handle({ t: 'bjState', view: { kind: 'blackjack', viewerId: 'x', round: 1, roundId: 'r', phase: 'betting', token: 1, serverTime: Date.now(), players: [], events: [] } });
+    const s = useGame.getState();
+    expect([s.screen, s.view, s.bj, s.bac, s.room]).toEqual(['home', null, null, null, null]);
+    await until(() => !timers().ws);
+  }, 30000);
+
+  it('AUD-02 回到前台时连接已失效（心跳没有回应、浏览器迟迟不触发关闭）：几秒内换一条新连接，不等关闭握手超时', async () => {
+    net.connect();
+    await until(() => useGame.getState().conn === 'connected');
+    const dead = (net as any).ws as WebSocket;
+    const pid = useGame.getState().playerId;
+    // 模拟锁屏期间被系统断开的连接：发出的消息到不了服务器，close() 之后浏览器也一直不触发 onclose
+    dead.send = () => undefined;
+    const realClose = dead.close.bind(dead);
+    dead.close = () => undefined;
+    net.noteHidden();
+    (net as any).hiddenAt = Date.now() - 10_000;
+    const t0 = Date.now();
+    net.wake();
+    await until(() => (net as any).ws && (net as any).ws !== dead && useGame.getState().conn === 'connected', 8000);
+    // 心跳等 4 秒没有回应 → 立刻换连接（重连退避从 0 开始，约 0.5 秒）
+    expect(Date.now() - t0).toBeLessThan(6500);
+    // 同一个会话：还是同一名玩家
+    expect(useGame.getState().playerId).toBe(pid);
+    // 旧连接的消息处理已经解除：之后它的任何消息都不会再被处理
+    expect([dead.onmessage, dead.onclose]).toEqual([null, null]);
+    realClose();
+    net.disconnect();
+  }, 20000);
+});

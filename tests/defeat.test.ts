@@ -359,3 +359,43 @@ describe('角色与设备', () => {
     }
   });
 });
+
+describe('失败演出去重：同一页面里的多场德州牌局（审计回归）', () => {
+  it('DEF-20 新的一场（离开后再进入 / 再来一局 / 上一场结束后重新开始）编号会变；同一场里的更新、重连不变', async () => {
+    const { NO_TABLE_GEN, trackTableGen } = await import('../src/animation/defeat/defeatRules');
+    const v = (handNumber: number, gameOver = false) => ({ handNumber, gameOver: gameOver ? ({} as any) : null });
+    let g = trackTableGen(NO_TABLE_GEN, v(0));
+    const first = g.n;
+    expect(first).toBe(1);
+    for (const h of [1, 1, 2, 3, 7, 7]) g = trackTableGen(g, v(h));
+    expect(g.n).toBe(first); // 同一场：手数前进、重复的状态都不变
+    const busted = trackTableGen(g, v(7, true));
+    expect(busted.n).toBe(first); // 这一场结束（出局）：还是同一场
+    // 再来一局：新控制器从第 0 / 1 手开始
+    expect(trackTableGen(busted, v(1)).n).toBe(first + 1);
+    // 上一场结束后重新开始，手数不变小也算新的一场
+    expect(trackTableGen(busted, v(7)).n).toBe(first + 1);
+    // 离开牌桌（没有视图）后再进入：新的一场，即使手数相同
+    const left = trackTableGen(g, null);
+    expect(trackTableGen(left, v(7)).n).toBe(first + 1);
+    // 同一个状态重复传入：返回同一个对象（不会在渲染时不停变化）
+    expect(trackTableGen(g, v(7))).toBe(g);
+  });
+
+  it('DEF-21 两场牌局在同一手、同一个事件序号出局：第二场的演出不会被当成“已经演过”', async () => {
+    const { NO_TABLE_GEN, trackTableGen } = await import('../src/animation/defeat/defeatRules');
+    const { beginDefeat, endDefeat, resetDefeatForTest } = await import('../src/animation/defeat/defeatStore');
+    resetDefeatForTest();
+    const seq = (key: string) => ({ key, mode: 'texas-holdem', hand: 7, cut: 'full', loserId: 'me', winnerId: 'ai0', lost: 1000, ratio: 1, at: {}, lookers: {}, layout: new Map(), profile: {} }) as any;
+    let g = trackTableGen(NO_TABLE_GEN, { handNumber: 7, gameOver: null });
+    const k1 = `${g.n}:7:85`;
+    expect(beginDefeat(seq(k1))).toBe(true);
+    endDefeat(k1);
+    expect(beginDefeat(seq(k1))).toBe(false); // 同一场里重复的结果：不重演
+    g = trackTableGen(trackTableGen(g, null), { handNumber: 7, gameOver: null });
+    const k2 = `${g.n}:7:85`;
+    expect(k2).not.toBe(k1);
+    expect(beginDefeat(seq(k2))).toBe(true); // 新的一场：照常演出
+    resetDefeatForTest();
+  });
+});

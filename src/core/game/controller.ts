@@ -1,7 +1,7 @@
 import { PokerEngine, PokerError, type EngineState } from '../table/engine';
 import { PlayerAction } from '../table/types';
 import { decideAction, AIPersonality, AIDifficulty } from '../ai/ai';
-import { RNG, secureRandom } from '../utils/random';
+import { RNG, cryptoRandom } from '../utils/random';
 import type { GameOverInfo, SeatConfig, SeatView, TableView } from './view';
 import type { PlayerProfile } from '../player/profile';
 import { DEFAULT_DIALOGUE_RULES, DialogueDirector, type DialogueContext, type DialogueEvent, type DialogueRef, type DirectorState } from '../character/dialogue';
@@ -108,7 +108,7 @@ export class GameController {
     this.aiRng = opts.aiRng ?? Math.random;
     this.autoRun = opts.autoRun ?? true;
     this.director = this.makeDirector();
-    this.engine = new PokerEngine({ smallBlind: opts.smallBlind, bigBlind: opts.bigBlind, rng: opts.rng ?? secureRandom });
+    this.engine = new PokerEngine({ smallBlind: opts.smallBlind, bigBlind: opts.bigBlind, rng: opts.rng ?? cryptoRandom });
     seats.forEach((s, i) => {
       this.engine.addPlayer(s.id, s.profile.name, s.chips, i);
       this.meta.set(s.id, {

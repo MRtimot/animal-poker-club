@@ -108,6 +108,7 @@ GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com npm start
 | `REDIS_URL` / `KV_URL` | （Vercel）Redis 连接地址，添加 Upstash Redis 后由 Vercel 自动设置；也支持 `KV_REST_API_URL` + `KV_REST_API_TOKEN` |
 | `VITE_GAME_SERVER` | （网页构建时）游戏服务器地址，例如 `https://xxx.onrender.com`；不设置则连接网页所在的网址 |
 | `APC_DEV_LOGIN=1` | 仅开发环境：显示「测试登录」，不需要 Google 即可测试账号功能；正式环境（`NODE_ENV=production`）永远关闭 |
+| `APC_TRUST_PROXY` | （服务器）前面有几层可信代理，用于按 IP 限流。默认：请求来自本机 / 内网（同机的 Nginx、Caddy）或在 Vercel 上时信任 1 层，其他情况不读取 `X-Forwarded-For`（客户端可以伪造它来绕过限流）。多层代理（例如 Cloudflare → Nginx）填层数，例如 `2`；`0` = 永远不读取 |
 
 正式环境请使用 HTTPS（反向代理需转发 `X-Forwarded-Proto`），登录 Cookie 会自动带上 `Secure`。
 

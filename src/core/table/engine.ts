@@ -2,7 +2,7 @@ import { Card } from '../cards/card';
 import { Deck } from '../cards/deck';
 import { evaluateHand, HandResult } from '../poker/handEvaluator';
 import { calculatePots, splitPot } from '../betting/pots';
-import { RNG, secureRandom } from '../utils/random';
+import { RNG, cryptoRandom } from '../utils/random';
 import {
   ActionType,
   Award,
@@ -79,7 +79,7 @@ export class PokerEngine {
   constructor(cfg: EngineConfig) {
     this.smallBlind = cfg.smallBlind;
     this.bigBlind = cfg.bigBlind;
-    this.deck = new Deck(cfg.rng ?? secureRandom);
+    this.deck = new Deck(cfg.rng ?? cryptoRandom);
   }
 
   toState(): EngineState {
@@ -106,7 +106,7 @@ export class PokerEngine {
     };
   }
 
-  static fromState(s: EngineState, rng: RNG = secureRandom): PokerEngine {
+  static fromState(s: EngineState, rng: RNG = cryptoRandom): PokerEngine {
     const e = new PokerEngine({ smallBlind: s.smallBlind, bigBlind: s.bigBlind, rng });
     e.players = s.players;
     e.board = s.board;

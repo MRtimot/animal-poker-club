@@ -1,12 +1,12 @@
 import { Card, RANKS, SUITS, makeCard } from './card';
-import { RNG, secureRandom } from '../utils/random';
+import { RNG, cryptoRandom } from '../utils/random';
 
-/** 标准 52 张牌组：创建 / 洗牌 / 发牌 / 回收 / 重置 */
+/** 标准 52 张牌组：创建 / 洗牌 / 发牌 / 回收 / 重置。默认只用加密安全随机数洗牌（没有就报错，绝不退回 Math.random） */
 export class Deck {
   private cards: Card[] = [];
   private dealt: Card[] = [];
 
-  constructor(private rng: RNG = secureRandom) {
+  constructor(private rng: RNG = cryptoRandom) {
     this.reset();
   }
 
@@ -64,7 +64,7 @@ export class Deck {
     return { cards: [...this.cards], dealt: [...this.dealt] };
   }
 
-  static fromState(s: { cards: Card[]; dealt: Card[] }, rng: RNG = secureRandom): Deck {
+  static fromState(s: { cards: Card[]; dealt: Card[] }, rng: RNG = cryptoRandom): Deck {
     const d = new Deck(rng);
     d.cards = [...s.cards];
     d.dealt = [...s.dealt];

@@ -141,21 +141,24 @@ class NetClient {
       }
       this.handle(msg);
     };
-    ws.onclose = () => {
-      if (this.ws !== ws) return;
-      if (this.pingTimer) clearInterval(this.pingTimer);
-      this.pingTimer = null;
-      if (this.rotateTimer) clearTimeout(this.rotateTimer);
-      this.rotateTimer = null;
-      this.ws = null;
-      if (this.probeTimer) clearTimeout(this.probeTimer);
-      this.probeTimer = null;
-      useGame.getState().set({ conn: 'disconnected' });
-      if (this.wanted) this.scheduleReconnect();
-    };
+    ws.onclose = () => this.lost(ws);
     ws.onerror = () => {
       /* onclose 会处理 */
     };
+  }
+
+  /** 当前连接断开（或已确认失效）：清理这条连接的计时器，需要时重连 */
+  private lost(ws: WebSocket) {
+    if (this.ws !== ws) return;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    if (this.rotateTimer) clearTimeout(this.rotateTimer);
+    this.rotateTimer = null;
+    this.ws = null;
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = null;
+    useGame.getState().set({ conn: 'disconnected' });
+    if (this.wanted) this.scheduleReconnect();
   }
 
   private startPing() {
@@ -240,10 +243,20 @@ class NetClient {
     this.raw({ t: 'ping', time: Date.now() });
     this.probeTimer = window.setTimeout(() => {
       this.probeTimer = null;
-      // 没有回应：这条连接已经失效（例如锁屏期间被系统断开但浏览器还不知道）
+      // 没有回应：这条连接已经失效（例如锁屏期间被系统断开但浏览器还不知道）。
+      // 不能只调用 close() 再等 onclose：对方已经不在时，浏览器要等关闭握手超时才触发 onclose（可能要很久），
+      // 这期间玩家一直卡在“连接中断”。直接丢弃这条连接（之后它的任何消息都不再处理），马上换一条新连接
       if (this.ws === ws && ws.readyState === WebSocket.OPEN) {
         this.retry = 0;
-        ws.close();
+        ws.onclose = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        try {
+          ws.close();
+        } catch {
+          /* 已经关闭 */
+        }
+        this.lost(ws);
       }
     }, 4000);
   }
@@ -364,7 +377,8 @@ class NetClient {
         }
         return;
       }
-      if (msg.t === 'state' || msg.t === 'bjState' || msg.t === 'chat' || msg.t === 'chatHistory') return;
+      // 三种牌桌的状态都要忽略（以前漏了百家乐：离开在线百家乐房间后，路上的旧状态会把玩家从首页拉回一张卡住的牌桌）
+      if (msg.t === 'state' || msg.t === 'bjState' || msg.t === 'bacState' || msg.t === 'chat' || msg.t === 'chatHistory') return;
     }
     switch (msg.t) {
       case 'welcome': {

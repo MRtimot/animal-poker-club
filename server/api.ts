@@ -7,6 +7,7 @@ import { GoogleVerifier, TokenError } from './auth/google';
 import { NONCE_COOKIE, SESSION_COOKIE, SESSION_TTL_MS, cookie, isSecureRequest, parseCookies, type SessionStore } from './auth/sessions';
 import type { AccountState } from '../src/core/account/types';
 import { inAllowList, isSameSite } from './origins';
+import { clientIp } from './clientIp';
 
 export interface ApiOptions {
   accounts: AccountService;
@@ -119,7 +120,8 @@ export function createApi(o: ApiOptions) {
     if (!url.pathname.startsWith('/api/')) return false;
     const method = req.method ?? 'GET';
     const route = `${method} ${url.pathname}`;
-    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    // 不能直接相信 X-Forwarded-For（客户端可以伪造来绕过限流），见 clientIp.ts
+    const ip = clientIp(req);
 
     try {
       if (method !== 'GET' && method !== 'HEAD') {

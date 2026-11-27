@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { RoomServer } from './rooms';
 import { RateLimiter } from './rateLimit';
 import { inAllowList, isSameSite, originAllowed } from './origins';
+import { clientIp } from './clientIp';
 
 /** 实时连接的路径：/api/ws（Vercel 函数的路径；本地服务器也提供），/ws 为旧版兼容 */
 export const WS_PATHS = ['/api/ws', '/ws'];
@@ -40,7 +41,8 @@ export function attachGameSockets(server: http.Server, o: AttachOptions) {
   wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     // 必须最先监听：连接被拒绝（人数 / 来源）后、真正关闭前收到坏数据也会触发 error，没有监听会让整个服务器崩溃
     ws.on('error', () => undefined);
-    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+    // 不能直接相信 X-Forwarded-For（客户端可以伪造来绕过限制），见 clientIp.ts
+    const ip = clientIp(req);
     const open = ipConns.get(ip) ?? 0;
     if (open >= maxConnsPerIp || !ipConnects.allow(ip)) {
       ws.close(1013, 'too many connections');

@@ -19,7 +19,7 @@ let introduced = false;
 function useCtaState(): RoomCtaState {
   const room = useGame((s) => s.room);
   const mode = useGame((s) => s.mode);
-  const hasView = useGame((s) => s.view !== null || s.bj !== null);
+  const hasView = useGame((s) => s.view !== null || s.bj !== null || s.bac !== null);
   const lastRoom = useGame((s) => s.lastRoom);
   const conn = useGame((s) => s.conn);
   const request = useQuickRoom();
